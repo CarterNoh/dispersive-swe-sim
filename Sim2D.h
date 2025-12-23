@@ -1,13 +1,12 @@
 #pragma once
 
+#include <vector>
 #include "alglib\fasttransforms.h"  // https://www.alglib.net/download.php#cpp
 
-#define GRAVITY 9.80665
-#define PI 3.14159265359  // used in FFT stencil code
 
 // sim parameters
-#define GRIDRESOLUTION 256
-#define GRIDCELLSIZE 1		// this should not be changed in this implementation!
+#define GRIDSIZE 256 	// grid size in one dimension (meters?)
+#define CELLSIZE 1		// cell size in one dimension (meters?/cell)
 #define TIMESTEP (1.f/60.f)
 #define DEPTH_NUM 4
 const float Depth[DEPTH_NUM] = { 1.f, 4.f, 16.f, 64.f };
@@ -17,8 +16,11 @@ const float Depth[DEPTH_NUM] = { 1.f, 4.f, 16.f, 64.f };
 #define DIFFUSION_ITERATIONS 64
 #define DELTA_T 0.5f
 
+
 // helpful shortcuts
-#define x_plus min(GRIDRESOLUTION - 1, x + 1)
+#define GRAVITY 9.80665
+#define PI 3.14159265359  // used in FFT stencil code
+#define x_plus min(GRIDSIZE - 1, x + 1)
 #define x_minus max(0, x - 1)
 
 
@@ -26,28 +28,42 @@ class Sim
 {
 public:
 	// variables carried from one timestep to the next
-	float	terrain[GRIDRESOLUTION];						// terrain
-	float   h[GRIDRESOLUTION];								// overall water height
-	float	q[GRIDRESOLUTION];								// overall flow rate
-	float	hbarOld[GRIDRESOLUTION];						// last timestep hbar, used for resampling in time 
-	float	htildeOld[GRIDRESOLUTION];						// last timestep htilde, used for resampling in time 
+	std::vector<double> terrain;	// terrain
+	std::vector<double> h;			// overall water height
+	std::vector<double> q_x;		// overall flow rate
+	std::vector<double> q_y;		// overall flow rate
+	std::vector<double> hbarOld;	// last timestep hbar, used for resampling in time
+	std::vector<double> htildeOld;	// last timestep htilde, used for resampling in time
 
 	// variables that could be allocated locally but for potential visualizations we store them globally
-	float	hbar[GRIDRESOLUTION]; 							// bulk height
-	float	qbar[GRIDRESOLUTION];							// bulk flow rate
-	float	htilde[GRIDRESOLUTION];							// surface displacement
-	float	qtilde[GRIDRESOLUTION];							// surface flow rate
-	alglib::complex_1d_array htildehat, qtildehat;			// eWave inputs
-	alglib::complex_1d_array qtildehat_depth[DEPTH_NUM];	// eWave outputs
+	std::vector<double> hbar;		// bulk height
+	std::vector<double> qbar_x;		// bulk flow rate
+	std::vector<double> qbar_y;		// bulk flow rate
+	std::vector<double> htilde;		// surface height
+	std::vector<double> qtilde_x;	// surface flow rate						
+	std::vector<double> qtilde_y;	// surface flow rate						
+	alglib::complex_1d_array htildehat, qtildehat_x, qtildehat_y;	// eWave inputs
+	alglib::complex_1d_array qtildehat_x_depth[DEPTH_NUM];			// eWave outputs
+	alglib::complex_1d_array qtildehat_y_depth[DEPTH_NUM];			// eWave outputs
 
 	// time is exclusively used for video recording
 	float time;
 
 	// functions
-	Sim();
+	Sim(): {};
+	// Sim();
 	int Sim::Release(void);
+
 	void ResetTerrain(int type);
 	void ResetWater(int type, float level);
-	void SimStep(bool SWEonly);													// advects the simulation by one timestep
-	void EditWaterLocal(float xCoord, float size, float factor);	// add or subtract water locally.
+	void EditWaterLocal(float xCoord, float yCoord, float size, float factor);	// add or subtract water locally.
+
+	void SimStep(bool SWEonly);				// advects the simulation by one timestep
+	void DecompositionStep(bool SWEonly); 	// bulk vs surface decomposition
+	void eWaveStep(bool SWEonly);			// surface wave simulation step
+	void SWEStep();							// SWE bulk simulation step
+	void TransportStep();					// transport of bulk and surface quantities
+	void ComputeValues();					// compute final h and q values
+	
+															
 };
