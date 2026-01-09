@@ -8,12 +8,12 @@
 // ********************************************************************************************************************
 
 // 1D: 0.5 of the source cell content per timestep guarantees volume conservation
-inline float Limit_flow_rate(float flow_rate_in, float waterDepth_left, float waterDepth_right)
+inline float LimitFlowRate(float flow_rate_in, float waterDepth_left, float waterDepth_right)
 {
 	if (flow_rate_in >= 0.f)
-		return min(flow_rate_in, 0.5f * waterDepth_left * CELLSIZE / TIMESTEP);  // 0.5 since other neighbor might take from this source cell as well..
+		return min(flow_rate_in, 0.25f * waterDepth_left * CELLSIZE / TIMESTEP);  // 0.25 since other neighbor might take from this source cell as well..
 	else
-		return max(flow_rate_in, -0.5f * waterDepth_right * CELLSIZE / TIMESTEP);
+		return max(flow_rate_in, -0.25f * waterDepth_right * CELLSIZE / TIMESTEP);
 }
 
 
@@ -21,21 +21,24 @@ inline float Limit_flow_rate(float flow_rate_in, float waterDepth_left, float wa
 inline float LimitVelocity(float velocity_in)
 {
 	if (velocity_in >= 0.f)
-		return min(velocity_in, 0.5f * CELLSIZE / TIMESTEP);   // 0.5 since other neighbor might take from this source cell as well..
+		return min(velocity_in, 0.25f * CELLSIZE / TIMESTEP);   // 0.25 since other neighbors might take from this source cell as well..
 	else
-		return max(velocity_in, -0.5f * CELLSIZE / TIMESTEP);
+		return max(velocity_in, -0.25f * CELLSIZE / TIMESTEP);
 }
 
 
-// xCoord and size in (0..1), factor determines how much to add/subtract
-void Sim::EditWaterLocal(float xCoord, float size, float factor)
-{
-	for (int x = 0; x < GRIDSIZE; x++)
-		if (fabs((float)(x) / GRIDSIZE - xCoord) < size)
-				h[x] = max(0.f, h[x] + factor * 1.f);
-	h[0] = 0.0f;
-	h[GRIDSIZE - 1] = 0.0f;
-}
+// // xCoord and size in (0..1), factor determines how much to add/subtract
+// void Sim::EditWaterLocal(float xCoord, float yCoord, float size, float factor)
+// {
+// 	for (int y = 0; y < GRIDSIZE; y++)
+// 	{
+// 		for (int x = 0; x < GRIDSIZE; x++)
+// 			if (fabs((float)(x) / GRIDSIZE - xCoord) < size)
+// 					h[idx] = max(0.f, h[idx] + factor * 1.f);
+// 		h[0] = 0.0f;
+// 		h[GRIDSIZE - 1] = 0.0f;
+// 	}
+// }
 
 
 // cubic interpolation with Catmull-Rom Spline https://en.wikipedia.org/wiki/Cubic_Hermite_spline#Interpolating_a_data_set
@@ -60,8 +63,21 @@ float SampleCubicClamped(float samplePos, float* dataField)
 	return out;
 }
 
+
+// test if the terrain boundary stops any flow across x+0.5
+bool StopFlowOnTerrainBoundary(int x, int y, float* h, float* terrain)
+{
+	float epsilon = 0.01f;
+	if ((h[idx] <= epsilon) && ((terrain[idx] >= terrain[idx_xplus] + h[idx_xplus]) || (terrain[idx] >= terrain[idx_yplus] + h[idx_yplus])))
+		return true;
+	if ((h[idx_xplus] <= epsilon) && ((terrain[idx_xplus] > terrain[idx] + h[idx]) || (terrain[idx_yplus] > terrain[idx] + h[idx])))
+		return true;
+	return false;
+}
+
+
 // Boundary Condition Functions
-void HandleWallBoundaries(float* field1, float* field2) 
+void HandleWallBoundary(float* field1, float* field2) 
 {
 	// Handle Top and Bottom Edges (Horizontal)
 	for (int x = 0; x < GRIDSIZE; ++x) {
@@ -80,6 +96,28 @@ void HandleWallBoundaries(float* field1, float* field2)
 		// Right Edge
 		field1[idx(GRIDSIZE - 1, y)] = field1[idx(GRIDSIZE - 2, y)];
 		field2[idx(GRIDSIZE - 1, y)] = field2[idx(GRIDSIZE - 2, y)];
+	}
+}
+
+void HandleZeroBoundary(float* field1, float* field2)
+{
+	// Handle Top and Bottom Edges (Horizontal)
+	for (int x = 0; x < GRIDSIZE; ++x) {
+		// Top Edge
+		field1[idx(x, 0)] = 0.f;
+		field2[idx(x, 0)] = 0.f;
+		// Bottom Edge
+		field1[idx(x, GRIDSIZE - 1)] = 0.f;
+		field2[idx(x, GRIDSIZE - 1)] = 0.f;
+	}
+	// Handle Left and Right Edges (Vertical)
+	for (int y = 0; y < GRIDSIZE; ++y) {
+		// Left Edge
+		field1[idx(0, y)] = 0.f;
+		field2[idx(0, y)] = 0.f;
+		// Right Edge
+		field1[idx(GRIDSIZE - 1, y)] = 0.f;
+		field2[idx(GRIDSIZE - 1, y)] = 0.f;
 	}
 }
 
@@ -108,20 +146,9 @@ void HandleFreeBoundary(float* field1, float* field2)
 void ApplyBoundaries(float* field1, float* field2, bool isWall)
 {
 	if (isWall)
-		HandleWallBoundaries(field1, field2);
+		HandleWallBoundary(field1, field2);
 	else
 		HandleFreeBoundary(field1, field2);
-}
-
-// test if the terrain boundary stops any flow across x+0.5
-bool StopFlowOnTerrainBoundary(int x, float* h, float* terrain)
-{
-	float epsilon = 0.01f;
-	if ((h[x] <= epsilon) && (terrain[x] >= terrain[min(GRIDSIZE - 1, x + 1)] + h[min(GRIDSIZE - 1, x + 1)]))
-		return true;
-	if ((h[min(GRIDSIZE - 1, x + 1)] <= epsilon) && (terrain[min(GRIDSIZE - 1, x + 1)] > terrain[x] + h[x]))
-		return true;
-	return false;
 }
 
 // ********************************************************************************************************************
@@ -162,13 +189,16 @@ void Sim::ResetWater(int type, float level)
 			h[x] = max(0.f, (level + 0.5f * cos(2.f * PI * (x / lambda)) - terrain[x]));
 		}
 		hbar[x] = h[x];
-		hbarOld[x] = h[x];
+		hbar_past[x] = h[x];
 		htilde[x] = 0.f;
-		htildeOld[x] = 0.f;
-		qbar[x] = 0.f;
-		q[x] = 0.f;
+		htilde_past[x] = 0.f;
+		qbar_x[x] = 0.f;
+		qbar_y[x] = 0.f;
+		q_x[x] = 0.f;
+		q_y[x] = 0.f;
 	}
 	// clear left and right boundaries
+	
 	h[0] = 0.f;
 	h[GRIDSIZE - 1] = 0.f;
 	time = 0.f;
@@ -177,10 +207,12 @@ void Sim::ResetWater(int type, float level)
 
 Sim::Sim()
 {
-	htildehat.setlength(GRIDSIZE);
-	qtildehat.setlength(GRIDSIZE);
+	htildehat.setlength(GRIDSIZE*GRIDSIZE);
+	qtildehat_x.setlength(GRIDSIZE*GRIDSIZE);
+	qtildehat_y.setlength(GRIDSIZE*GRIDSIZE);
 	for (int i=0; i < DEPTH_NUM; i++)
-		qtildehat_depth[i].setlength(GRIDSIZE);
+		qtildehat_depth_x[i].setlength(GRIDSIZE*GRIDSIZE);
+		qtildehat_depth_y[i].setlength(GRIDSIZE*GRIDSIZE);
 	ResetTerrain(1);
 	ResetWater(2, 0.f);
 }
@@ -217,9 +249,11 @@ void Sim::DecompositionStep(bool SWEonly)
 	static float alpha_H[GRIDSIZE*GRIDSIZE]; // = zeros
 	static float alpha_Q[GRIDSIZE*GRIDSIZE];
 	static float H[GRIDSIZE*GRIDSIZE];
-	static float Q[GRIDSIZE*GRIDSIZE];
+	static float Q_x[GRIDSIZE*GRIDSIZE];
+	static float Q_y[GRIDSIZE*GRIDSIZE];
 	H = terrain + h;  // start off with the current water surface
-	Q = q;
+	Q_x = q_x;
+	Q_y = q_y;
 	// Loop through main grid, avoid boundaries
 	for (int y = 1; y < GRIDSIZE-1; y++)
 	{
@@ -260,11 +294,13 @@ void Sim::DecompositionStep(bool SWEonly)
 	// Run diffusion to low-pass filter H and Q
 	// SOMEDAY: Improve this implementation of diffusion by replacing Euler integration with FFT or something
 	static float H_past[GRIDSIZE*GRIDSIZE];
-	static float Q_past[GRIDSIZE*GRIDSIZE];
+	static float Q_past_x[GRIDSIZE*GRIDSIZE];
+	static float Q_past_y[GRIDSIZE*GRIDSIZE];
 	for (int j = 0; (j < DIFFUSION_ITERATIONS) && (!SWEonly); j++)  // 64 diffusion iterations
 	{
 		memcpy(H_past, H, GRIDSIZE * GRIDSIZE * sizeof(float));
-		memcpy(Q_past, Q, GRIDSIZE * GRIDSIZE * sizeof(float));
+		memcpy(Q_past_x, Q_x, GRIDSIZE * GRIDSIZE * sizeof(float));
+		memcpy(Q_past_y, Q_y, GRIDSIZE * GRIDSIZE * sizeof(float));
 		for (int y = 1; y < GRIDSIZE-1; y++) // one diffusion iteration
 		{
 			for (int x = 1; x < GRIDSIZE - 1; x++)
@@ -277,10 +313,15 @@ void Sim::DecompositionStep(bool SWEonly)
 				H[idx] = max(terrain[idx], H[idx]); // ensure water surface is above terrain
 
 				// Diffusion step for Q: dQ/dt = Del * ( alpha_Q * Del Q )
-				float dQ_x = (alpha_Q[idx] * (Q_past[idx_xplus] - Q_past[idx]) - alpha_Q[idx_xminus] * (Q_past[idx] - Q_past[idx_xminus]));
-				float dQ_y = (alpha_Q[idx] * (Q_past[idx_yplus] - Q_past[idx]) - alpha_Q[idx_yminus] * (Q_past[idx] - Q_past[idx_yminus]));
-				float dQdT = (dQ_x + dQ_y) / (CELLSIZE*CELLSIZE);
-				Q[idx] = Q_past[idx] + DELTA_T * dQdT;
+				// Q has two components, so we do them separately
+				float dQ_x_x = (alpha_Q[idx] * (Q_past_x[idx_xplus] - Q_past_x[idx]) - alpha_Q[idx_xminus] * (Q_past_x[idx] - Q_past_x[idx_xminus]));
+				float dQ_x_y = (alpha_Q[idx] * (Q_past_x[idx_yplus] - Q_past_x[idx]) - alpha_Q[idx_yminus] * (Q_past_x[idx] - Q_past_x[idx_yminus]));
+				float dQdT_x = (dQ_x_x + dQ_x_y) / (CELLSIZE*CELLSIZE);
+				Q_x[idx] = Q_past_x[idx] + DELTA_T * dQdT_x;
+				float dQ_y_x = (alpha_Q[idx] * (Q_past_y[idx_yplus] - Q_past_y[idx]) - alpha_Q[idx_yminus] * (Q_past_y[idx] - Q_past_y[idx_yminus]));
+				float dQ_y_y = (alpha_Q[idx] * (Q_past_y[idx_xplus] - Q_past_y[idx]) - alpha_Q[idx_xminus] * (Q_past_y[idx] - Q_past_y[idx_xminus]));
+				float dQdT_y = (dQ_y_x + dQ_y_y) / (CELLSIZE*CELLSIZE);
+				Q_y[idx] = Q_past_y[idx] + DELTA_T * dQdT_y;
 			}
 		}
 	}
@@ -288,19 +329,23 @@ void Sim::DecompositionStep(bool SWEonly)
 
 	// final conversion to individual solver quantities
 	hbar = max(0.f, H - terrain);
-	qbar = Q;
+	qbar_x = Q_x;
+	qbar_y = Q_y;
 	htilde = h - hbar;
-	qtilde = q - qbar;
+	qtilde_x = q_x - qbar_x;
+	qtilde_y = q_y - qbar_y;
 
 	// Enforce no-flow conditions at terrain boundaries
 	for (int y = 0; y < GRIDSIZE; y++)
 	{
 		for (int x = 0; x < GRIDSIZE; x++)
 		{
-			if (StopFlowOnTerrainBoundary(x, h, terrain))
+			if (StopFlowOnTerrainBoundary(x, y, h, terrain))
 			{
-				qbar[idx] = 0.f;
-				qtilde[idx] = 0.f;
+				qbar_x[idx] = 0.f;
+				qbar_y[idx] = 0.f;
+				qtilde_x[idx] = 0.f;
+				qtilde_y[idx] = 0.f;
 			}
 		}
 	}
@@ -379,7 +424,7 @@ void Sim::SWEStep()
 			ubar[x] /= max(0.01f, hbarOld[x]);
 		else
 			ubar[x] /= max(0.01f, hbarOld[x_plus]);
-		ubar[x] = LimitVelocity(ubar[x]);  // CFL<0.5 will be important later for surface waves advection
+		ubar[x] = LimitVelocity(ubar[x]);  // CFL<0.25 will be important later for surface waves advection
 	}
 	memcpy(hbarOld, hbar, GRIDSIZE * sizeof(float));   // store current hbar for next timestep
 	for (int x = 0; x < GRIDSIZE; x++)
