@@ -60,6 +60,58 @@ float SampleCubicClamped(float samplePos, float* dataField)
 	return out;
 }
 
+// Boundary Condition Functions
+void HandleWallBoundaries(float* field1, float* field2) 
+{
+	// Handle Top and Bottom Edges (Horizontal)
+	for (int x = 0; x < GRIDSIZE; ++x) {
+		// Top Edge
+		field1[idx(x, 0)] = field1[idx(x, 1)];
+		field2[idx(x, 0)] = field2[idx(x, 1)];
+		// Bottom Edge
+		field1[idx(x, GRIDSIZE - 1)] = field1[idx(x, GRIDSIZE - 2)];
+		field2[idx(x, GRIDSIZE - 1)] = field2[idx(x, GRIDSIZE - 2)];
+	}
+	// Handle Left and Right Edges (Vertical)
+	for (int y = 0; y < GRIDSIZE; ++y) {
+		// Left Edge
+		field1[idx(0, y)] = field1[idx(1, y)];
+		field2[idx(0, y)] = field2[idx(1, y)];
+		// Right Edge
+		field1[idx(GRIDSIZE - 1, y)] = field1[idx(GRIDSIZE - 2, y)];
+		field2[idx(GRIDSIZE - 1, y)] = field2[idx(GRIDSIZE - 2, y)];
+	}
+}
+
+void HandleFreeBoundary(float* field1, float* field2)
+{
+	// Handle Top and Bottom Edges (Horizontal)
+	for (int x = 0; x < GRIDSIZE; ++x) {
+		// Top Edge
+		field1[idx(x, 0)] = 2.f * field1[idx(x, 1)] - field1[idx(x, 2)];
+		field2[idx(x, 0)] = 2.f * field2[idx(x, 1)] - field2[idx(x, 2)];
+		// Bottom Edge
+		field1[idx(x, GRIDSIZE - 1)] = 2.f * field1[idx(x, GRIDSIZE - 2)] - field1[idx(x, GRIDSIZE - 3)];
+		field2[idx(x, GRIDSIZE - 1)] = 2.f * field2[idx(x, GRIDSIZE - 2)] - field2[idx(x, GRIDSIZE - 3)];
+	}
+	// Handle Left and Right Edges (Vertical)
+	for (int y = 0; y < GRIDSIZE; ++y) {
+		// Left Edge
+		field1[idx(0, y)] = 2.f * field1[idx(1, y)] - field1[idx(2, y)];
+		field2[idx(0, y)] = 2.f * field2[idx(1, y)] - field2[idx(2, y)];
+		// Right Edge
+		field1[idx(GRIDSIZE - 1, y)] = 2.f * field1[idx(GRIDSIZE - 2, y)] - field1[idx(GRIDSIZE - 3, y)];
+		field2[idx(GRIDSIZE - 1, y)] = 2.f * field2[idx(GRIDSIZE - 2, y)] - field2[idx(GRIDSIZE - 3, y)];
+	}
+}
+
+void ApplyBoundaries(float* field1, float* field2, bool isWall)
+{
+	if (isWall)
+		HandleWallBoundaries(field1, field2);
+	else
+		HandleFreeBoundary(field1, field2);
+}
 
 // test if the terrain boundary stops any flow across x+0.5
 bool StopFlowOnTerrainBoundary(int x, float* h, float* terrain)
@@ -149,7 +201,8 @@ int Sim::Release(void)
 void Sim::SimStep(bool SWEonly)
 {
 	DecompositionStep(SWEonly);
-	eWaveStep(SWEonly);
+	if (!SWEonly)
+		eWaveStep();
 	SWEStep();
 	TransportStep();
 	ComputeValues();
@@ -158,64 +211,103 @@ void Sim::SimStep(bool SWEonly)
 
 void Sim::DecompositionStep(bool SWEonly)
 {
-	// bulk vs surface decomposition
-	static float alpha_H[GRIDSIZE]; // = zeros
-	static float alpha_Q_x[GRIDSIZE];
-	static float alpha_Q_y[GRIDSIZE];
-	static float H[GRIDSIZE];
-	static float Q[GRIDSIZE];
-	// h,q diffusivity intialization
+	/******* Bulk vs Surface Wave Decomposition ******/
+
+	// Calculate diffusion coefficient (alpha) at every location
+	static float alpha_H[GRIDSIZE*GRIDSIZE]; // = zeros
+	static float alpha_Q[GRIDSIZE*GRIDSIZE];
+	static float H[GRIDSIZE*GRIDSIZE];
+	static float Q[GRIDSIZE*GRIDSIZE];
 	H = terrain + h;  // start off with the current water surface
 	Q = q;
-	for (int x = 0; x < GRIDSIZE; x++)
+	// Loop through main grid, avoid boundaries
+	for (int y = 1; y < GRIDSIZE-1; y++)
 	{
-		alpha_H[x] = 0.f;
-		float maxGround = max(terrain[x], terrain[x_plus])
-		float minWaterlevel = 0.5f * (H[x] + H[x_plus]);
-		if ((h[x] > 0.f) && (h[x_plus] > 0.f))
+		for (int x = 1; x < GRIDSIZE-1; x++)
 		{
-			static const float sigma_max = 8.f;
-			float sigma = min(sigma_max, max(0.f, minWaterlevel - maxGround));
-			alpha_H[x] = sigma * sigma / (2*DELTA_T*DIFFUSION_ITERATIONS);
-		} 
-		// gradient filter
-		float gradient = abs(H[x] - H[x_plus]);
-		alpha_H[x] *= exp(- 0.01f * gradient * gradient);
-		alpha_Q[x] = 0.5f * (alpha_H[max(0, x - 1)] + alpha_H[x]);
-	}
-	// run diffusion
-	static float H_dummy[GRIDSIZE];
-	static float Q_dummy[GRIDSIZE];
-	for (int j = 0; (j < DIFFUSION_ITERATIONS) && (!SWEonly); j++)  // 64 diffusion iterations
-	{
-		memcpy(H_dummy, H, GRIDSIZE * sizeof(float));
-		memcpy(Q_dummy, Q, GRIDSIZE * sizeof(float));
-		for (int x = 0; x < GRIDSIZE - 1; x++) // one diffusion iteration
-		{
-			H[x] = max(terrain[x], H_dummy[x] + DELTA_T * (alpha_H[x] * (H_dummy[x_plus] - H_dummy[x]) - alpha_H[x_minus] * (H_dummy[x] - H_dummy[x_minus])));
-			Q[x] = Q_dummy[x] + DELTA_T * (alpha_Q[x_plus] * (Q_dummy[x_plus] - Q_dummy[x]) - alpha_Q[x] * (Q_dummy[x] - Q_dummy[x_minus]));
+			// Identify the correct height (sigma) to use for diffusivity calculation
+			alpha_H[idx] = 0.f;
+
+			// // Their implementation: using averages (I assume to improve stability, but reduces accuracy?)
+			// float maxGround = max(terrain[idx], terrain[idx_xplus], terrain[idx_yplus]); // Why do this?
+			// float minWaterlevel = (H[idx] + H[idx_xplus] + H[idx_yplus]) / 3.f; // Why average here?
+			// if ((h[idx] > 0.f) && (h[idx_xplus] > 0.f) && (h[idx_yplus] > 0.f))
+			// {
+			// 	static const float sigma_max = 8.f;
+			// // they limit diffusion coefficient to between 0 and 1, but that isn't requred by the math = maybe for stability
+			// 	float sigma = min(sigma_max, max(0.f, minWaterlevel - maxGround));
+			// 	alpha_H[idx] = sigma * sigma / (2*DELTA_T*DIFFUSION_ITERATIONS);
+			// } 
+
+			// My implementation: using local cell values only to align with eqn from paper
+			if (h[idx] > 0.f)
+			{
+				float denom = 2*DELTA_T*DIFFUSION_ITERATIONS;
+				alpha_H[idx] = h[idx] * h[idx] / denom;
+				alpha_H[idx] = min(std::sqrt(denom), alpha_H[idx]); // clamp to improve stability; limits max depth to 
+			}
+			
+			// Extra gradient filter
+			// NOTE: they used H, I switched it to h to stay strict with the paper. We'll see if this causes bugs. 
+			float gradient_x = (h[idx_xplus] - h[idx]) / CELLSIZE; // could use central difference here
+			float gradient_y = (h[idx_yplus] - h[idx]) / CELLSIZE;
+			alpha_H[idx] *= exp(- DIFFUSION_PENALTY * (gradient_x * gradient_x + gradient_y * gradient_y));
+			alpha_Q[idx] = 0.5f * (alpha_H[idx_xminus] + alpha_H[idx]); // Where does this come from??
 		}
 	}
+	ApplyBoundaries(alpha_H, alpha_Q, true);
+	
+	// Run diffusion to low-pass filter H and Q
+	// SOMEDAY: Improve this implementation of diffusion by replacing Euler integration with FFT or something
+	static float H_past[GRIDSIZE*GRIDSIZE];
+	static float Q_past[GRIDSIZE*GRIDSIZE];
+	for (int j = 0; (j < DIFFUSION_ITERATIONS) && (!SWEonly); j++)  // 64 diffusion iterations
+	{
+		memcpy(H_past, H, GRIDSIZE * GRIDSIZE * sizeof(float));
+		memcpy(Q_past, Q, GRIDSIZE * GRIDSIZE * sizeof(float));
+		for (int y = 1; y < GRIDSIZE-1; y++) // one diffusion iteration
+		{
+			for (int x = 1; x < GRIDSIZE - 1; x++)
+			{
+				// Diffusion step for H: dH/dt = Del * ( alpha_H * Del H )
+				float dH_x = (alpha_H[idx] * (H_past[idx_xplus] - H_past[idx]) - alpha_H[idx_xminus] * (H_past[idx] - H_past[idx_xminus]));
+				float dH_y = (alpha_H[idx] * (H_past[idx_yplus] - H_past[idx]) - alpha_H[idx_yminus] * (H_past[idx] - H_past[idx_yminus]));
+				float dHdT = (dH_x + dH_y) / (CELLSIZE*CELLSIZE);
+				H[idx] = H_past[idx] + DELTA_T * dHdT;
+				H[idx] = max(terrain[idx], H[idx]); // ensure water surface is above terrain
+
+				// Diffusion step for Q: dQ/dt = Del * ( alpha_Q * Del Q )
+				float dQ_x = (alpha_Q[idx] * (Q_past[idx_xplus] - Q_past[idx]) - alpha_Q[idx_xminus] * (Q_past[idx] - Q_past[idx_xminus]));
+				float dQ_y = (alpha_Q[idx] * (Q_past[idx_yplus] - Q_past[idx]) - alpha_Q[idx_yminus] * (Q_past[idx] - Q_past[idx_yminus]));
+				float dQdT = (dQ_x + dQ_y) / (CELLSIZE*CELLSIZE);
+				Q[idx] = Q_past[idx] + DELTA_T * dQdT;
+			}
+		}
+	}
+	ApplyBoundaries(H, Q, true);
+
 	// final conversion to individual solver quantities
 	hbar = max(0.f, H - terrain);
 	qbar = Q;
 	htilde = h - hbar;
 	qtilde = q - qbar;
-	for (int x = 0; x < GRIDSIZE; x++)
+
+	// Enforce no-flow conditions at terrain boundaries
+	for (int y = 0; y < GRIDSIZE; y++)
 	{
-		if (StopFlowOnTerrainBoundary(x, h, terrain))
+		for (int x = 0; x < GRIDSIZE; x++)
 		{
-			qbar[x] = 0.f;
-			qtilde[x] = 0.f;
+			if (StopFlowOnTerrainBoundary(x, h, terrain))
+			{
+				qbar[idx] = 0.f;
+				qtilde[idx] = 0.f;
+			}
 		}
 	}
 }
 
-void Sim::eWaveStep(bool SWEonly)
+void Sim::eWaveStep()
 {
-	if (SWEonly)
-		return;
-
 	// surface velocity update using eWave
 	for (int x = 0; x < GRIDSIZE; x++)
 	{
