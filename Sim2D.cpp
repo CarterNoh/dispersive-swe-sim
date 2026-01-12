@@ -7,23 +7,21 @@
 // Helper functions (TODO: TRANSITION TO 2D)
 // ********************************************************************************************************************
 
-// 1D: 0.5 of the source cell content per timestep guarantees volume conservation
 inline float LimitFlowRate(float flow_rate_in, float waterDepth_left, float waterDepth_right)
 {
 	if (flow_rate_in >= 0.f)
-		return min(flow_rate_in, 0.25f * waterDepth_left * CELLSIZE / TIMESTEP);  // 0.25 since other neighbor might take from this source cell as well..
+		return min(flow_rate_in, CFL_CONDITION * waterDepth_left * CELLSIZE / TIMESTEP);  // 0.25 since other neighbor might take from this source cell as well
 	else
-		return max(flow_rate_in, -0.25f * waterDepth_right * CELLSIZE / TIMESTEP);
+		return max(flow_rate_in, -CFL_CONDITION * waterDepth_right * CELLSIZE / TIMESTEP);
 }
 
 
-// 1D: 0.5 guarantees CFL condition
 inline float LimitVelocity(float velocity_in)
 {
 	if (velocity_in >= 0.f)
-		return min(velocity_in, 0.25f * CELLSIZE / TIMESTEP);   // 0.25 since other neighbors might take from this source cell as well..
+		return min(velocity_in, CFL_CONDITION * CELLSIZE / TIMESTEP);   // 0.25 since other neighbors might take from this source cell as well
 	else
-		return max(velocity_in, -0.25f * CELLSIZE / TIMESTEP);
+		return max(velocity_in, -CFL_CONDITION * CELLSIZE / TIMESTEP);
 }
 
 
@@ -65,14 +63,34 @@ float SampleCubicClamped(float samplePos, float* dataField)
 
 
 // test if the terrain boundary stops any flow across x+0.5
-bool StopFlowOnTerrainBoundary(int x, int y, float* h, float* terrain)
+int StopFlowOnTerrainBoundary(int x, int y, float* h, float* terrain)
 {
+	// Key: 1 = stop in x, 2 = stop in y, 3 = stop in both, 0 = no stop
 	float epsilon = 0.01f;
-	if ((h[idx] <= epsilon) && ((terrain[idx] >= terrain[idx_xplus] + h[idx_xplus]) || (terrain[idx] >= terrain[idx_yplus] + h[idx_yplus])))
-		return true;
-	if ((h[idx_xplus] <= epsilon) && ((terrain[idx_xplus] > terrain[idx] + h[idx]) || (terrain[idx_yplus] > terrain[idx] + h[idx])))
-		return true;
-	return false;
+	bool result_x = 0;
+	bool result_y = 0;
+	int result = 0;
+
+	// Test x boundary
+	if ((h[idx] <= epsilon) && (terrain[idx] >= terrain[idx_xplus] + h[idx_xplus])) // positive q_x
+		result_x = 1;
+	if ((h[idx_xplus] <= epsilon) && (terrain[idx_xplus] > terrain[idx] + h[idx])) // negative q_x
+		result_x = 1;
+
+	// Test y boundary
+	if ((h[idx] <= epsilon) && (terrain[idx] >= terrain[idx_yplus] + h[idx_yplus])) // positive q_y
+		result_y = 1;
+	if ((h[idx_yplus] <= epsilon) && (terrain[idx_yplus] > terrain[idx] + h[idx])) // negative q_y
+		result_y = 1;
+
+	// Combine results
+	if (result_x && result_y)
+		result = 3;
+	else if (result_x)
+		result = 1;
+	else if (result_y)
+		result = 2;
+	return result;
 }
 
 
@@ -336,15 +354,19 @@ void Sim::DecompositionStep(bool SWEonly)
 	qtilde_y = q_y - qbar_y;
 
 	// Enforce no-flow conditions at terrain boundaries
-	for (int y = 0; y < GRIDSIZE; y++)
+	for (int y = 1; y < GRIDSIZE-1; y++)
 	{
-		for (int x = 0; x < GRIDSIZE; x++)
+		for (int x = 1; x < GRIDSIZE-1; x++)
 		{
-			if (StopFlowOnTerrainBoundary(x, y, h, terrain))
+			int stop_flow = StopFlowOnTerrainBoundary(x, y, h, terrain);
+			if (stop_flow & 1)  // stop flow in x direction
 			{
 				qbar_x[idx] = 0.f;
-				qbar_y[idx] = 0.f;
 				qtilde_x[idx] = 0.f;
+			}
+			if (stop_flow & 2)  // stop flow in y direction
+			{
+				qbar_y[idx] = 0.f;
 				qtilde_y[idx] = 0.f;
 			}
 		}
@@ -424,7 +446,7 @@ void Sim::SWEStep()
 			ubar[x] /= max(0.01f, hbarOld[x]);
 		else
 			ubar[x] /= max(0.01f, hbarOld[x_plus]);
-		ubar[x] = LimitVelocity(ubar[x]);  // CFL<0.25 will be important later for surface waves advection
+		ubar[x] = LimitVelocity(ubar[x]);  // Enforcing CFL condition is important for surface waves advection
 	}
 	memcpy(hbarOld, hbar, GRIDSIZE * sizeof(float));   // store current hbar for next timestep
 	for (int x = 0; x < GRIDSIZE; x++)
