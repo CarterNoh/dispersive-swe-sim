@@ -13,6 +13,7 @@ const float Depth[DEPTH_NUM] = { 1.f, 4.f, 16.f, 64.f };
 #define TERRAIN_HEIGHT_SHIFT_INIT -10.f // -10 or -20 
 #define TERRAIN_HEIGHT_SCALE_INIT 20.f // 20 or 40
 #define CFL_CONDITION 0.25f  // max allowed CFL condition for stability
+#define MIN_WATER_HEIGHT 0.01f  // minimum water height for stability
 
 // diffusion parameters
 #define DIFFUSION_ITERATIONS 128

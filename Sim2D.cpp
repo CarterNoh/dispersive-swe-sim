@@ -66,21 +66,20 @@ float SampleCubicClamped(float samplePos, float* dataField)
 int StopFlowOnTerrainBoundary(int x, int y, float* h, float* terrain)
 {
 	// Key: 1 = stop in x, 2 = stop in y, 3 = stop in both, 0 = no stop
-	float epsilon = 0.01f;
 	bool result_x = 0;
 	bool result_y = 0;
 	int result = 0;
 
 	// Test x boundary
-	if ((h[idx] <= epsilon) && (terrain[idx] >= terrain[idx_xplus] + h[idx_xplus])) // positive q_x
+	if ((h[idx] <= MIN_WATER_HEIGHT) && (terrain[idx] >= terrain[idx_xplus] + h[idx_xplus])) // positive q_x
 		result_x = 1;
-	if ((h[idx_xplus] <= epsilon) && (terrain[idx_xplus] > terrain[idx] + h[idx])) // negative q_x
+	if ((h[idx_xplus] <= MIN_WATER_HEIGHT) && (terrain[idx_xplus] > terrain[idx] + h[idx])) // negative q_x
 		result_x = 1;
 
 	// Test y boundary
-	if ((h[idx] <= epsilon) && (terrain[idx] >= terrain[idx_yplus] + h[idx_yplus])) // positive q_y
+	if ((h[idx] <= MIN_WATER_HEIGHT) && (terrain[idx] >= terrain[idx_yplus] + h[idx_yplus])) // positive q_y
 		result_y = 1;
-	if ((h[idx_yplus] <= epsilon) && (terrain[idx_yplus] > terrain[idx] + h[idx])) // negative q_y
+	if ((h[idx_yplus] <= MIN_WATER_HEIGHT) && (terrain[idx_yplus] > terrain[idx] + h[idx])) // negative q_y
 		result_y = 1;
 
 	// Combine results
@@ -436,59 +435,99 @@ void Sim::eWaveStep()
 void Sim::SWEStep()
 {
 	// SWE bulk simulation using [Stelling03]
+
 	// qbar to ubar using hbar from last timestep
-	static float ubar[GRIDSIZE];
-	static float ubarNew[GRIDSIZE];
-	for (int x = 0; x < GRIDSIZE; x++)
+	static float ubar_x[GRIDSIZE*GRIDSIZE];
+	static float ubar_y[GRIDSIZE*GRIDSIZE];
+	for (int y = 0; y < GRIDSIZE; y++)
 	{
-		ubar[x] = qbar[x];
-		if (ubar[x] >= 0.f)
-			ubar[x] /= max(0.01f, hbarOld[x]);
-		else
-			ubar[x] /= max(0.01f, hbarOld[x_plus]);
-		ubar[x] = LimitVelocity(ubar[x]);  // Enforcing CFL condition is important for surface waves advection
+		for (int x = 0; x < GRIDSIZE; x++)
+		{
+			ubar_x[idx] = qbar_x[idx];
+			ubar_y[idx] = qbar_y[idx];
+
+			// First-Order Up-Winding
+			// SOMEDAY: Try interpolating h or using higher-order upwinding for better accuracy
+			// Technially u = q / H?? Different derivations differ here
+			if (ubar_x[idx] >= 0.f)
+				ubar_x[idx] /= max(MIN_WATER_HEIGHT, hbarOld[idx]);
+			else
+				ubar_x[idx] /= max(MIN_WATER_HEIGHT, hbarOld[idx_xplus]);
+			if (ubar_y[idx] >= 0.f)
+				ubar_y[idx] /= max(MIN_WATER_HEIGHT, hbarOld[idx]);
+			else
+				ubar_y[idx] /= max(MIN_WATER_HEIGHT, hbarOld[idx_yplus]);
+
+			// Enforcing CFL condition for later surface waves advection
+			ubar_x[idx] = LimitVelocity(ubar_x[idx]);  
+			ubar_y[idx] = LimitVelocity(ubar_y[idx]);  
+		}
 	}
-	memcpy(hbarOld, hbar, GRIDSIZE * sizeof(float));   // store current hbar for next timestep
-	for (int x = 0; x < GRIDSIZE; x++)
+	memcpy(hbarOld, hbar, GRIDSIZE * GRIDSIZE * sizeof(float));   // store current hbar for next timestep
+
+	static float ubarNew_x[GRIDSIZE*GRIDSIZE];
+	static float ubarNew_y[GRIDSIZE*GRIDSIZE];
+	for (int y = 1; y < GRIDSIZE-1; y++)
 	{
-		float q_m05 = ubar[x_minus];  
-		if (q_m05 >= 0.f)
-			q_m05 *= hbar[x_minus];
-		else
-			q_m05 *= hbar[x];
-		float q_p05 = ubar[x];  
-		if (q_p05 >= 0.f)
-			q_p05 *= hbar[x];
-		else
-			q_p05 *= hbar[x_plus];
-		float q_p15 = ubar[x_plus];  //q_(i+0.5) = hfr at position x
-		if (q_p15 >= 0.f)
-			q_p15 *= hbar[x_plus];
-		else
-			q_p15 *= hbar[min(x + 2, GRIDSIZE - 1)];
-		float q_bar_0 = 0.5f * (q_m05 + q_p05);
-		float q_bar_p1 = 0.5f * (q_p05 + q_p15);
-		float u_star_0 = 0.f;
-		if (q_bar_0 >= 0.f)
-			u_star_0 = ubar[max(x - 1, 0)];
-		else
-			u_star_0 = ubar[x];
-		float u_star_p1 = 0.f;
-		if (q_bar_p1 > 0.f)
-			u_star_p1 = ubar[x];
-		else
-			u_star_p1 = ubar[x_plus];
-		float uu_x = 2.f / max(0.01f, hbar[x] + hbar[x_plus]) * ((q_bar_p1 * u_star_p1 - q_bar_0 * u_star_0) / CELLSIZE - ubar[x] * (q_bar_p1 - q_bar_0) / CELLSIZE);
-		ubarNew[x] = ubar[x] - TIMESTEP * uu_x;  // self-advection
-		ubarNew[x] += -GRAVITY * TIMESTEP * (terrain[x_plus] + hbar[x_plus] - terrain[x] - hbar[x]) / CELLSIZE;  // GRAVITY force
-		ubarNew[x] = LimitVelocity(ubarNew[x]);
+		for (int x = 1; x < GRIDSIZE-1; x++)
+		{
+			float q_m05 = ubar[idx_xminus];
+			if (q_m05 >= 0.f)
+				q_m05 *= hbar[idx_xminus];
+			else
+				q_m05 *= hbar[idx];
+
+			float q_p05 = ubar[idx];  
+			if (q_p05 >= 0.f)
+				q_p05 *= hbar[idx];
+			else
+				q_p05 *= hbar[idx_xplus];
+
+			float q_p15 = ubar[idx_xplus];  //q_(i+0.5) = hfr at position x
+			if (q_p15 >= 0.f)
+				q_p15 *= hbar[idx_xplus];
+			else
+				q_p15 *= hbar[min(idx_xplus + 1, GRIDSIZE - 1)];
+			
+			float q_bar_0 = 0.5f * (q_m05 + q_p05);
+			float q_bar_p1 = 0.5f * (q_p05 + q_p15);
+
+			float u_star_0 = 0.f;
+			if (q_bar_0 >= 0.f)
+				u_star_0 = ubar[idx_xminus];
+			else
+				u_star_0 = ubar[idx];
+			
+			float u_star_p1 = 0.f;
+			if (q_bar_p1 > 0.f)
+				u_star_p1 = ubar[idx];
+			else
+				u_star_p1 = ubar[idx_xplus];
+				
+			float uu_x = 2.f / max(MIN_WATER_HEIGHT, hbar[idx] + hbar[idx_xplus]) * ((q_bar_p1 * u_star_p1 - q_bar_0 * u_star_0) / CELLSIZE - ubar[idx] * (q_bar_p1 - q_bar_0) / CELLSIZE);
+			ubarNew[idx] = ubar[idx] - TIMESTEP * uu_x;  // self-advection
+			ubarNew[idx] += -GRAVITY * TIMESTEP * (terrain[idx_xplus] + hbar[idx_xplus] - terrain[idx] - hbar[idx]) / CELLSIZE;  // GRAVITY force
+			ubarNew[idx] = LimitVelocity(ubarNew[idx]);  // Enforcing CFL condition
+		}
 	}
+	
+	// apply boundary conditions???
+
 	// transfer back to flow rate using *most recent* hbar
-	for (int x = 0; x < GRIDSIZE; x++)
-		if (ubarNew[x] >= 0.f)
-			qbar[x] = ubarNew[x] * hbar[x];
-		else
-			qbar[x] = ubarNew[x] * hbar[x_plus];
+	for (int y = 0; y < GRIDSIZE; y++)
+	{
+		for (int x = 0; x < GRIDSIZE; x++)
+		{
+			if (ubarNew_x[idx] >= 0.f)
+				qbar_x[idx] = ubarNew_x[idx] * hbar[idx];
+			else
+				qbar_x[idx] = ubarNew_x[idx] * hbar[idx_xplus];
+			if (ubarNew_y[idx] >= 0.f)
+				qbar_y[idx] = ubarNew_y[idx] * hbar[idx];
+			else
+				qbar_y[idx] = ubarNew_y[idx] * hbar[idx_yplus];
+		}
+	}
 }
 
 void Sim::TransportStep()
