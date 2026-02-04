@@ -294,7 +294,7 @@ void Sim::SimStep(bool SWEonly)
 		float q_bar_p1 = 0.5f * (q_p05 + q_p15);
 		float u_star_0 = 0.f;
 		if (q_bar_0 >= 0.f)
-			u_star_0 = ubar[max(x - 1, 0)];
+			u_star_0 = ubar[x_minus];
 		else
 			u_star_0 = ubar[x];
 		float u_star_p1 = 0.f;
