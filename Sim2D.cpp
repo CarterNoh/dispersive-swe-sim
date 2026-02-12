@@ -39,6 +39,22 @@ inline float LimitVelocity(float velocity_in)
 // }
 
 
+float ExtractLocal(float* dataField, float* target, float index, bool isYDirection)
+{
+	if (isYDirection)
+	{
+		int x = index % GRIDSIZE;
+		for (int y = 0; y < GRIDSIZE; y++)
+			target[y] = dataField[y * GRIDSIZE + x];
+	}
+	else
+	{
+		int y = floor(index / GRIDSIZE);
+		for (int x = 0; x < GRIDSIZE; x++)
+			target[x] = dataField[y * GRIDSIZE + x];
+	}
+}
+
 // cubic interpolation with Catmull-Rom Spline https://en.wikipedia.org/wiki/Cubic_Hermite_spline#Interpolating_a_data_set
 float SampleCubicClamped(float samplePos, float* dataField)
 {
@@ -50,12 +66,18 @@ float SampleCubicClamped(float samplePos, float* dataField)
 	float fx = max(0.f, min(1.f, samplePos - floor(samplePos)));
 	float x2 = fx * fx;
 	float x3 = x2 * fx;
-	const float s = 0.5f;
-	float xcubicX = -s * x3 + 2.f * s * x2 - s * fx;
-	float xcubicY = (2.f - s) * x3 + (s - 3.f) * x2 + 1.f;
-	float xcubicZ = (s - 2.f) * x3 + (3.f - 2.f * s) * x2 + s * fx;
-	float xcubicW = s * x3 - s * x2;
-	float out = xcubicX * dataField[id0] + xcubicY * dataField[id1] + xcubicZ * dataField[id2] + xcubicW * dataField[id3];
+	// pretty sure theirs is wrong, see wiki page formula
+	// const float s = 0.5f;
+	// float xcubicX = -s * x3 + 2.f * s * x2 - s * fx;
+	// float xcubicY = (2.f - s) * x3 + (s - 3.f) * x2 + 1.f;
+	// float xcubicZ = (s - 2.f) * x3 + (3.f - 2.f * s) * x2 + s * fx;
+	// float xcubicW = s * x3 - s * x2;
+	// float out = xcubicX * dataField[id0] + xcubicY * dataField[id1] + xcubicZ * dataField[id2] + xcubicW * dataField[id3];
+	float xcubicX = -x3 + 2.f * x2 - fx;
+	float xcubicY =  3.f * x3 - 5.f * x2 + 2.f;
+	float xcubicZ = -3.f * x3 + 4.f * x2 + fx;
+	float xcubicW = x3 - x2;
+	float out = 0.5f * (xcubicX * dataField[id0] + xcubicY * dataField[id1] + xcubicZ * dataField[id2] + xcubicW * dataField[id3]);
 	out = min(max(dataField[id1], dataField[id2]), out);  // value-limiting (same as in BFECC)
 	out = max(min(dataField[id1], dataField[id2]), out);  // value-limiting (same as in BFECC)
 	return out;
@@ -240,6 +262,7 @@ void Sim::SimStep(bool SWEonly)
 	DecompositionStep(SWEonly);
 	if (!SWEonly)
 		eWaveStep();
+		// FFTStep();
 	SWEStep();
 	TransportStep();
 	ComputeValues();
@@ -249,6 +272,21 @@ void Sim::SimStep(bool SWEonly)
 void Sim::DecompositionStep(bool SWEonly)
 {
 	/******* Bulk vs Surface Wave Decomposition ******/
+
+	if (SWEonly)
+	{
+		// If we're only doing SWE, then we skip the decomposition and just set the bulk values to be the total values (and surface values to 0)
+		for (int i = 0; i < GRIDSIZE*GRIDSIZE; i++)
+		{
+			hbar[i] = h[i];
+			qbar_x[i] = q_x[i];
+			qbar_y[i] = q_y[i];
+			htilde[i] = 0.f;
+			qtilde_x[i] = 0.f;
+			qtilde_y[i] = 0.f;
+		}
+		return;
+	}
 
 	// Calculate diffusion coefficient (alpha) at every location
 	static float alpha_H[GRIDSIZE*GRIDSIZE]; // = zeros
@@ -273,7 +311,7 @@ void Sim::DecompositionStep(bool SWEonly)
 			// if ((h[idx] > 0.f) && (h[idx_xplus] > 0.f) && (h[idx_yplus] > 0.f))
 			// {
 			// 	static const float sigma_max = 8.f;
-			// // they limit diffusion coefficient to between 0 and 1, but that isn't requred by the math = maybe for stability
+			// // they limit diffusion coefficient to between 0 and 1, but that isn't requred by the math = maybe for stability?
 			// 	float sigma = min(sigma_max, max(0.f, minWaterlevel - maxGround));
 			// 	alpha_H[idx] = sigma * sigma / (2*DELTA_T*DIFFUSION_ITERATIONS);
 			// } 
@@ -302,7 +340,7 @@ void Sim::DecompositionStep(bool SWEonly)
 	static float H_past[GRIDSIZE*GRIDSIZE];
 	static float Q_past_x[GRIDSIZE*GRIDSIZE];
 	static float Q_past_y[GRIDSIZE*GRIDSIZE];
-	for (int j = 0; (j < DIFFUSION_ITERATIONS) && (!SWEonly); j++)  // 64 diffusion iterations
+	for (int j = 0; (j < DIFFUSION_ITERATIONS); j++)  // 64 diffusion iterations
 	{
 		memcpy(H_past, H, GRIDSIZE * GRIDSIZE * sizeof(float));
 		memcpy(Q_past_x, Q_x, GRIDSIZE * GRIDSIZE * sizeof(float));
@@ -374,7 +412,7 @@ void Sim::eWaveStep()
 		qtildehat[x].x = qtilde[x];
 		qtildehat[x].y = 0.;
 	}
-	fftc1d(htildehat);   https://www.alglib.net/download.php#cpp
+	fftc1d(htildehat);   //https://www.alglib.net/download.php#cpp
 	fftc1d(qtildehat);
 	
 	for (int x = 0; x < GRIDSIZE; x++)
@@ -471,6 +509,10 @@ void Sim::SWEStep()
 			//       u_x_i+0.5_j=ubar_x[idx], u_x_i-0.5_j=ubar_x[idx_xminus], 
 			//       u_y_i_j+0.5=ubar_y[idx], u_y_i_j-0.5=ubar_y[idx_yminus], 
 			//       u_x_i+0.5_j-1=ubar_x[idx_yminus], u_y_i-1_j+0.5=ubar_y[idx_xminus]
+			// Note: The 1D implementaiton uses far more intermeidate values that the paper, and I don't know why. 
+			// The commented sections below are the conversion of their 1D code with all its complexity, and the 
+			// uncommented sections are my simplified version that tries to stay more true to the paper. We'll see 
+			// if it causes stability/accuracy issues.
 
 			////// X DIRECTION //////
 			// Use upwinding to evaluate q_(i-0.5,j), q_(i+0.5,j), q_(i+1.5,j) 
@@ -588,15 +630,35 @@ void Sim::SWEStep()
 void Sim::TransportStep()
 {
 	// advect surface HFR through bulk velocity
-	static float qtilde_dummy[GRIDSIZE];
-	memcpy(qtilde_dummy, qtilde, GRIDSIZE * sizeof(float));
-	for (int x = 0; x < GRIDSIZE; x++)
+	static float qtilde_x_dummy[GRIDSIZE*GRIDSIZE];
+	static float qtilde_y_dummy[GRIDSIZE*GRIDSIZE];
+	memcpy(qtilde_x_dummy, qtilde_x, GRIDSIZE * GRIDSIZE * sizeof(float));
+	memcpy(qtilde_y_dummy, qtilde_y, GRIDSIZE * GRIDSIZE * sizeof(float));
+	for (int y = 0; y < GRIDSIZE; y++)
 	{
-		float bulkVelocity = 0.5f * (ubarNew[x] + ubar[x]);
-		qtilde[x] = SampleCubicClamped(x - TIMESTEP * bulkVelocity, qtilde_dummy);
-		if (((bulkVelocity >= 0.f) && (h[x] < 0.01f)) ||
-			((bulkVelocity < 0.f) && (h[min(x + 1, GRIDSIZE - 1)] < 0.01f)))
-			qtilde[x] = 0.f;
+		for (int x = 0; x < GRIDSIZE; x++)
+		{
+			// extract row and column for cubic sampling
+			float local_x[GRIDSIZE];
+			float local_y[GRIDSIZE];
+			ExtractLocal(qtilde_x_dummy, local_x, idx, false);
+			ExtractLocal(qtilde_y_dummy, local_y, idx, true);
+
+			// 
+			float bulkVelocity_x = 0.5f * (ubarNew_x[idx] + ubar_x[idx]);
+			float step_x = TIMESTEP * bulkVelocity_x;
+			qtilde_x[idx] = SampleCubicClamped(x - step_x, local_x);
+			if (((bulkVelocity_x >= 0.f) && (h[idx] < 0.01f)) ||
+				((bulkVelocity_x < 0.f) && (h[min(idx_xplus, (y + 1) * GRIDSIZE - 1)] < 0.01f)))
+				qtilde_x[idx] = 0.f;
+
+			float bulkVelocity_y = 0.5f * (ubarNew_y[idx] + ubar_y[idx]);
+			float step_y = TIMESTEP * bulkVelocity_y;
+			qtilde_y[idx] = SampleCubicClamped(y - step_y, local_y);
+			if (((bulkVelocity_y >= 0.f) && (h[idx] < 0.01f)) ||
+				((bulkVelocity_y < 0.f) && (h[min(idx_yplus, (y + 1) * GRIDSIZE - 1)] < 0.01f)))
+				qtilde_y[idx] = 0.f;
+		}
 	}
 
 	// div(ubar) qtilde
@@ -618,10 +680,7 @@ void Sim::TransportStep()
 			div_ubar *= 0.25f;
 		htilde[x] *= exp(-div_ubar * TIMESTEP);
 	}
-}
 
-void Sim::ComputeValues()
-{
 	// bulk advecting surface displacements
 	static float advectHFR[GRIDSIZE];
 	for (int x = 0; x < GRIDSIZE; x++)
@@ -630,19 +689,22 @@ void Sim::ComputeValues()
 	memcpy(h_dummy, h, GRIDSIZE * sizeof(float));
 	for (int x = 0; x < GRIDSIZE; x++)
 	{
-		float q_l = Limit_flow_rate(advectHFR[x_minus], h_dummy[x_minus], h_dummy[x]);
-		float q_r = Limit_flow_rate(advectHFR[x], h_dummy[x], h_dummy[x_plus]);
+		float q_l = LimitFlowRate(advectHFR[x_minus], h_dummy[x_minus], h_dummy[x]);
+		float q_r = LimitFlowRate(advectHFR[x], h_dummy[x], h_dummy[x_plus]);
 		if ( ((h_dummy[x_minus] == 0.f) && (h_dummy[x] == 0.f)) || (StopFlowOnTerrainBoundary(x_minus, h_dummy, terrain)) )
 			q_l = 0.f;
 		if ( ((h_dummy[x] == 0.f) && (h_dummy[x_plus] == 0.f)) || (StopFlowOnTerrainBoundary(x, h_dummy, terrain)) )
 			q_r = 0.f;
 		h[x] = max(0.f, h_dummy[x] - TIMESTEP / CELLSIZE * (q_r - q_l));
 	}
+}
 
+void Sim::ComputeValues()
+{
 	// Recombine bulk and surface HFR
 	for (int x = 0; x < GRIDSIZE; x++)
 	{
-		q[x] = Limit_flow_rate(qbar[x] + qtilde[x], h[x], h[x_plus]);
+		q[x] = LimitFlowRate(qbar[x] + qtilde[x], h[x], h[x_plus]);
 		if ( (StopFlowOnTerrainBoundary(x, h, terrain)) || (x == 0) || (x >= GRIDSIZE - 2) )
 			q[x] = 0.f;
 	}
@@ -652,6 +714,11 @@ void Sim::ComputeValues()
 		h[x] = max(0.f, h[x] + TIMESTEP * -(q[x] - q[x_minus]) / CELLSIZE);
 
 	// stability measure to not drag too much water from a cell in a single timestep (important for extreme initial conditions)
-	for (int x = 0; x < GRIDSIZE; x++)
-		q[x] = Limit_flow_rate(q[x], h[x], h[x_plus]);
+	for (int y = 0; y < GRIDSIZE * GRIDSIZE; y++)
+	{
+		for (int x = 0; x < GRIDSIZE * GRIDSIZE; x++)
+			q_x[idx] = LimitFlowRate(q[idx], h[idx], h[min(idx_xplus, GRIDSIZE * GRIDSIZE - 1)]);
+			q_y[idx] = LimitFlowRate(q[idx], h[idx], h[min(idx_yplus, GRIDSIZE * GRIDSIZE - 1)]);
+	}
+	
 }
