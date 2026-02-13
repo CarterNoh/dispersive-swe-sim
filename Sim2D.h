@@ -5,7 +5,7 @@
 
 
 // sim parameters
-#define GRIDSIZE 258 	// grid size in one dimension (meters?)
+#define GRIDSIZE 258 	// grid size in one dimension (# cells)
 #define CELLSIZE 1		// cell size in one dimension (meters?/cell)
 #define TIMESTEP (1.f/60.f)
 #define DEPTH_NUM 4
@@ -19,6 +19,9 @@ const float Depth[DEPTH_NUM] = { 1.f, 4.f, 16.f, 64.f };
 #define DIFFUSION_ITERATIONS 128
 #define DELTA_T 0.25f
 #define DIFFUSION_PENALTY 0.01f
+
+// transport parameters
+#define GAMMA 0.25f
 
 // helpful shortcuts
 #define GRAVITY 9.80665

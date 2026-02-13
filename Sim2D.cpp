@@ -1,10 +1,10 @@
 #include <windows.h>
 #include "Sim2D.h"
 
-// This is the main simulation code for the 2D solver. For now it's just the 1D code that I am using as reference. 
+ 
 
 // ********************************************************************************************************************
-// Helper functions (TODO: TRANSITION TO 2D)
+// Helper functions
 // ********************************************************************************************************************
 
 inline float LimitFlowRate(float flow_rate_in, float waterDepth_left, float waterDepth_right)
@@ -24,6 +24,36 @@ inline float LimitVelocity(float velocity_in)
 		return max(velocity_in, -CFL_CONDITION * CELLSIZE / TIMESTEP);
 }
 
+// test if the terrain boundary stops any flow across x+0.5
+int StopFlowOnTerrainBoundary(int x, int y, float* h, float* terrain)
+{
+	// Key: 1 = stop in x, 2 = stop in y, 3 = stop in both, 0 = no stop
+	bool result_x = 0;
+	bool result_y = 0;
+	int result = 0;
+
+	// Test x boundary
+	if ((h[idx] <= MIN_WATER_HEIGHT) && (terrain[idx] >= terrain[idx_xplus] + h[idx_xplus])) // positive q_x
+		result_x = 1;
+	if ((h[idx_xplus] <= MIN_WATER_HEIGHT) && (terrain[idx_xplus] > terrain[idx] + h[idx])) // negative q_x
+		result_x = 1;
+
+	// Test y boundary
+	if ((h[idx] <= MIN_WATER_HEIGHT) && (terrain[idx] >= terrain[idx_yplus] + h[idx_yplus])) // positive q_y
+		result_y = 1;
+	if ((h[idx_yplus] <= MIN_WATER_HEIGHT) && (terrain[idx_yplus] > terrain[idx] + h[idx])) // negative q_y
+		result_y = 1;
+
+	// Combine results
+	if (result_x && result_y)
+		result = 3;
+	else if (result_x)
+		result = 1;
+	else if (result_y)
+		result = 2;
+	return result;
+}
+
 
 // // xCoord and size in (0..1), factor determines how much to add/subtract
 // void Sim::EditWaterLocal(float xCoord, float yCoord, float size, float factor)
@@ -39,7 +69,7 @@ inline float LimitVelocity(float velocity_in)
 // }
 
 
-float ExtractLocal(float* dataField, float* target, float index, bool isYDirection)
+float ExtractLocal(float* target, float* dataField, float index, bool isYDirection)
 {
 	if (isYDirection)
 	{
@@ -76,42 +106,11 @@ float SampleCubicClamped(float samplePos, float* dataField)
 	float xcubicX = -x3 + 2.f * x2 - fx;
 	float xcubicY =  3.f * x3 - 5.f * x2 + 2.f;
 	float xcubicZ = -3.f * x3 + 4.f * x2 + fx;
-	float xcubicW = x3 - x2;
+	float xcubicW =  x3 - x2;
 	float out = 0.5f * (xcubicX * dataField[id0] + xcubicY * dataField[id1] + xcubicZ * dataField[id2] + xcubicW * dataField[id3]);
 	out = min(max(dataField[id1], dataField[id2]), out);  // value-limiting (same as in BFECC)
 	out = max(min(dataField[id1], dataField[id2]), out);  // value-limiting (same as in BFECC)
 	return out;
-}
-
-
-// test if the terrain boundary stops any flow across x+0.5
-int StopFlowOnTerrainBoundary(int x, int y, float* h, float* terrain)
-{
-	// Key: 1 = stop in x, 2 = stop in y, 3 = stop in both, 0 = no stop
-	bool result_x = 0;
-	bool result_y = 0;
-	int result = 0;
-
-	// Test x boundary
-	if ((h[idx] <= MIN_WATER_HEIGHT) && (terrain[idx] >= terrain[idx_xplus] + h[idx_xplus])) // positive q_x
-		result_x = 1;
-	if ((h[idx_xplus] <= MIN_WATER_HEIGHT) && (terrain[idx_xplus] > terrain[idx] + h[idx])) // negative q_x
-		result_x = 1;
-
-	// Test y boundary
-	if ((h[idx] <= MIN_WATER_HEIGHT) && (terrain[idx] >= terrain[idx_yplus] + h[idx_yplus])) // positive q_y
-		result_y = 1;
-	if ((h[idx_yplus] <= MIN_WATER_HEIGHT) && (terrain[idx_yplus] > terrain[idx] + h[idx])) // negative q_y
-		result_y = 1;
-
-	// Combine results
-	if (result_x && result_y)
-		result = 3;
-	else if (result_x)
-		result = 1;
-	else if (result_y)
-		result = 2;
-	return result;
 }
 
 
@@ -629,11 +628,87 @@ void Sim::SWEStep()
 
 void Sim::TransportStep()
 {
-	// advect surface HFR through bulk velocity
+	// Advect high-frequency wave height and flow rate through bulk velocity
+
+
+	// Adjust qtilde to account for advection by ubar, using cubic sampling to get better accuracy.
 	static float qtilde_x_dummy[GRIDSIZE*GRIDSIZE];
 	static float qtilde_y_dummy[GRIDSIZE*GRIDSIZE];
 	memcpy(qtilde_x_dummy, qtilde_x, GRIDSIZE * GRIDSIZE * sizeof(float));
 	memcpy(qtilde_y_dummy, qtilde_y, GRIDSIZE * GRIDSIZE * sizeof(float));
+	for (int y = 1; y < GRIDSIZE-1; y++)
+	{
+		for (int x = 1; x < GRIDSIZE-1; x++)
+		{
+			// extract row and column for cubic sampling
+			float local_x[GRIDSIZE];
+			float local_y[GRIDSIZE];
+			ExtractLocal(local_x, qtilde_x_dummy, idx, false);
+			ExtractLocal(local_y, qtilde_y_dummy, idx, true);
+
+			// 
+			float bulkVelocity_x = 0.5f * (ubarNew_x[idx] + ubar_x[idx]);
+			float bulkVelocity_y = 0.5f * (ubarNew_y[idx] + ubar_y[idx]);
+			float step_x = - bulkVelocity_x * TIMESTEP / CELLSIZE; // unitless (cells)
+			float step_y = - bulkVelocity_y * TIMESTEP / CELLSIZE; // unitless (cells)
+			qtilde_x[idx] = SampleCubicClamped(x + step_x, local_x);
+			qtilde_y[idx] = SampleCubicClamped(y + step_y, local_y);
+			if (((bulkVelocity_x >= 0.f) && (h[idx] < 0.01f)) ||
+				((bulkVelocity_x < 0.f) && (h[min(idx_xplus, (y + 1) * GRIDSIZE - 1)] < 0.01f)))
+				qtilde_x[idx] = 0.f;
+			if (((bulkVelocity_y >= 0.f) && (h[idx] < 0.01f)) ||
+				((bulkVelocity_y < 0.f) && (h[min(idx_yplus, (y + 1) * GRIDSIZE - 1)] < 0.01f)))
+				qtilde_y[idx] = 0.f;
+		}
+	}
+	// handle boundaries!!
+
+	// Update qtilde from ubar divergence: dq/dt = -q * div(ubar)
+	for (int y = 1; y < GRIDSIZE-1; y++)
+	{
+		for (int x = 1; x < GRIDSIZE-1; x++)
+		{
+			float ubar_x_m1 = 0.5f * (ubarNew_x[idx_xminus] + ubar_x[idx_xminus]);
+			float ubar_x_p1 = 0.5f * (ubarNew_x[idx_xplus] + ubar_x[idx_xplus]);
+			float ubar_y_m1 = 0.5f * (ubarNew_y[idx_yminus] + ubar_y[idx_yminus]);
+			float ubar_y_p1 = 0.5f * (ubarNew_y[idx_yplus] + ubar_y[idx_yplus]);
+
+			// central difference to get divergence of ubar (using central because q and u are on same grid)
+			float div_ubar_x = (ubar_x_p1 - ubar_x_m1) / (2.f * CELLSIZE);
+			float div_ubar_y = (ubar_y_p1 - ubar_y_m1) / (2.f * CELLSIZE);
+			float div_ubar = div_ubar_x + div_ubar_y;
+
+			// dampen if converging to avoid breaking waves
+			if (div_ubar < 0.f)
+				div_ubar *= GAMMA;	
+					
+			qtilde_x[idx] *= exp(-div_ubar * TIMESTEP);
+			qtilde_y[idx] *= exp(-div_ubar * TIMESTEP);
+		}
+	}
+	// handle boundaries!!
+	
+
+	// Update htilde from ubar divergence: dh/dt = -h * div(ubar)
+	for (int y = 1; y < GRIDSIZE-1; y++)
+	{
+		for (int x = 1; x < GRIDSIZE-1; x++)
+		{
+			// backward difference to get divergence of ubar (using backward because h is on staggered grid)
+			float div_ubar_x = (ubarNew[idx] - ubarNew[idx_xminus]) / CELLSIZE;
+			float div_ubar_y = (ubarNew[idx] - ubarNew[idx_yminus]) / CELLSIZE;
+			float div_ubar = div_ubar_x + div_ubar_y;
+			// dampen if converging to avoid breaking waves
+			if (div_ubar < 0.f)
+				div_ubar *= GAMMA;
+			htilde[idx] *= exp(-div_ubar * TIMESTEP);
+		}
+	}
+
+	// advection of h through ubar
+	// first, construct q_advect = ubar * htilde sampled at cell edges using cubic sampling
+	static float q_x_advect[GRIDSIZE*GRIDSIZE];
+	static float q_y_advect[GRIDSIZE*GRIDSIZE];
 	for (int y = 0; y < GRIDSIZE; y++)
 	{
 		for (int x = 0; x < GRIDSIZE; x++)
@@ -641,84 +716,80 @@ void Sim::TransportStep()
 			// extract row and column for cubic sampling
 			float local_x[GRIDSIZE];
 			float local_y[GRIDSIZE];
-			ExtractLocal(qtilde_x_dummy, local_x, idx, false);
-			ExtractLocal(qtilde_y_dummy, local_y, idx, true);
+			ExtractLocal(local_x, htilde, idx, false);
+			ExtractLocal(local_y, htilde, idx, true);
 
-			// 
-			float bulkVelocity_x = 0.5f * (ubarNew_x[idx] + ubar_x[idx]);
-			float step_x = TIMESTEP * bulkVelocity_x;
-			qtilde_x[idx] = SampleCubicClamped(x - step_x, local_x);
-			if (((bulkVelocity_x >= 0.f) && (h[idx] < 0.01f)) ||
-				((bulkVelocity_x < 0.f) && (h[min(idx_xplus, (y + 1) * GRIDSIZE - 1)] < 0.01f)))
-				qtilde_x[idx] = 0.f;
-
-			float bulkVelocity_y = 0.5f * (ubarNew_y[idx] + ubar_y[idx]);
-			float step_y = TIMESTEP * bulkVelocity_y;
-			qtilde_y[idx] = SampleCubicClamped(y - step_y, local_y);
-			if (((bulkVelocity_y >= 0.f) && (h[idx] < 0.01f)) ||
-				((bulkVelocity_y < 0.f) && (h[min(idx_yplus, (y + 1) * GRIDSIZE - 1)] < 0.01f)))
-				qtilde_y[idx] = 0.f;
+			// cubic reconstruction: 1/2 cell accounts for staggered grid, 0.5 * dt accounts for h and u at different 1/2 times
+			float step_x = 0.5f*CELLSIZE - ubarNew_x[idx] * 0.5f * TIMESTEP / CELLSIZE; // unitless (cells)
+			float step_y = 0.5f*CELLSIZE - ubarNew_y[idx] * 0.5f * TIMESTEP / CELLSIZE; 
+			q_x_advect[idx] = ubarNew_x[idx] * SampleCubicClamped(x + step_x, local_x);  
+			q_y_advect[idx] = ubarNew_y[idx] * SampleCubicClamped(y + step_y, local_y);  
 		}
 	}
-
-	// div(ubar) qtilde
-	for (int x = 0; x < GRIDSIZE; x++)
+	// use q_advect to update h using finite volume update: h_new = h_old + dt * (Del . (q + q_advect))
+	float h_dummy[GRIDSIZE*GRIDSIZE];
+	memcpy(h_dummy, h, GRIDSIZE * GRIDSIZE * sizeof(float));
+	for (int y = 1; y < GRIDSIZE-1; y++)
 	{
-		float ubar_m1 = 0.5f * (ubarNew[x_minus] + ubar[x_minus]);
-		float ubar_p1 = 0.5f * (ubarNew[x_plus] + ubar[x_plus]);
-		float div_ubar = (ubar_p1 - ubar_m1) / (2.f * CELLSIZE);
-		if (div_ubar < 0.f)
-			div_ubar *= 0.25f;
-		qtilde[x] *= exp(-div_ubar * TIMESTEP);
-	}
+		for (int x = 1; x < GRIDSIZE-1; x++)
+		{
+			float q_x_l = LimitFlowRate(q_x_advect[idx_xminus], h[idx_xminus], h[idx]);
+			float q_x_r = LimitFlowRate(q_x_advect[idx], h[idx], h[idx_xplus]);
+			float q_y_l = LimitFlowRate(q_y_advect[idx_yminus], h[idx_yminus], h[idx]);
+			float q_y_r = LimitFlowRate(q_y_advect[idx], h[idx], h[idx_yplus]);
+			if ( ((h[idx_xminus] == 0.f) && (h[idx] == 0.f)) || (StopFlowOnTerrainBoundary(x-1, y, h, terrain)) )
+				q_x_l = 0.f;
+			if ( ((h[idx] == 0.f) && (h[idx_xplus] == 0.f)) || (StopFlowOnTerrainBoundary(x, y, h, terrain)) )
+				q_x_r = 0.f;
+			if ( ((h[idx_yminus] == 0.f) && (h[idx] == 0.f)) || (StopFlowOnTerrainBoundary(x, y-1, h, terrain)) )
+				q_y_l = 0.f;
+			if ( ((h[idx] == 0.f) && (h[idx_yplus] == 0.f)) || (StopFlowOnTerrainBoundary(x, y, h, terrain)) )
+				q_y_r = 0.f;
 
-	// div(ubar) htilde
-	for (int x = 0; x < GRIDSIZE; x++)
-	{
-		float div_ubar = (ubarNew[x] - ubarNew[x_minus]) / CELLSIZE;
-		if (div_ubar < 0.f)
-			div_ubar *= 0.25f;
-		htilde[x] *= exp(-div_ubar * TIMESTEP);
+			// update h using htilde advected through ubar
+			float div_q = (q_x_l - q_x_r + q_y_l - q_y_r) / CELLSIZE;
+			h[idx] = max(0.f, h_dummy[idx] + TIMESTEP * div_q);
+		}
 	}
-
-	// bulk advecting surface displacements
-	static float advectHFR[GRIDSIZE];
-	for (int x = 0; x < GRIDSIZE; x++)
-		advectHFR[x] = ubarNew[x] * SampleCubicClamped(x + 0.5f - 0.5f * TIMESTEP * ubarNew[x], htilde);  // cubic reconstruction: 0.5 * dt accounts for h and u at different 1/2 times
-	float h_dummy[GRIDSIZE];
-	memcpy(h_dummy, h, GRIDSIZE * sizeof(float));
-	for (int x = 0; x < GRIDSIZE; x++)
-	{
-		float q_l = LimitFlowRate(advectHFR[x_minus], h_dummy[x_minus], h_dummy[x]);
-		float q_r = LimitFlowRate(advectHFR[x], h_dummy[x], h_dummy[x_plus]);
-		if ( ((h_dummy[x_minus] == 0.f) && (h_dummy[x] == 0.f)) || (StopFlowOnTerrainBoundary(x_minus, h_dummy, terrain)) )
-			q_l = 0.f;
-		if ( ((h_dummy[x] == 0.f) && (h_dummy[x_plus] == 0.f)) || (StopFlowOnTerrainBoundary(x, h_dummy, terrain)) )
-			q_r = 0.f;
-		h[x] = max(0.f, h_dummy[x] - TIMESTEP / CELLSIZE * (q_r - q_l));
-	}
+	// handle boundaries!!
 }
-
+	
 void Sim::ComputeValues()
 {
-	// Recombine bulk and surface HFR
-	for (int x = 0; x < GRIDSIZE; x++)
+	// Recombine bulk and surface flow
+	for (int y = 1; y < GRIDSIZE - 1; y++)
 	{
-		q[x] = LimitFlowRate(qbar[x] + qtilde[x], h[x], h[x_plus]);
-		if ( (StopFlowOnTerrainBoundary(x, h, terrain)) || (x == 0) || (x >= GRIDSIZE - 2) )
-			q[x] = 0.f;
+		for (int x = 1; x < GRIDSIZE - 1; x++)
+		{
+			q_x[idx] = LimitFlowRate(qbar_x[idx] + qtilde_x[idx], h[idx], h[idx_xplus]);
+			q_y[idx] = LimitFlowRate(qbar_y[idx] + qtilde_y[idx], h[idx], h[idx_yplus]);
+			if ( (StopFlowOnTerrainBoundary(x, y, h, terrain)) || (x == 0) || (x >= GRIDSIZE - 2) )
+				q_x[idx] = 0.f;
+			if ( (StopFlowOnTerrainBoundary(x, y, h, terrain)) || (y == 0) || (y >= GRIDSIZE - 2) )
+				q_y[idx] = 0.f;
+		}
 	}
-
+	// handle boundaries!!
+	
 	// height integration 
-	for (int x = 0; x < GRIDSIZE; x++)
-		h[x] = max(0.f, h[x] + TIMESTEP * -(q[x] - q[x_minus]) / CELLSIZE);
+	for (int y = 1; y < GRIDSIZE - 1; y++)
+	{
+		for (int x = 1; x < GRIDSIZE - 1; x++)
+		{
+			h[idx] = max(0.f, h[idx] + TIMESTEP * -(q_x[idx] - q_x[idx_xminus]) / CELLSIZE);
+		}
+	}
+	// handle boundaries!!
+	
 
 	// stability measure to not drag too much water from a cell in a single timestep (important for extreme initial conditions)
-	for (int y = 0; y < GRIDSIZE * GRIDSIZE; y++)
+	for (int y = 1; y < GRIDSIZE - 1; y++)
 	{
-		for (int x = 0; x < GRIDSIZE * GRIDSIZE; x++)
-			q_x[idx] = LimitFlowRate(q[idx], h[idx], h[min(idx_xplus, GRIDSIZE * GRIDSIZE - 1)]);
-			q_y[idx] = LimitFlowRate(q[idx], h[idx], h[min(idx_yplus, GRIDSIZE * GRIDSIZE - 1)]);
+		for (int x = 1; x < GRIDSIZE - 1; x++)
+		{
+			q_x[idx] = LimitFlowRate(q_x[idx], h[idx], h[idx_xplus]);
+			q_y[idx] = LimitFlowRate(q_y[idx], h[idx], h[idx_yplus]);
+		}
 	}
-	
+	// handle boundaries!!
 }
