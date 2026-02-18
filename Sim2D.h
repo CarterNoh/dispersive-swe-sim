@@ -14,6 +14,7 @@ const float Depth[DEPTH_NUM] = { 1.f, 4.f, 16.f, 64.f };
 #define TERRAIN_HEIGHT_SCALE_INIT 20.f // 20 or 40
 #define CFL_CONDITION 0.25f  // max allowed CFL condition for stability
 #define MIN_WATER_HEIGHT 0.01f  // minimum water height for stability
+#define BOUNDARY_TYPE 1 // 0 = wall, 1 = free, 2 = zero, 3 = periodic
 
 // diffusion parameters
 #define DIFFUSION_ITERATIONS 128
@@ -26,11 +27,6 @@ const float Depth[DEPTH_NUM] = { 1.f, 4.f, 16.f, 64.f };
 // helpful shortcuts
 #define GRAVITY 9.80665
 #define PI 3.14159265359  // used in FFT stencil code
-#define idx y * GRIDSIZE + x
-#define idx_xplus y * GRIDSIZE + x + 1
-#define idx_xminus y * GRIDSIZE + x - 1
-#define idx_yplus (y + 1) * GRIDSIZE + x
-#define idx_yminus (y - 1) * GRIDSIZE + x
 
 class Sim
 {

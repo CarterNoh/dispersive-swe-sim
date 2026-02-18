@@ -7,6 +7,12 @@
 // Helper functions
 // ********************************************************************************************************************
 
+inline int idx(int x, int y)
+{
+	return y * GRIDSIZE + x;
+}
+
+
 inline float LimitFlowRate(float flow_rate_in, float waterDepth_left, float waterDepth_right)
 {
 	if (flow_rate_in >= 0.f)
@@ -33,15 +39,15 @@ int StopFlowOnTerrainBoundary(int x, int y, float* h, float* terrain)
 	int result = 0;
 
 	// Test x boundary
-	if ((h[idx] <= MIN_WATER_HEIGHT) && (terrain[idx] >= terrain[idx_xplus] + h[idx_xplus])) // positive q_x
+	if ((h[idx(x,y)] <= MIN_WATER_HEIGHT) && (terrain[idx(x,y)] >= terrain[idx(x+1,y)] + h[idx(x+1,y)])) // positive q_x
 		result_x = 1;
-	if ((h[idx_xplus] <= MIN_WATER_HEIGHT) && (terrain[idx_xplus] > terrain[idx] + h[idx])) // negative q_x
+	if ((h[idx(x+1,y)] <= MIN_WATER_HEIGHT) && (terrain[idx(x+1,y)] > terrain[idx(x,y)] + h[idx(x,y)])) // negative q_x
 		result_x = 1;
 
 	// Test y boundary
-	if ((h[idx] <= MIN_WATER_HEIGHT) && (terrain[idx] >= terrain[idx_yplus] + h[idx_yplus])) // positive q_y
+	if ((h[idx(x,y)] <= MIN_WATER_HEIGHT) && (terrain[idx(x,y)] >= terrain[idx(x,y+1)] + h[idx(x,y+1)])) // positive q_y
 		result_y = 1;
-	if ((h[idx_yplus] <= MIN_WATER_HEIGHT) && (terrain[idx_yplus] > terrain[idx] + h[idx])) // negative q_y
+	if ((h[idx(x,y+1)] <= MIN_WATER_HEIGHT) && (terrain[idx(x,y+1)] > terrain[idx(x,y)] + h[idx(x,y)])) // negative q_y
 		result_y = 1;
 
 	// Combine results
@@ -62,9 +68,9 @@ int StopFlowOnTerrainBoundary(int x, int y, float* h, float* terrain)
 // 	{
 // 		for (int x = 0; x < GRIDSIZE; x++)
 // 			if (fabs((float)(x) / GRIDSIZE - xCoord) < size)
-// 					h[idx] = max(0.f, h[idx] + factor * 1.f);
-// 		h[0] = 0.0f;
-// 		h[GRIDSIZE - 1] = 0.0f;
+// 					h[idx(x,y)] = max(0.f, h[idx(x,y)] + factor * 1.f);
+// 		h[idx(0,y)] = 0.0f;
+// 		h[idx(GRIDSIZE - 1,y)] = 0.0f;
 // 	}
 // }
 
@@ -133,6 +139,26 @@ void HandleWallBoundary(float* field)
 	}
 }
 
+void HandleFreeBoundary(float* field)
+{
+	// Free boundary: extrapolate values from interior to boundaries using linear extrapolation
+
+	// Handle Top and Bottom Edges (Horizontal)
+	for (int x = 0; x < GRIDSIZE; ++x) {
+		// Top Edge
+		field[idx(x, 0)] = 2.f * field[idx(x, 1)] - field[idx(x, 2)];
+		// Bottom Edge
+		field[idx(x, GRIDSIZE - 1)] = 2.f * field[idx(x, GRIDSIZE - 2)] - field[idx(x, GRIDSIZE - 3)];
+	}
+	// Handle Left and Right Edges (Vertical)
+	for (int y = 0; y < GRIDSIZE; ++y) {
+		// Left Edge
+		field[idx(0, y)] = 2.f * field[idx(1, y)] - field[idx(2, y)];
+		// Right Edge
+		field[idx(GRIDSIZE - 1, y)] = 2.f * field[idx(GRIDSIZE - 2, y)] - field[idx(GRIDSIZE - 3, y)];
+	}
+}
+
 void HandleZeroBoundary(float* field)
 {
 	// Handle Top and Bottom Edges (Horizontal)
@@ -151,30 +177,34 @@ void HandleZeroBoundary(float* field)
 	}
 }
 
-void HandleFreeBoundary(float* field)
+void HandlePeriodicBoundary(float* field)
 {
 	// Handle Top and Bottom Edges (Horizontal)
 	for (int x = 0; x < GRIDSIZE; ++x) {
 		// Top Edge
-		field[idx(x, 0)] = 2.f * field[idx(x, 1)] - field[idx(x, 2)];
+		field[idx(x, 0)] = field[idx(x, GRIDSIZE - 2)];
 		// Bottom Edge
-		field[idx(x, GRIDSIZE - 1)] = 2.f * field[idx(x, GRIDSIZE - 2)] - field[idx(x, GRIDSIZE - 3)];
+		field[idx(x, GRIDSIZE - 1)] = field[idx(x, 1)];
 	}
 	// Handle Left and Right Edges (Vertical)
 	for (int y = 0; y < GRIDSIZE; ++y) {
 		// Left Edge
-		field[idx(0, y)] = 2.f * field[idx(1, y)] - field[idx(2, y)];
+		field[idx(0, y)] = field[idx(GRIDSIZE - 2, y)];
 		// Right Edge
-		field[idx(GRIDSIZE - 1, y)] = 2.f * field[idx(GRIDSIZE - 2, y)] - field[idx(GRIDSIZE - 3, y)];
+		field[idx(GRIDSIZE - 1, y)] = field[idx(1, y)];
 	}
 }
 
-void ApplyBoundaries(float* field, bool isWall)
+void ApplyBoundaries(float* field, int type)
 {
-	if (isWall)
+	if (type == 0)
 		HandleWallBoundary(field);
-	else
+	else if (type == 1)
 		HandleFreeBoundary(field);
+	else if (type == 2)
+		HandleZeroBoundary(field);
+	else if (type == 3)
+		HandlePeriodicBoundary(field);
 }
 
 // ********************************************************************************************************************
@@ -302,37 +332,37 @@ void Sim::DecompositionStep(bool SWEonly)
 		for (int x = 1; x < GRIDSIZE-1; x++)
 		{
 			// Identify the correct height (sigma) to use for diffusivity calculation
-			alpha_H[idx] = 0.f;
+			alpha_H[idx(x,y)] = 0.f;
 
 			// // Their implementation: using averages (I assume to improve stability, but reduces accuracy?)
-			// float maxGround = max(terrain[idx], terrain[idx_xplus], terrain[idx_yplus]); // Why do this?
-			// float minWaterlevel = (H[idx] + H[idx_xplus] + H[idx_yplus]) / 3.f; // Why average here?
-			// if ((h[idx] > 0.f) && (h[idx_xplus] > 0.f) && (h[idx_yplus] > 0.f))
+			// float maxGround = max(terrain[idx(x,y)], terrain[idx(x+1,y)], terrain[idx(x,y+1)]); // Why do this?
+			// float minWaterlevel = (H[idx(x,y)] + H[idx(x+1,y)] + H[idx(x,y+1)]) / 3.f; // Why average here?
+			// if ((h[idx(x,y)] > 0.f) && (h[idx(x+1,y)] > 0.f) && (h[idx(x,y+1)] > 0.f))
 			// {
 			// 	static const float sigma_max = 8.f;
 			// // they limit diffusion coefficient to between 0 and 1, but that isn't requred by the math = maybe for stability?
 			// 	float sigma = min(sigma_max, max(0.f, minWaterlevel - maxGround));
-			// 	alpha_H[idx] = sigma * sigma / (2*DELTA_T*DIFFUSION_ITERATIONS);
+			// 	alpha_H[idx(x,y)] = sigma * sigma / (2*DELTA_T*DIFFUSION_ITERATIONS);
 			// } 
 
 			// My implementation: using local cell values only to align with eqn from paper
-			if (h[idx] > 0.f)
+			if (h[idx(x,y)] > 0.f)
 			{
 				float denom = 2*DELTA_T*DIFFUSION_ITERATIONS;
-				alpha_H[idx] = h[idx] * h[idx] / denom;
-				alpha_H[idx] = min(std::sqrt(denom), alpha_H[idx]); // clamp to improve stability; limits max depth to 
+				alpha_H[idx(x,y)] = h[idx(x,y)] * h[idx(x,y)] / denom;
+				alpha_H[idx(x,y)] = min(std::sqrt(denom), alpha_H[idx(x,y)]); // clamp to improve stability; limits max depth to 
 			}
 			
 			// Extra gradient filter
 			// NOTE: they used H, I switched it to h to stay strict with the paper. We'll see if this causes bugs. 
-			float gradient_x = (h[idx_xplus] - h[idx]) / CELLSIZE; // could use central difference here
-			float gradient_y = (h[idx_yplus] - h[idx]) / CELLSIZE;
-			alpha_H[idx] *= exp(- DIFFUSION_PENALTY * (gradient_x * gradient_x + gradient_y * gradient_y));
-			alpha_Q[idx] = 0.5f * (alpha_H[idx_xminus] + alpha_H[idx]); // Where does this come from??
+			float gradient_x = (h[idx(x+1,y)] - h[idx(x,y)]) / CELLSIZE; // could use central difference here
+			float gradient_y = (h[idx(x,y+1)] - h[idx(x,y)]) / CELLSIZE;
+			alpha_H[idx(x,y)] *= exp(- DIFFUSION_PENALTY * (gradient_x * gradient_x + gradient_y * gradient_y));
+			alpha_Q[idx(x,y)] = 0.5f * (alpha_H[idx(x-1,y)] + alpha_H[idx(x,y)]); // Where does this come from??
 		}
 	}
-	ApplyBoundaries(alpha_H, true);
-	ApplyBoundaries(alpha_Q, true);
+	ApplyBoundaries(alpha_H, BOUNDARY_TYPE);
+	ApplyBoundaries(alpha_Q, BOUNDARY_TYPE);
 	
 	// Run diffusion to low-pass filter H and Q
 	// SOMEDAY: Improve this implementation of diffusion by replacing Euler integration with FFT or something
@@ -349,28 +379,28 @@ void Sim::DecompositionStep(bool SWEonly)
 			for (int x = 1; x < GRIDSIZE - 1; x++)
 			{
 				// Diffusion step for H: dH/dt = Del * ( alpha_H * Del H )
-				float dH_x = (alpha_H[idx] * (H_past[idx_xplus] - H_past[idx]) - alpha_H[idx_xminus] * (H_past[idx] - H_past[idx_xminus]));
-				float dH_y = (alpha_H[idx] * (H_past[idx_yplus] - H_past[idx]) - alpha_H[idx_yminus] * (H_past[idx] - H_past[idx_yminus]));
+				float dH_x = (alpha_H[idx(x,y)] * (H_past[idx(x+1,y)] - H_past[idx(x,y)]) - alpha_H[idx(x-1,y)] * (H_past[idx(x,y)] - H_past[idx(x-1,y)]));
+				float dH_y = (alpha_H[idx(x,y)] * (H_past[idx(x,y+1)] - H_past[idx(x,y)]) - alpha_H[idx(x,y-1)] * (H_past[idx(x,y)] - H_past[idx(x,y-1)]));
 				float dHdT = (dH_x + dH_y) / (CELLSIZE*CELLSIZE);
-				H[idx] = H_past[idx] + DELTA_T * dHdT;
-				H[idx] = max(terrain[idx], H[idx]); // ensure water surface is above terrain
+				H[idx(x,y)] = H_past[idx(x,y)] + DELTA_T * dHdT;
+				H[idx(x,y)] = max(terrain[idx(x,y)], H[idx(x,y)]); // ensure water surface is above terrain
 
 				// Diffusion step for Q: dQ/dt = Del * ( alpha_Q * Del Q )
 				// Q has two components, so we do them separately
-				float dQ_x_x = (alpha_Q[idx] * (Q_past_x[idx_xplus] - Q_past_x[idx]) - alpha_Q[idx_xminus] * (Q_past_x[idx] - Q_past_x[idx_xminus]));
-				float dQ_x_y = (alpha_Q[idx] * (Q_past_x[idx_yplus] - Q_past_x[idx]) - alpha_Q[idx_yminus] * (Q_past_x[idx] - Q_past_x[idx_yminus]));
+				float dQ_x_x = (alpha_Q[idx(x,y)] * (Q_past_x[idx(x+1,y)] - Q_past_x[idx(x,y)]) - alpha_Q[idx(x-1,y)] * (Q_past_x[idx(x,y)] - Q_past_x[idx(x-1,y)]));
+				float dQ_x_y = (alpha_Q[idx(x,y)] * (Q_past_x[idx(x,y+1)] - Q_past_x[idx(x,y)]) - alpha_Q[idx(x,y-1)] * (Q_past_x[idx(x,y)] - Q_past_x[idx(x,y-1)]));
 				float dQdT_x = (dQ_x_x + dQ_x_y) / (CELLSIZE*CELLSIZE);
-				Q_x[idx] = Q_past_x[idx] + DELTA_T * dQdT_x;
-				float dQ_y_x = (alpha_Q[idx] * (Q_past_y[idx_yplus] - Q_past_y[idx]) - alpha_Q[idx_yminus] * (Q_past_y[idx] - Q_past_y[idx_yminus]));
-				float dQ_y_y = (alpha_Q[idx] * (Q_past_y[idx_xplus] - Q_past_y[idx]) - alpha_Q[idx_xminus] * (Q_past_y[idx] - Q_past_y[idx_xminus]));
+				Q_x[idx(x,y)] = Q_past_x[idx(x,y)] + DELTA_T * dQdT_x;
+				float dQ_y_x = (alpha_Q[idx(x,y)] * (Q_past_y[idx(x,y+1)] - Q_past_y[idx(x,y)]) - alpha_Q[idx(x,y-1)] * (Q_past_y[idx(x,y)] - Q_past_y[idx(x,y-1)]));
+				float dQ_y_y = (alpha_Q[idx(x,y)] * (Q_past_y[idx(x+1,y)] - Q_past_y[idx(x,y)]) - alpha_Q[idx(x-1,y)] * (Q_past_y[idx(x,y)] - Q_past_y[idx(x-1,y)]));
 				float dQdT_y = (dQ_y_x + dQ_y_y) / (CELLSIZE*CELLSIZE);
-				Q_y[idx] = Q_past_y[idx] + DELTA_T * dQdT_y;
+				Q_y[idx(x,y)] = Q_past_y[idx(x,y)] + DELTA_T * dQdT_y;
 			}
 		}
 	}
-	ApplyBoundaries(H, true);
-	ApplyBoundaries(Q_x, true);
-	ApplyBoundaries(Q_y, true);
+	ApplyBoundaries(H, BOUNDARY_TYPE);
+	ApplyBoundaries(Q_x, BOUNDARY_TYPE);
+	ApplyBoundaries(Q_y, BOUNDARY_TYPE);
 
 	// final conversion to individual solver quantities
 	hbar = max(0.f, H - terrain);
@@ -388,13 +418,13 @@ void Sim::DecompositionStep(bool SWEonly)
 			int stop_flow = StopFlowOnTerrainBoundary(x, y, h, terrain);
 			if (stop_flow & 1)  // stop flow in x direction
 			{
-				qbar_x[idx] = 0.f;
-				qtilde_x[idx] = 0.f;
+				qbar_x[idx(x,y)] = 0.f;
+				qtilde_x[idx(x,y)] = 0.f;
 			}
 			if (stop_flow & 2)  // stop flow in y direction
 			{
-				qbar_y[idx] = 0.f;
-				qtilde_y[idx] = 0.f;
+				qbar_y[idx(x,y)] = 0.f;
+				qtilde_y[idx(x,y)] = 0.f;
 			}
 		}
 	}
@@ -472,24 +502,24 @@ void Sim::SWEStep()
 	{
 		for (int x = 0; x < GRIDSIZE; x++)
 		{
-			ubar_x[idx] = qbar_x[idx];
-			ubar_y[idx] = qbar_y[idx];
+			ubar_x[idx(x,y)] = qbar_x[idx(x,y)];
+			ubar_y[idx(x,y)] = qbar_y[idx(x,y)];
 
 			// First-Order Up-Winding
 			// SOMEDAY: Try interpolating h or using higher-order upwinding for better accuracy?
 			// Technically u = q / H, not h?? Different derivations differ here
-			if (ubar_x[idx] >= 0.f || x == GRIDSIZE-1)
-				ubar_x[idx] /= max(MIN_WATER_HEIGHT, hbarOld[idx]);
+			if (ubar_x[idx(x,y)] >= 0.f || x == GRIDSIZE-1)
+				ubar_x[idx(x,y)] /= max(MIN_WATER_HEIGHT, hbarOld[idx(x,y)]);
 			else
-				ubar_x[idx] /= max(MIN_WATER_HEIGHT, hbarOld[idx_xplus]);
-			if (ubar_y[idx] >= 0.f || y == GRIDSIZE-1)
-				ubar_y[idx] /= max(MIN_WATER_HEIGHT, hbarOld[idx]);
+				ubar_x[idx(x,y)] /= max(MIN_WATER_HEIGHT, hbarOld[idx(x+1,y)]);
+			if (ubar_y[idx(x,y)] >= 0.f || y == GRIDSIZE-1)
+				ubar_y[idx(x,y)] /= max(MIN_WATER_HEIGHT, hbarOld[idx(x,y)]);
 			else
-				ubar_y[idx] /= max(MIN_WATER_HEIGHT, hbarOld[idx_yplus]);
+				ubar_y[idx(x,y)] /= max(MIN_WATER_HEIGHT, hbarOld[idx(x,y+1)]);
 
 			// Enforcing CFL condition for later surface waves advection
-			ubar_x[idx] = LimitVelocity(ubar_x[idx]);  
-			ubar_y[idx] = LimitVelocity(ubar_y[idx]);  
+			ubar_x[idx(x,y)] = LimitVelocity(ubar_x[idx(x,y)]);  
+			ubar_y[idx(x,y)] = LimitVelocity(ubar_y[idx(x,y)]);  
 		}
 	}
 	memcpy(hbarOld, hbar, GRIDSIZE * GRIDSIZE * sizeof(float));   // store current hbar for next timestep
@@ -504,10 +534,10 @@ void Sim::SWEStep()
 		{
 			// Compute intermediate values needed for du/dt calculations
 			// Need: q_x/y_ij, q_x_i-0.5_j, q_y_i_j-0.5, 
-			// 	     h_i+0.5_j, h_i_j+0.5, h_ij=hbar[idx], h_i+1_j=hbar[idx_xplus], h_i_j+1=hbar[idx_yplus],
-			//       u_x_i+0.5_j=ubar_x[idx], u_x_i-0.5_j=ubar_x[idx_xminus], 
-			//       u_y_i_j+0.5=ubar_y[idx], u_y_i_j-0.5=ubar_y[idx_yminus], 
-			//       u_x_i+0.5_j-1=ubar_x[idx_yminus], u_y_i-1_j+0.5=ubar_y[idx_xminus]
+			// 	     h_i+0.5_j, h_i_j+0.5, h_ij=hbar[idx(x,y)], h_i+1_j=hbar[idx(x+1,y)], h_i_j+1=hbar[idx(x,y+1)],
+			//       u_x_i+0.5_j=ubar_x[idx(x,y)], u_x_i-0.5_j=ubar_x[idx(x-1,y)], 
+			//       u_y_i_j+0.5=ubar_y[idx(x,y)], u_y_i_j-0.5=ubar_y[idx(x,y-1)], 
+			//       u_x_i+0.5_j-1=ubar_x[idx(x,y-1)], u_y_i-1_j+0.5=ubar_y[idx(x-1,y)]
 			// Note: The 1D implementaiton uses far more intermeidate values that the paper, and I don't know why. 
 			// The commented sections below are the conversion of their 1D code with all its complexity, and the 
 			// uncommented sections are my simplified version that tries to stay more true to the paper. We'll see 
@@ -516,112 +546,112 @@ void Sim::SWEStep()
 			////// X DIRECTION //////
 			// Use upwinding to evaluate q_(i-0.5,j), q_(i+0.5,j), q_(i+1.5,j) 
 			// for x direction to get q_x_(i,j), q_x_(i+1,j)
-			float q_x_m05 = ubar_x[idx_xminus];
+			float q_x_m05 = ubar_x[idx(x-1,y)];
 			if (q_x_m05 >= 0.f)
-				q_x_m05 *= hbar[idx_xminus];
+				q_x_m05 *= hbar[idx(x-1,y)];
 			else
-				q_x_m05 *= hbar[idx];
-			float q_x_p05 = ubar_x[idx];  
+				q_x_m05 *= hbar[idx(x,y)];
+			float q_x_p05 = ubar_x[idx(x,y)];  
 			if (q_x_p05 >= 0.f)
-				q_x_p05 *= hbar[idx];
+				q_x_p05 *= hbar[idx(x,y)];
 			else
-				q_x_p05 *= hbar[idx_xplus];
+				q_x_p05 *= hbar[idx(x+1,y)];
 			float q_x_0 = 0.5f * (q_x_m05 + q_x_p05);
-			// float q_x_p15 = ubar_x[idx_xplus];  //q_(i+1.5,j) = hfr at position x
+			// float q_x_p15 = ubar_x[idx(x+1,y)];  //q_(i+1.5,j) = hfr at position x
 			// if (q_x_p15 >= 0.f)
-			// 	q_x_p15 *= hbar[idx_xplus];
+			// 	q_x_p15 *= hbar[idx(x+1,y)];
 			// else
-			// 	q_x_p15 *= hbar[min(idx_xplus + 1, GRIDSIZE - 1)];
+			// 	q_x_p15 *= hbar[min(idx(x+1,y) + 1, GRIDSIZE - 1)];
 			// float q_x_p1 = 0.5f * (q_x_p05 + q_x_p15);
 			// Calculate corresponding vaules for u_x_(i,j) using upwinding
 			// (why do we use upwinding here instead of averaging like q?)
 			// float u_star_x_0 = 0.f;
 			// if (q_x_0 >= 0.f)
-			// 	u_star_x_0 = ubar_x[idx_xminus];
+			// 	u_star_x_0 = ubar_x[idx(x-1,y)];
 			// else
-			// 	u_star_x_0 = ubar_x[idx];
+			// 	u_star_x_0 = ubar_x[idx(x,y)];
 			// float u_star_x_p1 = 0.f;
 			// if (q_x_p1 > 0.f)
-			// 	u_star_x_p1 = ubar_x[idx];
+			// 	u_star_x_p1 = ubar_x[idx(x,y)];
 			// else
-			// 	u_star_x_p1 = ubar_x[idx_xplus];
+			// 	u_star_x_p1 = ubar_x[idx(x+1,y)];
 
 			// Calculate h_(i+0.5,j) and h_(i-0.5,j) using upwinding
-			// float h_avg_x_p05 = (hbar[idx] + hbar[idx_xplus]) / 2.f; // averaging, for some reason the old paper used this
+			// float h_avg_x_p05 = (hbar[idx(x,y)] + hbar[idx(x+1,y)]) / 2.f; // averaging, for some reason the old paper used this
 			float h_x_p05 = 0.f;
-			if (ubar_x[idx] >= 0.f)
-				h_x_p05 = hbar[idx];
+			if (ubar_x[idx(x,y)] >= 0.f)
+				h_x_p05 = hbar[idx(x,y)];
 			else
-				h_x_p05 = hbar[idx_xplus];
+				h_x_p05 = hbar[idx(x+1,y)];
 
 
 			/////// Y DIRECTION //////
 			// Use upwinding to evaluate q_(i,j-0.5), q_(i,j+0.5), q_(i,j+1.5) 
 			// for y direction to get q_y_(i,j), q_y_(i,j+1)
-			float q_y_m05 = ubar_y[idx_yminus];
+			float q_y_m05 = ubar_y[idx(x,y-1)];
 			if (q_y_m05 >= 0.f)
-				q_y_m05 *= hbar[idx_yminus];
+				q_y_m05 *= hbar[idx(x,y-1)];
 			else
-				q_y_m05 *= hbar[idx];
-			float q_y_p05 = ubar_y[idx];  
+				q_y_m05 *= hbar[idx(x,y)];
+			float q_y_p05 = ubar_y[idx(x,y)];  
 			if (q_y_p05 >= 0.f)
-				q_y_p05 *= hbar[idx];
+				q_y_p05 *= hbar[idx(x,y)];
 			else
-				q_y_p05 *= hbar[idx_yplus];
+				q_y_p05 *= hbar[idx(x,y+1)];
 			float q_y_0 = 0.5f * (q_y_m05 + q_y_p05);
-			// float q_y_p15 = ubar_y[idx_yplus];  //q_(i,j+1.5) = hfr at position y
+			// float q_y_p15 = ubar_y[idx(x,y+1)];  //q_(i,j+1.5) = hfr at position y
 			// if (q_y_p15 >= 0.f)
-			// 	q_y_p15 *= hbar[idx_yplus];
+			// 	q_y_p15 *= hbar[idx(x,y+1)];
 			// else
-			// 	q_y_p15 *= hbar[min(idx_yplus + GRIDSIZE, GRIDSIZE * GRIDSIZE - 1)];
+			// 	q_y_p15 *= hbar[min(idx(x,y+2), GRIDSIZE * GRIDSIZE - 1)];
 			// float q_y_p1 = 0.5f * (q_y_p05 + q_y_p15);
 			// Calculate corresponding vaules for u_y_(i,j) using upwinding
 			// float u_star_y_0 = 0.f;
 			// if (q_y_0 >= 0.f)
-			// 	u_star_y_0 = ubar_y[idx_yminus];
+			// 	u_star_y_0 = ubar_y[idx(x,y-1)];
 			// else
-			// 	u_star_y_0 = ubar_y[idx_yplus];
+			// 	u_star_y_0 = ubar_y[idx(x,y+1)];
 			// float u_star_y_p1 = 0.f;
 			// if (q_y_p1 > 0.f)
-			// 	u_star_y_p1 = ubar_y[idx];
+			// 	u_star_y_p1 = ubar_y[idx(x,y)];
 			// else
-			// 	u_star_y_p1 = ubar_y[idx_yplus];
+			// 	u_star_y_p1 = ubar_y[idx(x,y+1)];
 
 			// Calculate h_(i,j+0.5) and h_(i,j-0.5) using upwinding
 			float h_y_p05 = 0.f;
-			if (ubar_y[idx] >= 0.f)
-				h_y_p05 = hbar[idx];
+			if (ubar_y[idx(x,y)] >= 0.f)
+				h_y_p05 = hbar[idx(x,y)];
 			else
-				h_y_p05 = hbar[idx_yplus];
+				h_y_p05 = hbar[idx(x,y+1)];
 
 
 			// Compute dux_dt and duy_dt
 			// X DIRECTION
-			float dux_dt = - (1/CELLSIZE) * ((q_x_0/h_x_p05) * (ubar_x[idx] - ubar_x[idx_xminus]) + (q_y_m05/h_x_p05) * (ubar_x[idx] - ubar_x[idx_yminus]) + GRAVITY * (H[idx_xplus] - H[idx]));
-			ubarNew_x[idx] = ubar_x[idx] + TIMESTEP * dux_dt;
-			ubarNew_x[idx] = LimitVelocity(ubarNew_x[idx]);  // Enforcing CFL condition
+			float dux_dt = - (1/CELLSIZE) * ((q_x_0/h_x_p05) * (ubar_x[idx(x,y)] - ubar_x[idx(x-1,y)]) + (q_y_m05/h_x_p05) * (ubar_x[idx(x,y)] - ubar_x[idx(x,y-1)]) + GRAVITY * (H[idx(x+1,y)] - H[idx(x,y)]));
+			ubarNew_x[idx(x,y)] = ubar_x[idx(x,y)] + TIMESTEP * dux_dt;
+			ubarNew_x[idx(x,y)] = LimitVelocity(ubarNew_x[idx(x,y)]);  // Enforcing CFL condition
 			// Y DIRECTION
-			float duy_dt = - (1/CELLSIZE) * ((q_y_0/h_y_p05) * (ubar_y[idx] - ubar_y[idx_yminus]) + (q_x_m05/h_y_p05) * (ubar_y[idx] - ubar_y[idx_xminus]) + GRAVITY * (H[idx_yplus] - H[idx]));
-			ubarNew_y[idx] = ubar_y[idx] + TIMESTEP * duy_dt;
-			ubarNew_y[idx] = LimitVelocity(ubarNew_y[idx]);  // Enforcing CFL condition
+			float duy_dt = - (1/CELLSIZE) * ((q_y_0/h_y_p05) * (ubar_y[idx(x,y)] - ubar_y[idx(x,y-1)]) + (q_x_m05/h_y_p05) * (ubar_y[idx(x,y)] - ubar_y[idx(x-1,y)]) + GRAVITY * (H[idx(x,y+1)] - H[idx(x,y)]));
+			ubarNew_y[idx(x,y)] = ubar_y[idx(x,y)] + TIMESTEP * duy_dt;
+			ubarNew_y[idx(x,y)] = LimitVelocity(ubarNew_y[idx(x,y)]);  // Enforcing CFL condition
 		}
 	}
-	ApplyBoundaries(ubarNew_x, true);
-	ApplyBoundaries(ubarNew_y, true);
+	ApplyBoundaries(ubarNew_x, BOUNDARY_TYPE);
+	ApplyBoundaries(ubarNew_y, BOUNDARY_TYPE);
 
 	// transfer back to flow rate using *most recent* hbar
 	for (int y = 0; y < GRIDSIZE; y++)
 	{
 		for (int x = 0; x < GRIDSIZE; x++)
 		{
-			if (ubarNew_x[idx] >= 0.f || x == GRIDSIZE-1)
-				qbar_x[idx] = ubarNew_x[idx] * hbar[idx];
+			if (ubarNew_x[idx(x,y)] >= 0.f || x == GRIDSIZE-1)
+				qbar_x[idx(x,y)] = ubarNew_x[idx(x,y)] * hbar[idx(x,y)];
 			else
-				qbar_x[idx] = ubarNew_x[idx] * hbar[idx_xplus];
-			if (ubarNew_y[idx] >= 0.f || y == GRIDSIZE-1)
-				qbar_y[idx] = ubarNew_y[idx] * hbar[idx];
+				qbar_x[idx(x,y)] = ubarNew_x[idx(x,y)] * hbar[idx(x+1,y)];
+			if (ubarNew_y[idx(x,y)] >= 0.f || y == GRIDSIZE-1)
+				qbar_y[idx(x,y)] = ubarNew_y[idx(x,y)] * hbar[idx(x,y)];
 			else
-				qbar_y[idx] = ubarNew_y[idx] * hbar[idx_yplus];
+				qbar_y[idx(x,y)] = ubarNew_y[idx(x,y)] * hbar[idx(x,y+1)];
 		}
 	}
 }
@@ -643,22 +673,22 @@ void Sim::TransportStep()
 			// extract row and column for cubic sampling
 			float local_x[GRIDSIZE];
 			float local_y[GRIDSIZE];
-			ExtractLocal(local_x, qtilde_x_dummy, idx, false);
-			ExtractLocal(local_y, qtilde_y_dummy, idx, true);
+			ExtractLocal(local_x, qtilde_x_dummy, idx(x,y), false);
+			ExtractLocal(local_y, qtilde_y_dummy, idx(x,y), true);
 
 			// 
-			float bulkVelocity_x = 0.5f * (ubarNew_x[idx] + ubar_x[idx]);
-			float bulkVelocity_y = 0.5f * (ubarNew_y[idx] + ubar_y[idx]);
+			float bulkVelocity_x = 0.5f * (ubarNew_x[idx(x,y)] + ubar_x[idx(x,y)]);
+			float bulkVelocity_y = 0.5f * (ubarNew_y[idx(x,y)] + ubar_y[idx(x,y)]);
 			float step_x = - bulkVelocity_x * TIMESTEP / CELLSIZE; // unitless (cells)
 			float step_y = - bulkVelocity_y * TIMESTEP / CELLSIZE; // unitless (cells)
-			qtilde_x[idx] = SampleCubicClamped(x + step_x, local_x);
-			qtilde_y[idx] = SampleCubicClamped(y + step_y, local_y);
-			if (((bulkVelocity_x >= 0.f) && (h[idx] < 0.01f)) ||
-				((bulkVelocity_x < 0.f) && (h[min(idx_xplus, (y + 1) * GRIDSIZE - 1)] < 0.01f)))
-				qtilde_x[idx] = 0.f;
-			if (((bulkVelocity_y >= 0.f) && (h[idx] < 0.01f)) ||
-				((bulkVelocity_y < 0.f) && (h[min(idx_yplus, (y + 1) * GRIDSIZE - 1)] < 0.01f)))
-				qtilde_y[idx] = 0.f;
+			qtilde_x[idx(x,y)] = SampleCubicClamped(x + step_x, local_x);
+			qtilde_y[idx(x,y)] = SampleCubicClamped(y + step_y, local_y);
+			if (((bulkVelocity_x >= 0.f) && (h[idx(x,y)] < MIN_WATER_HEIGHT)) ||
+				((bulkVelocity_x < 0.f) && (h[idx(x+1,y)] < MIN_WATER_HEIGHT)))
+				qtilde_x[idx(x,y)] = 0.f;
+			if (((bulkVelocity_y >= 0.f) && (h[idx(x,y)] < MIN_WATER_HEIGHT)) ||
+				((bulkVelocity_y < 0.f) && (h[idx(x,y+1)] < MIN_WATER_HEIGHT)))
+				qtilde_y[idx(x,y)] = 0.f;
 		}
 	}
 	// handle boundaries!!
@@ -668,10 +698,10 @@ void Sim::TransportStep()
 	{
 		for (int x = 1; x < GRIDSIZE-1; x++)
 		{
-			float ubar_x_m1 = 0.5f * (ubarNew_x[idx_xminus] + ubar_x[idx_xminus]);
-			float ubar_x_p1 = 0.5f * (ubarNew_x[idx_xplus] + ubar_x[idx_xplus]);
-			float ubar_y_m1 = 0.5f * (ubarNew_y[idx_yminus] + ubar_y[idx_yminus]);
-			float ubar_y_p1 = 0.5f * (ubarNew_y[idx_yplus] + ubar_y[idx_yplus]);
+			float ubar_x_m1 = 0.5f * (ubarNew_x[idx(x-1,y)] + ubar_x[idx(x-1,y)]);
+			float ubar_x_p1 = 0.5f * (ubarNew_x[idx(x+1,y)] + ubar_x[idx(x+1,y)]);
+			float ubar_y_m1 = 0.5f * (ubarNew_y[idx(x,y-1)] + ubar_y[idx(x,y-1)]);
+			float ubar_y_p1 = 0.5f * (ubarNew_y[idx(x,y+1)] + ubar_y[idx(x,y+1)]);
 
 			// central difference to get divergence of ubar (using central because q and u are on same grid)
 			float div_ubar_x = (ubar_x_p1 - ubar_x_m1) / (2.f * CELLSIZE);
@@ -682,8 +712,8 @@ void Sim::TransportStep()
 			if (div_ubar < 0.f)
 				div_ubar *= GAMMA;	
 					
-			qtilde_x[idx] *= exp(-div_ubar * TIMESTEP);
-			qtilde_y[idx] *= exp(-div_ubar * TIMESTEP);
+			qtilde_x[idx(x,y)] *= exp(-div_ubar * TIMESTEP);
+			qtilde_y[idx(x,y)] *= exp(-div_ubar * TIMESTEP);
 		}
 	}
 	// handle boundaries!!
@@ -695,13 +725,13 @@ void Sim::TransportStep()
 		for (int x = 1; x < GRIDSIZE-1; x++)
 		{
 			// backward difference to get divergence of ubar (using backward because h is on staggered grid)
-			float div_ubar_x = (ubarNew[idx] - ubarNew[idx_xminus]) / CELLSIZE;
-			float div_ubar_y = (ubarNew[idx] - ubarNew[idx_yminus]) / CELLSIZE;
+			float div_ubar_x = (ubarNew[idx(x,y)] - ubarNew[idx(x-1,y)]) / CELLSIZE;
+			float div_ubar_y = (ubarNew[idx(x,y)] - ubarNew[idx(x,y-1)]) / CELLSIZE;
 			float div_ubar = div_ubar_x + div_ubar_y;
 			// dampen if converging to avoid breaking waves
 			if (div_ubar < 0.f)
 				div_ubar *= GAMMA;
-			htilde[idx] *= exp(-div_ubar * TIMESTEP);
+			htilde[idx(x,y)] *= exp(-div_ubar * TIMESTEP);
 		}
 	}
 
@@ -716,14 +746,14 @@ void Sim::TransportStep()
 			// extract row and column for cubic sampling
 			float local_x[GRIDSIZE];
 			float local_y[GRIDSIZE];
-			ExtractLocal(local_x, htilde, idx, false);
-			ExtractLocal(local_y, htilde, idx, true);
+			ExtractLocal(local_x, htilde, idx(x,y), false);
+			ExtractLocal(local_y, htilde, idx(x,y), true);
 
 			// cubic reconstruction: 1/2 cell accounts for staggered grid, 0.5 * dt accounts for h and u at different 1/2 times
-			float step_x = 0.5f*CELLSIZE - ubarNew_x[idx] * 0.5f * TIMESTEP / CELLSIZE; // unitless (cells)
-			float step_y = 0.5f*CELLSIZE - ubarNew_y[idx] * 0.5f * TIMESTEP / CELLSIZE; 
-			q_x_advect[idx] = ubarNew_x[idx] * SampleCubicClamped(x + step_x, local_x);  
-			q_y_advect[idx] = ubarNew_y[idx] * SampleCubicClamped(y + step_y, local_y);  
+			float step_x = 0.5f*CELLSIZE - ubarNew_x[idx(x,y)] * 0.5f * TIMESTEP / CELLSIZE; // unitless (cells)
+			float step_y = 0.5f*CELLSIZE - ubarNew_y[idx(x,y)] * 0.5f * TIMESTEP / CELLSIZE; 
+			q_x_advect[idx(x,y)] = ubarNew_x[idx(x,y)] * SampleCubicClamped(x + step_x, local_x);  
+			q_y_advect[idx(x,y)] = ubarNew_y[idx(x,y)] * SampleCubicClamped(y + step_y, local_y);  
 		}
 	}
 	// use q_advect to update h using finite volume update: h_new = h_old + dt * (Del . (q + q_advect))
@@ -733,22 +763,22 @@ void Sim::TransportStep()
 	{
 		for (int x = 1; x < GRIDSIZE-1; x++)
 		{
-			float q_x_l = LimitFlowRate(q_x_advect[idx_xminus], h[idx_xminus], h[idx]);
-			float q_x_r = LimitFlowRate(q_x_advect[idx], h[idx], h[idx_xplus]);
-			float q_y_l = LimitFlowRate(q_y_advect[idx_yminus], h[idx_yminus], h[idx]);
-			float q_y_r = LimitFlowRate(q_y_advect[idx], h[idx], h[idx_yplus]);
-			if ( ((h[idx_xminus] == 0.f) && (h[idx] == 0.f)) || (StopFlowOnTerrainBoundary(x-1, y, h, terrain)) )
+			float q_x_l = LimitFlowRate(q_x_advect[idx(x-1,y)], h[idx(x-1,y)], h[idx(x,y)]);
+			float q_x_r = LimitFlowRate(q_x_advect[idx(x,y)], h[idx(x,y)], h[idx(x+1,y)]);
+			float q_y_l = LimitFlowRate(q_y_advect[idx(x,y-1)], h[idx(x,y-1)], h[idx(x,y)]);
+			float q_y_r = LimitFlowRate(q_y_advect[idx(x,y)], h[idx(x,y)], h[idx(x,y+1)]);
+			if ( ((h[idx(x-1,y)] == 0.f) && (h[idx(x,y)] == 0.f)) || (StopFlowOnTerrainBoundary(x-1, y, h, terrain)) )
 				q_x_l = 0.f;
-			if ( ((h[idx] == 0.f) && (h[idx_xplus] == 0.f)) || (StopFlowOnTerrainBoundary(x, y, h, terrain)) )
+			if ( ((h[idx(x,y)] == 0.f) && (h[idx(x+1,y)] == 0.f)) || (StopFlowOnTerrainBoundary(x, y, h, terrain)) )
 				q_x_r = 0.f;
-			if ( ((h[idx_yminus] == 0.f) && (h[idx] == 0.f)) || (StopFlowOnTerrainBoundary(x, y-1, h, terrain)) )
+			if ( ((h[idx(x,y-1)] == 0.f) && (h[idx(x,y)] == 0.f)) || (StopFlowOnTerrainBoundary(x, y-1, h, terrain)) )
 				q_y_l = 0.f;
-			if ( ((h[idx] == 0.f) && (h[idx_yplus] == 0.f)) || (StopFlowOnTerrainBoundary(x, y, h, terrain)) )
+			if ( ((h[idx(x,y)] == 0.f) && (h[idx(x,y+1)] == 0.f)) || (StopFlowOnTerrainBoundary(x, y, h, terrain)) )
 				q_y_r = 0.f;
 
 			// update h using htilde advected through ubar
 			float div_q = (q_x_l - q_x_r + q_y_l - q_y_r) / CELLSIZE;
-			h[idx] = max(0.f, h_dummy[idx] + TIMESTEP * div_q);
+			h[idx(x,y)] = max(0.f, h_dummy[idx(x,y)] + TIMESTEP * div_q);
 		}
 	}
 	// handle boundaries!!
@@ -761,12 +791,12 @@ void Sim::ComputeValues()
 	{
 		for (int x = 1; x < GRIDSIZE - 1; x++)
 		{
-			q_x[idx] = LimitFlowRate(qbar_x[idx] + qtilde_x[idx], h[idx], h[idx_xplus]);
-			q_y[idx] = LimitFlowRate(qbar_y[idx] + qtilde_y[idx], h[idx], h[idx_yplus]);
+			q_x[idx(x,y)] = LimitFlowRate(qbar_x[idx(x,y)] + qtilde_x[idx(x,y)], h[idx(x,y)], h[idx(x+1,y)]);
+			q_y[idx(x,y)] = LimitFlowRate(qbar_y[idx(x,y)] + qtilde_y[idx(x,y)], h[idx(x,y)], h[idx(x,y+1)]);
 			if ( (StopFlowOnTerrainBoundary(x, y, h, terrain)) || (x == 0) || (x >= GRIDSIZE - 2) )
-				q_x[idx] = 0.f;
+				q_x[idx(x,y)] = 0.f;
 			if ( (StopFlowOnTerrainBoundary(x, y, h, terrain)) || (y == 0) || (y >= GRIDSIZE - 2) )
-				q_y[idx] = 0.f;
+				q_y[idx(x,y)] = 0.f;
 		}
 	}
 	// handle boundaries!!
@@ -776,19 +806,18 @@ void Sim::ComputeValues()
 	{
 		for (int x = 1; x < GRIDSIZE - 1; x++)
 		{
-			h[idx] = max(0.f, h[idx] + TIMESTEP * -(q_x[idx] - q_x[idx_xminus]) / CELLSIZE);
+			h[idx(x,y)] = max(0.f, h[idx(x,y)] + TIMESTEP * -(q_x[idx(x,y)] - q_x[idx(x-1,y)]) / CELLSIZE);
 		}
 	}
 	// handle boundaries!!
 	
-
 	// stability measure to not drag too much water from a cell in a single timestep (important for extreme initial conditions)
 	for (int y = 1; y < GRIDSIZE - 1; y++)
 	{
 		for (int x = 1; x < GRIDSIZE - 1; x++)
 		{
-			q_x[idx] = LimitFlowRate(q_x[idx], h[idx], h[idx_xplus]);
-			q_y[idx] = LimitFlowRate(q_y[idx], h[idx], h[idx_yplus]);
+			q_x[idx(x,y)] = LimitFlowRate(q_x[idx(x,y)], h[idx(x,y)], h[idx(x+1,y)]);
+			q_y[idx(x,y)] = LimitFlowRate(q_y[idx(x,y)], h[idx(x,y)], h[idx(x,y+1)]);
 		}
 	}
 	// handle boundaries!!
