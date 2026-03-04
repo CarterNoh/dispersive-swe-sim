@@ -734,9 +734,10 @@ void Sim::TransportStep()
 			htilde[idx(x,y)] *= exp(-div_ubar * TIMESTEP);
 		}
 	}
+	// handle boundaries!!
 
-	// advection of h through ubar
-	// first, construct q_advect = ubar * htilde sampled at cell edges using cubic sampling
+	// Advection of h through ubar
+	// First, construct q_advect = ubar * htilde sampled at cell edges using cubic sampling
 	static float q_x_advect[GRIDSIZE*GRIDSIZE];
 	static float q_y_advect[GRIDSIZE*GRIDSIZE];
 	for (int y = 0; y < GRIDSIZE; y++)
@@ -750,13 +751,13 @@ void Sim::TransportStep()
 			ExtractLocal(local_y, htilde, idx(x,y), true);
 
 			// cubic reconstruction: 1/2 cell accounts for staggered grid, 0.5 * dt accounts for h and u at different 1/2 times
-			float step_x = 0.5f*CELLSIZE - ubarNew_x[idx(x,y)] * 0.5f * TIMESTEP / CELLSIZE; // unitless (cells)
-			float step_y = 0.5f*CELLSIZE - ubarNew_y[idx(x,y)] * 0.5f * TIMESTEP / CELLSIZE; 
+			float step_x = 0.5f - ubarNew_x[idx(x,y)] * 0.5f * TIMESTEP / CELLSIZE;
+			float step_y = 0.5f - ubarNew_y[idx(x,y)] * 0.5f * TIMESTEP / CELLSIZE; 
 			q_x_advect[idx(x,y)] = ubarNew_x[idx(x,y)] * SampleCubicClamped(x + step_x, local_x);  
 			q_y_advect[idx(x,y)] = ubarNew_y[idx(x,y)] * SampleCubicClamped(y + step_y, local_y);  
 		}
 	}
-	// use q_advect to update h using finite volume update: h_new = h_old + dt * (Del . (q + q_advect))
+	// Next, use q_advect to update h using finite volume update: h_new = h_old + dt * (Del . (q + q_advect))
 	float h_dummy[GRIDSIZE*GRIDSIZE];
 	memcpy(h_dummy, h, GRIDSIZE * GRIDSIZE * sizeof(float));
 	for (int y = 1; y < GRIDSIZE-1; y++)
