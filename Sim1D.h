@@ -45,7 +45,7 @@ public:
 
 	// functions
 	Sim();
-	int Sim::Release(void);
+	int  Release(void);
 	void ResetTerrain(int type);
 	void ResetWater(int type, float level);
 	void SimStep(bool SWEonly);													// advects the simulation by one timestep

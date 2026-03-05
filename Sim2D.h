@@ -1,11 +1,11 @@
 #pragma once
 
 #include <vector>
-#include "alglib\fasttransforms.h"  // https://www.alglib.net/download.php#cpp
+// #include "alglib\fasttransforms.h"  // https://www.alglib.net/download.php#cpp
 
 
 // sim parameters
-#define GRIDSIZE 258 	// grid size in one dimension (# cells)
+#define GRIDSIZE 256 	// grid size in one dimension (# cells)
 #define CELLSIZE 1		// cell size in one dimension (meters?/cell)
 #define TIMESTEP (1.f/60.f)
 #define DEPTH_NUM 4
@@ -32,47 +32,71 @@ const float Depth[DEPTH_NUM] = { 1.f, 4.f, 16.f, 64.f };
 class Sim
 {
 public:
-	// variables carried from one timestep to the next
-	std::vector<double> terrain;	// terrain
-	std::vector<double> h;			// overall water height
-	std::vector<double> q_x;		// overall flow rate
-	std::vector<double> q_y;		// overall flow rate
-	std::vector<double> hbarOld;	// last timestep hbar, used for resampling in time
-	std::vector<double> htildeOld;	// last timestep htilde, used for resampling in time
+	// Functions
+	Sim();
+	int Release(void);
+	void SimStep(bool SWEonly);	// ticks the simulation by one timestep using the following substeps:
+	// void ResetTerrain(int type);
+	// void ResetWater(int type, float level);
+	// void EditWaterLocal(float xCoord, float yCoord, float size, float factor);	// add or subtract water locally.
 
-	// variables that could be allocated locally but for potential visualizations we store them globally
-	std::vector<double> hbar;		// bulk height
-	std::vector<double> qbar_x;		// bulk flow rate
-	std::vector<double> qbar_y;		// bulk flow rate
-	std::vector<double> ubar_x;		// bulk velocity
-	std::vector<double> ubar_y;		// bulk velocity
-	std::vector<double> ubarNew_x;	// bulk velocity after SWE step but before transport step
-	std::vector<double> ubarNew_y;	// bulk velocity after SWE step but before transport step
-	std::vector<double> htilde;		// surface height
-	std::vector<double> qtilde_x;	// surface flow rate												
-	std::vector<double> qtilde_y;	// surface flow rate
-	alglib::complex_1d_array htildehat, qtildehat_x, qtildehat_y;	// eWave inputs
-	alglib::complex_1d_array qtildehat_depth_x[DEPTH_NUM];			// eWave outputs
-	alglib::complex_1d_array qtildehat_depth_y[DEPTH_NUM];			// eWave outputs
-
-	// time is exclusively used for video recording
+	// Variables carried from one timestep to the next
+	std::vector<float> h;		// overall water height
+	std::vector<float> terrain;	// terrain
+	std::vector<float> q_x;		// overall flow rate
+	std::vector<float> q_y;		// overall flow rate
 	float time;
-
-	// functions
-	Sim(): {};
-	// Sim();
-	int Sim::Release(void);
-
-	void ResetTerrain(int type);
-	void ResetWater(int type, float level);
-	void EditWaterLocal(float xCoord, float yCoord, float size, float factor);	// add or subtract water locally.
-
-	void SimStep(bool SWEonly);				// advects the simulation by one timestep
+	
+private:
+	// Functions
 	void DecompositionStep(bool SWEonly); 	// bulk vs surface decomposition
-	void eWaveStep(bool SWEonly);			// surface wave simulation step
+	// void eWaveStep(bool SWEonly);			// surface wave simulation step
 	void SWEStep();							// SWE bulk simulation step
 	void TransportStep();					// transport of bulk and surface quantities
 	void ComputeValues();					// compute final h and q values
-	
-															
+
+	// variables carried from one timestep to the next
+	std::vector<float> hbarOld;		// last timestep hbar, used for resampling in time
+	std::vector<float> htildeOld;	// last timestep htilde, used for resampling in time
+
+	// variables that could be allocated locally but we make gloabl so all functions can modify
+	std::vector<float> hbar;		// bulk height
+	std::vector<float> qbar_x;		// bulk flow rate
+	std::vector<float> qbar_y;		// bulk flow rate
+	std::vector<float> htilde;		// surface height
+	std::vector<float> qtilde_x;	// surface flow rate												
+	std::vector<float> qtilde_y;	// surface flow rate
+	std::vector<float> ubar_x;		// bulk velocity
+	std::vector<float> ubar_y;		// bulk velocity
+	std::vector<float> ubarNew_x;	// bulk velocity after SWE step but before transport step
+	std::vector<float> ubarNew_y;	// bulk velocity after SWE step but before transport step
+
+	// Decomposition Variables
+	std::vector<float> alpha_H; 	// diffusion coefficient for height
+	std::vector<float> alpha_Q_x; 	// diffusion coefficient for flow rate in x direction
+	std::vector<float> alpha_Q_y; 	// diffusion coefficient for flow rate in y direction
+	std::vector<float> H; 			// Combined water + terrain height used for diffusion
+	std::vector<float> Q_x; 		// current flow rate in x direction used for diffusion
+	std::vector<float> Q_y; 		// current flow rate in y direction used for diffusion
+	std::vector<float> HPast; 		// Combined water + terrain height from last diffusion iteration
+	std::vector<float> QPast_x; 	// flow rate in x direction from last diffusion iteration
+	std::vector<float> QPast_y; 	// flow rate in y direction from last diffusion iteration
+
+	// eWave Variables
+	// alglib::complex_1d_array htildehat, qtildehat_x, qtildehat_y;	// eWave inputs
+	// alglib::complex_1d_array qtildehat_depth_x[DEPTH_NUM];			// eWave outputs
+	// alglib::complex_1d_array qtildehat_depth_y[DEPTH_NUM];			// eWave outputs
+
+	// SWE Variables
+
+	// Transport Variables
+	std::vector<float> qtildePast_x;// flow rate change in x direction due to advection
+	std::vector<float> qtildePast_y;// flow rate change in y direction due to advection
+	std::vector<float> qAdvect_x; 	// flow rate change in x direction due to advection
+	std::vector<float> qAdvect_y; 	// flow rate change in y direction due to advection
+	std::vector<float> hPast;		// bulk height from last timestep
+
+
+
+
 };
