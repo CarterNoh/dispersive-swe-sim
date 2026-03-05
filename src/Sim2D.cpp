@@ -206,6 +206,7 @@ Sim::Sim()
 {
 	// Define the total number of cells
     size_t totalCells = GRIDSIZE * GRIDSIZE;
+	time = 0.0f;
 
     // Allocate memory for all member vectors
     terrain.resize(totalCells, 0.0);
@@ -217,15 +218,29 @@ Sim::Sim()
     hbar.resize(totalCells, 0.0);
     qbar_x.resize(totalCells, 0.0);
     qbar_y.resize(totalCells, 0.0);
+	htilde.resize(totalCells, 0.0);
+    qtilde_x.resize(totalCells, 0.0);
+    qtilde_y.resize(totalCells, 0.0);
     ubar_x.resize(totalCells, 0.0);
     ubar_y.resize(totalCells, 0.0);
     ubarNew_x.resize(totalCells, 0.0);
     ubarNew_y.resize(totalCells, 0.0);
-    htilde.resize(totalCells, 0.0);
-    qtilde_x.resize(totalCells, 0.0);
-    qtilde_y.resize(totalCells, 0.0);
+	alpha_H.resize(totalCells, 0.0);
+	alpha_Q_x.resize(totalCells, 0.0);
+	alpha_Q_y.resize(totalCells, 0.0);
+	H.resize(totalCells, 0.0);
+	Q_x.resize(totalCells, 0.0);
+	Q_y.resize(totalCells, 0.0);
+	HPast.resize(totalCells, 0.0);
+	QPast_x.resize(totalCells, 0.0);
+	QPast_y.resize(totalCells, 0.0);
+	qtildePast_x.resize(totalCells, 0.0);
+	qtildePast_y.resize(totalCells, 0.0);
+	qAdvect_x.resize(totalCells, 0.0);
+	qAdvect_y.resize(totalCells, 0.0);
+	hPast.resize(totalCells, 0.0);
 
-    time = 0.0f;
+    
     // You can call ResetTerrain(1) and ResetWater(2, 0.f) here once updated
 	// ResetTerrain(1);
 	// ResetWater(2, 0.f);
