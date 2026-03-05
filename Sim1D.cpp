@@ -32,7 +32,7 @@ void Sim::EditWaterLocal(float xCoord, float size, float factor)
 {
 	for (int x = 0; x < GRIDRESOLUTION; x++)
 		if (fabs((float)(x) / GRIDRESOLUTION - xCoord) < size)
-				h[x] = max(0.f, h[x] + factor * 1.f);
+			h[x] = max(0.f, h[x] + factor);
 	h[0] = 0.0f;
 	h[GRIDRESOLUTION - 1] = 0.0f;
 }
