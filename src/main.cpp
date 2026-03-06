@@ -17,18 +17,20 @@ int main() {
 
     // Initialize the simulation
     Sim sim;
+    int size = sim.GRIDSIZE;
 
     // Matplotplusplus setup for 3D surface
     auto f = matplot::figure(true);
     auto ax = f->current_axes();
 
     // Create a 2D grid (vector of vectors) that the plotter understands
-    std::vector<std::vector<double>> Z(GRIDSIZE, std::vector<double>(GRIDSIZE));
-    std::vector<std::vector<double>> T(GRIDSIZE, std::vector<double>(GRIDSIZE));
+    auto [X, Y] = matplot::meshgrid(matplot::linspace(0, size - 1, size), matplot::linspace(0, size - 1, size));
+    std::vector<std::vector<double>> Z(size, std::vector<double>(size));
+    std::vector<std::vector<double>> T(size, std::vector<double>(size));
     // Map flattened terrain to 2D grid T for visualization
-        for (int y = 0; y < GRIDSIZE; ++y) {
-            for (int x = 0; x < GRIDSIZE; ++x) {
-                T[y][x] = static_cast<double>(sim.terrain[y * GRIDSIZE + x]);
+        for (int y = 0; y < size; ++y) {
+            for (int x = 0; x < size; ++x) {
+                T[y][x] = static_cast<double>(sim.terrain[y * size + x]);
             }
         }
 
@@ -41,9 +43,9 @@ int main() {
         sim.SimStep(SWEonly);
 
         // Map flattened array h to 2D grid Z for visualization
-        for (int y = 0; y < GRIDSIZE; ++y) {
-            for (int x = 0; x < GRIDSIZE; ++x) {
-                Z[y][x] = static_cast<double>(sim.h[y * GRIDSIZE + x]);
+        for (int y = 0; y < size; ++y) {
+            for (int x = 0; x < size; ++x) {
+                Z[y][x] = static_cast<double>(sim.h[y * size + x]);
             }
         }
 
@@ -54,8 +56,8 @@ int main() {
         if (visualize && (tick % plotInterval == 0)) {
 
             ax->clear();
-            ax->surf(T); // Plot terrain with some transparency
-            ax->surf(Z, 0.5); // Overlay water surface with some transparency
+            ax->surf(X, Y, T); // Plot terrain with some transparency
+            ax->surf(X, Y, Z); // Overlay water surface with some transparency
             ax->zlim({-15, 25}); 
             ax->title("Tick: " + std::to_string(tick) + " | Frame Time: " + std::to_string(elapsed.count()) + "ms");
             f->draw();
