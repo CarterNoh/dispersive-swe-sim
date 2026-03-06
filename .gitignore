@@ -4,6 +4,11 @@
 /out/
 /bin/
 
+# --- Project Files ---
+/data/
+/frames/
+
+
 # --- IDE Specifics ---
 # Visual Studio
 .vs/

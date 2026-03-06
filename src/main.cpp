@@ -1,43 +1,51 @@
 #include <iostream>
 #include <vector>
 #include <chrono>
-#include <thread>
+#include <string>
+#include <fstream>
+#include <filesystem>
 #include "Sim2D.h"
-#include <matplot/matplot.h>
+namespace fs = std::filesystem;
 
 // Parameters
-bool visualize = true; // Set to false to disable visualization and just run the simulation loop
 int numTicks = 100; // Number of simulation steps to run
-int plotInterval = 5; // Update visualization every N ticks
 bool SWEonly = true; // Whether to run only the SWE step or include the full simulation steps
-int terrainType = 1; // 0 = flat, 1 = ramp, 2 = bumps, 3 =basins, 4 = beach
-int waterType = 2; // 0 = localized splash, 1 = step/dam break, 2 = basin flood
+int terrainType = 0; // 0 = flat, 1 = ramp, 2 = bumps, 3 = basins, 4 = beach
+int waterType = 1; // 0 = localized splash, 1 = step/dam break, 2 = basin flood
 float waterLevel = 10.0f; // Initial water level
 
+void SaveToCSV(const std::vector<float>& h, int size, int tick) {
+    if (!fs::exists("data")) {
+        fs::create_directory("data");
+    }
+    std::string filename = "data/frame_" + std::to_string(tick) + ".csv";
+    std::ofstream file(filename);
+    if (!file.is_open()) {
+        std::cerr << "Error: Could not open file " << filename << " for writing!" << std::endl;
+        return;
+    }
+    for (int y = 0; y < size; ++y) {
+        for (int x = 0; x < size; ++x) {
+            file << h[y * size + x] << (x == size - 1 ? "" : ",");
+        }
+        file << "\n";
+    }
+    file.close();
+}
+
 int main() {
+    // Clear the data folder before starting the simulation
+    if (fs::exists("data")) {  
+        for (const auto& entry : fs::directory_iterator("data")) {
+            fs::remove(entry.path());
+        }
+    }
+
     // Initialize the simulation
     Sim sim(terrainType, waterType, waterLevel);
     int size = sim.GRIDSIZE;
-    int delay = static_cast<int>(sim.TIMESTEP * 1000.f); // Delay between visualization updates in milliseconds
 
-    // Initialize 2D grid
-    auto [X, Y] = matplot::meshgrid(matplot::linspace(0, size - 1, size), matplot::linspace(0, size - 1, size));
-    std::vector<std::vector<double>> Z(size, std::vector<double>(size));
-    std::vector<std::vector<double>> T(size, std::vector<double>(size));
-    for (int y = 0; y < size; ++y) {
-        for (int x = 0; x < size; ++x) {
-            T[y][x] = static_cast<double>(sim.terrain[y * size + x]);
-            Z[y][x] = static_cast<double>(sim.h[y * size + x]);
-        }
-    }
-    // Matplotplusplus setup for 3D surface
-    auto f = matplot::figure(true);
-    auto ax = f->current_axes();
-    ax->zlim({-15, 25}); // Set z-axis limits for better visualization
-    auto w = ax->surf(X, Y, Z); // Plot initial water surface
-    // auto t = ax->surf(X, Y, T); // Plot terrain
-    // t->face_alpha(0.5); // Make terrain semi-transparent
-
+    SaveToCSV(sim.terrain, size, -1); // Save terrain data for reference
 
     std::cout << "Starting simulation loop..." << std::endl;
 
@@ -46,36 +54,16 @@ int main() {
         auto start = std::chrono::high_resolution_clock::now();
 
         sim.SimStep(SWEonly);
-
-        // Map flattened array h to 2D grid Z for visualization
-        for (int y = 0; y < size; ++y) {
-            for (int x = 0; x < size; ++x) {
-                Z[y][x] = static_cast<double>(sim.h[y * size + x]);
-            }
-        }
+        SaveToCSV(sim.h, size, tick);
 
         auto sim_time = std::chrono::high_resolution_clock::now();
         std::chrono::duration<double, std::milli> elapsed = sim_time - start;
-
-        // Update visualization
-        if (visualize && (tick % plotInterval == 0)) {
-            w->Z_data(Z); // Update water surface
-            // t->Z_data(T); // Update terrain
-            ax->title("Tick: " + std::to_string(tick) + " | Frame Time: " + std::to_string(elapsed.count()) + "ms");
-            // f->draw();
-        }
-        auto end = std::chrono::high_resolution_clock::now();
-        auto plot_time = std::chrono::duration<double, std::milli>(end - sim_time);
-        auto total_time = std::chrono::duration<double, std::milli>(end - start);
-        std::cout << "Tick: " << tick << " | Simulation Time: " << elapsed.count() << "ms | Plot Time: " << plot_time.count() << "ms | Total Time: " << total_time.count() << "ms" << std::endl;
+        std::cout << "Tick: " << tick << " | Simulation Time: " << elapsed.count() << "ms" << std::endl;
     }
     auto totalEnd = std::chrono::high_resolution_clock::now();
     std::chrono::duration<double, std::milli> totalElapsed = totalEnd - totalStart;
     std::cout << "Total Simulation Time for " << numTicks << " ticks: " << totalElapsed.count() << "ms" << std::endl;
     std::cout << "Average Speed: " << (numTicks / (totalElapsed.count() * 1000)) << " ticks/sec" << std::endl;
 
-    if (visualize) {
-        matplot::show();
-    }
     return 0;
 }
