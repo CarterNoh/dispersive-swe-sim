@@ -1,0 +1,47 @@
+# --- Build Directories ---
+# Ignore the entire build folder where CMake generates files and binaries
+/build/
+/out/
+/bin/
+
+# --- IDE Specifics ---
+# Visual Studio
+.vs/
+*.sln
+*.vcxproj
+*.filters
+*.user
+*.suo
+*.db
+*.opendb
+
+# VS Code
+.vscode/
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+
+# --- Compiled Files ---
+*.exe
+*.dll
+*.so
+*.dylib
+*.lib
+*.a
+*.obj
+*.o
+*.pdb
+
+# --- CMake Artifacts ---
+# If you run cmake in the root, this cleans up the mess
+CMakeCache.txt
+CMakeFiles/
+CMakeScripts/
+cmake_install.cmake
+install_manifest.txt
+_deps/
+
+# --- OS Specific ---
+Thumbs.db
+.DS_Store

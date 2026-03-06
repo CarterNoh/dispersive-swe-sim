@@ -32,6 +32,7 @@ class Sim
 {
 public:
 	// Functions
+	Sim();	// default constructor
 	Sim(int terrainType, int waterType, float waterLevel);	// constructor with parameters for terrain and water initialization
 	int Release(void);
 	void SimStep(bool SWEonly);	// ticks the simulation by one timestep using the following substeps:
