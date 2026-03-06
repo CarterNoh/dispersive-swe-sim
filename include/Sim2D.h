@@ -19,16 +19,17 @@ public:
 	int time;					// current simulation time in seconds
 
 	// Simulation parameters
-	static constexpr int GRIDSIZE = 256;		// grid size in one dimension (# cells)
+	static constexpr int GRIDSIZE = 64;		// grid size in one dimension (# cells)
 	static constexpr int CELLSIZE = 1;		// cell size in one dimension (meters/cell)
-	static constexpr float TIMESTEP = 1.f / 60.f;
+	static constexpr float TIMESTEP = 1.f / 30.f;
+	static constexpr float TERRAIN_HEIGHT = -10.f; // base height of terrain features (meters)
+	static constexpr float TERRAIN_SCALE = 15.f; // scale of terrain features (meters)
+	static constexpr float BOUNDARY_TYPE = 1; // 0 = wall, 1 = free, 2 = zero
+
 	static constexpr int DEPTH_NUM = 4;		// number of discrete water depth solutions to compute for eWave dispersion correction
 	static constexpr float Depth[4] = { 1.f, 4.f, 16.f, 64.f };
 	static constexpr float MIN_WATER_HEIGHT = 0.01f;  // minimum water height for stability
 	static constexpr float CFL_CONDITION = 0.5f;  // max allowed CFL condition for stability of SWE step, can be higher than overall CFL condition since diffusion and transport steps handle stability as well
-	static constexpr float TERRAIN_HEIGHT = -10.f; // base height of terrain features (meters)
-	static constexpr float TERRAIN_SCALE = 15.f; // scale of terrain features (meters)
-	static constexpr float BOUNDARY_TYPE = 1; // 0 = wall, 1 = free, 2 = zero
 	static constexpr int DIFFUSION_ITERATIONS = 128; // number of iterations for diffusion step, more iterations means more stable but also more expensive
 	static constexpr float DELTA_T = 0.25f;
 	static constexpr float DIFFUSION_PENALTY = 0.01f; // penalty factor for diffusion, higher means more diffusion and more stability but also more damping of waves

@@ -323,7 +323,6 @@ void Sim::SimStep(bool SWEonly)
 	SWEStep();
 	TransportStep();
 	ComputeValues();
-	std::cout << "finished compute values" << std::endl;
 	time += TIMESTEP;
 }
 
@@ -973,80 +972,7 @@ void Sim::TransportStep()
 		}
 	}
 	// handle boundaries
-	for (int i = 0; i < GRIDSIZE; i++)
-	{
-		// Left Edge
-		int idx_lplusy = idx(0, std::min(i+1, GRIDSIZE-1));
-		int idx_lminy = idx(0, std::max(i-1, 0));
-		float q_x_l = LimitFlowRate(qAdvect_x[idx(0,i)], h[idx(0,i)], h[idx(0,i)]);
-		float q_x_r = LimitFlowRate(qAdvect_x[idx(0,i)], h[idx(0,i)], h[idx(1,i)]);
-		float q_y_l = LimitFlowRate(qAdvect_y[idx_lminy], h[idx_lminy], h[idx_lminy + GRIDSIZE]);
-		float q_y_r = LimitFlowRate(qAdvect_y[idx_lplusy - GRIDSIZE], h[idx_lplusy - GRIDSIZE], h[idx_lplusy]);
-		if ( ((h[idx(0,i)] == 0.f)) || (StopFlowOnTerrainBoundary(0, i, h, terrain, false)) )
-			q_x_l = 0.f;
-		if ( ((h[idx(0,i)] == 0.f) && (h[idx(1,i)] == 0.f)) || (StopFlowOnTerrainBoundary(0, i, h, terrain, false)) )
-			q_x_r = 0.f;
-		if ( ((h[idx_lminy] == 0.f) && (h[idx_lminy+GRIDSIZE] == 0.f)) || (StopFlowOnTerrainBoundary(0, std::max(i-1,0), h, terrain, true)) )
-			q_y_l = 0.f;
-		if ( ((h[idx_lplusy] == 0.f) && (h[idx(0,i)] == 0.f)) || (StopFlowOnTerrainBoundary(0, std::min(i+1,GRIDSIZE-1), h, terrain, true)) )
-			q_y_r = 0.f;
-		float div_q = (q_x_l - q_x_r + q_y_l - q_y_r) / CELLSIZE;
-		h[idx(0,i)] = std::max(0.f, hPast[idx(0,i)] + TIMESTEP * div_q);
-
-		// Right Edge
-		int idx_rplusy = idx(GRIDSIZE-1, std::min(i+1,GRIDSIZE-1));
-		int idx_rminy = idx(GRIDSIZE-1, std::max(i-1,0));
-		q_x_l = LimitFlowRate(qAdvect_x[idx(GRIDSIZE-2,i)], h[idx(GRIDSIZE-2,i)], h[idx(GRIDSIZE-1,i)]);
-		q_x_r = LimitFlowRate(qAdvect_x[idx(GRIDSIZE-1,i)], h[idx(GRIDSIZE-1,i)], h[idx(GRIDSIZE-1,i)]);
-		q_y_l = LimitFlowRate(qAdvect_y[idx_rminy], h[idx_rminy], h[idx_rminy + GRIDSIZE]);
-		q_y_r = LimitFlowRate(qAdvect_y[idx_rplusy - GRIDSIZE], h[idx_rplusy - GRIDSIZE], h[idx_rplusy]);
-		if ( ((h[idx(GRIDSIZE-2,i)] == 0.f) && (h[idx(GRIDSIZE-1,i)] == 0.f)) || (StopFlowOnTerrainBoundary(GRIDSIZE-2, i, h, terrain, false)) )
-			q_x_l = 0.f;
-		if ( ((h[idx(GRIDSIZE-1,i)] == 0.f)) || (StopFlowOnTerrainBoundary(GRIDSIZE-1, i, h, terrain, false)) )
-			q_x_r = 0.f;
-		if ( ((h[idx_rminy] == 0.f) && (h[idx_rminy+GRIDSIZE] == 0.f)) || (StopFlowOnTerrainBoundary(GRIDSIZE-1, std::max(i-1,0), h, terrain, true)) )
-			q_y_l = 0.f;
-		if ( ((h[idx_rplusy] == 0.f) && (h[idx(GRIDSIZE-1,i)] == 0.f)) || (StopFlowOnTerrainBoundary(GRIDSIZE-1, std::min(i+1,GRIDSIZE-1), h, terrain, true)) )
-			q_y_r = 0.f;
-		div_q = (q_x_l - q_x_r + q_y_l - q_y_r) / CELLSIZE;
-		h[idx(GRIDSIZE-1,i)] = std::max(0.f, hPast[idx(GRIDSIZE-1,i)] + TIMESTEP * div_q);
-
-		// Top Edge
-		int idx_tplusx = idx(std::min(i+1,GRIDSIZE-1),GRIDSIZE-1);
-		int idx_tminx = idx(std::max(i-1,0),GRIDSIZE-1);
-		q_x_l = LimitFlowRate(qAdvect_x[idx_tminx], h[idx_tminx], h[idx_tminx + 1]);
-		q_x_r = LimitFlowRate(qAdvect_x[idx_tplusx - 1], h[idx_tplusx - 1], h[idx_tplusx]);
-		q_y_l = LimitFlowRate(qAdvect_y[idx(i,GRIDSIZE-2)], h[idx(i,GRIDSIZE-2)], h[idx(i,GRIDSIZE-1)]);
-		q_y_r = LimitFlowRate(qAdvect_y[idx(i,GRIDSIZE-1)], h[idx(i,GRIDSIZE-1)], h[idx(i,GRIDSIZE-1)]);	
-		if ( ((h[idx_tminx] == 0.f) && (h[idx_tminx+1] == 0.f)) || (StopFlowOnTerrainBoundary(std::max(i-1,0), GRIDSIZE-1, h, terrain, false)) )
-			q_x_l = 0.f;
-		if ( ((h[idx_tplusx-1] == 0.f) && (h[idx_tplusx] == 0.f)) || (StopFlowOnTerrainBoundary(std::min(i,GRIDSIZE-2), GRIDSIZE-1, h, terrain, false)) )
-			q_x_r = 0.f;
-		if ( ((h[idx(i,GRIDSIZE-2)] == 0.f) && (h[idx(i,GRIDSIZE-1)] == 0.f)) || (StopFlowOnTerrainBoundary(i, GRIDSIZE-2, h, terrain, true)) )
-			q_y_l = 0.f;
-		if ( ((h[idx(i,GRIDSIZE-1)] == 0.f)) || (StopFlowOnTerrainBoundary(i, GRIDSIZE-1, h, terrain, true)) )
-			q_y_r = 0.f;
-		div_q = (q_x_l - q_x_r + q_y_l - q_y_r) / CELLSIZE;
-		h[idx(i,GRIDSIZE-1)] = std::max(0.f, hPast[idx(i,GRIDSIZE-1)] + TIMESTEP * div_q);
-
-		// Bottom Edge
-		int idx_bplusx = idx(std::min(i+1,GRIDSIZE-1),0);
-		int idx_bminx = idx(std::max(i-1,0),0);
-		q_x_l = LimitFlowRate(qAdvect_x[idx_bminx], h[idx_bminx], h[idx_bminx + 1]);
-		q_x_r = LimitFlowRate(qAdvect_x[idx_bplusx - 1], h[idx_bplusx - 1], h[idx_bplusx]);
-		q_y_l = LimitFlowRate(qAdvect_y[idx(i,0)], h[idx(i,0)], h[idx(i,0)]);
-		q_y_r = LimitFlowRate(qAdvect_y[idx(i,0)], h[idx(i,0)], h[idx(i,1)]);
-		if ( ((h[idx_bminx] == 0.f) && (h[idx_bminx+1] == 0.f)) || (StopFlowOnTerrainBoundary(std::max(i-1,0), 0, h, terrain, false)) )
-			q_x_l = 0.f;
-		if ( ((h[idx_bplusx-1] == 0.f) && (h[idx_bplusx] == 0.f)) || (StopFlowOnTerrainBoundary(std::min(i,GRIDSIZE-2), 0, h, terrain, false)) )
-			q_x_r = 0.f;
-		if ( ((h[idx(i,0)] == 0.f)) || (StopFlowOnTerrainBoundary(i, 0, h, terrain, true)) )
-			q_y_l = 0.f;
-		if ( ((h[idx(i,0)] == 0.f) && (h[idx(i,1)] == 0.f)) || (StopFlowOnTerrainBoundary(i, 0, h, terrain, true)) )
-			q_y_r = 0.f;
-		div_q = (q_x_l - q_x_r + q_y_l - q_y_r) / CELLSIZE;
-		h[idx(i,0)] = std::max(0.f, hPast[idx(i,0)] + TIMESTEP * div_q);
-	}
+	Sim::ApplyBoundaries(h, BOUNDARY_TYPE);
 }
 	
 void Sim::ComputeValues()
