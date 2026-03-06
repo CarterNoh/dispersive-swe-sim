@@ -149,60 +149,83 @@ void ApplyBoundaries(std::vector<float>& field, int type)
 
 
 // ********************************************************************************************************************
-// Init functions (TODO: TRANSITION TO 2D)
+// Init functions
 // ********************************************************************************************************************
 
-/* void Sim::ResetTerrain(int type)
-{
-	// type: 0=flat, 1=hill
-	for (int x = 0; x < GRIDSIZE; x++)
-		if (type == 0)  // flat
-			terrain[x] = -abs(TERRAIN_HEIGHT_SHIFT_INIT);
-		else if (type == 1) // hill
-			terrain[x] = (-1.f + 0.1f + 0.1f * x / GRIDSIZE + 0.03f * sin(20.f * x / GRIDSIZE) + 0.9f * sin(2.5f * x / GRIDSIZE)) * abs(TERRAIN_HEIGHT_SHIFT_INIT);
-			//terrain[x] = (-1.f + 0.1f + 0.5f * (0.1f * x / GRIDSIZE + 0.03f * sin(20.f * x / GRIDSIZE) + 0.9f * sin(2.5f * x / GRIDSIZE))) * abs(TERRAIN_HEIGHT_SHIFT_INIT);
-	terrain[0] = 1.8f * abs(TERRAIN_HEIGHT_SHIFT_INIT);
-	terrain[GRIDSIZE - 1] = 1.8f * abs(TERRAIN_HEIGHT_SHIFT_INIT);
-}
-*/
+void Sim::SetTerrain(int type) {
+    for (int y = 0; y < GRIDSIZE; y++) {
+        for (int x = 0; x < GRIDSIZE; x++) {
+            float xf = (float)x / (GRIDSIZE - 1);
+            float yf = (float)y / (GRIDSIZE - 1);
+            int i = idx(x, y);
 
-/* void Sim::ResetWater(int type, float level)
-{
-	// type: 0=constant level, 1=dam break, 2=sloped  level = y coordinate of water in domain
-	for (int x = 0; x < GRIDSIZE; x++)
-	{
-		if (type == 0) //constant level
-			h[x] = max(0.f, (level - terrain[x]));
-		if (type == 1)  // dam break
-			if (x <= GRIDSIZE / 2)
-				h[x] = 0.f;
-			else
-				h[x] = max(0.f, (level - terrain[x]));
-		if (type == 2)  // sloped water
-			h[x] = max(0.f, level + (2.f * (-0.5f + (float)(x) / GRIDSIZE) * fabs(-0.5f + (float)(x) / GRIDSIZE)) * abs(0.5f * TERRAIN_HEIGHT_SHIFT_INIT) - terrain[x]);
-		if (type == 3)  // flat with initial surface waves
-		{
-			float lambda = 10.f;
-			h[x] = max(0.f, (level + 0.5f * cos(2.f * PI * (x / lambda)) - terrain[x]));
-		}
-		hbar[x] = h[x];
-		hbar_past[x] = h[x];
-		htilde[x] = 0.f;
-		htilde_past[x] = 0.f;
-		qbar_x[x] = 0.f;
-		qbar_y[x] = 0.f;
-		q_x[x] = 0.f;
-		q_y[x] = 0.f;
-	}
-	// clear left and right boundaries
-	
-	h[0] = 0.f;
-	h[GRIDSIZE - 1] = 0.f;
-	time = 0.f;
+            if (type == 0) { // Flat
+                terrain[i] = TERRAIN_HEIGHT; 
+            }
+            else if (type == 1) { // Inclined Plane (Ramp)
+                terrain[i] = TERRAIN_HEIGHT + (xf * TERRAIN_SCALE);
+            }
+            else if (type == 2) { // Bumpy / Natural (Sum of Sines)
+                float noise = 0.5f * sin(10.f * xf) * cos(8.f * yf) + 
+                              0.2f * sin(25.f * xf + 2.f * yf);
+                terrain[i] = TERRAIN_HEIGHT + (noise * TERRAIN_SCALE);
+            }
+            else if (type == 3) { // Two Basins with Divider
+                // Create two dips with a ridge at xf = 0.5
+                float divider = (xf > 0.48f && xf < 0.52f) ? 5.0f : 0.0f;
+                terrain[i] = TERRAIN_HEIGHT + divider;
+            }
+            else if (type == 4) { // Beach Scene
+                // Simple slope with some noise for "sand dunes"
+                float slope = xf * 15.0f;
+                float dunes = 0.5f * sin(30.f * yf) * xf; 
+                terrain[i] = TERRAIN_HEIGHT + slope + dunes;
+            }
+        }
+    }
 }
-*/
 
-Sim::Sim()
+void Sim::SetWater(int type, float level) {
+    for (int y = 0; y < GRIDSIZE; y++) {
+        for (int x = 0; x < GRIDSIZE; x++) {
+            float xf = (float)x / (GRIDSIZE - 1);
+            float yf = (float)y / (GRIDSIZE - 1);
+            int i = idx(x, y);
+
+            float waterSurface = level;
+
+            if (type == 0) { // Localized splash (Gaussian pill)
+                float dist = sqrt(pow(xf - 0.5f, 2) + pow(yf - 0.5f, 2));
+                if (dist < 0.1f) 
+					waterSurface += 5.0f * cos(dist * PI * 5.0f);
+            }
+            else if (type == 1) { // Step/Dam Break
+                if (xf < 0.3f) 
+					waterSurface += 10.0f;
+            }
+            else if (type == 2) { // Basin Flood
+                // Fill only the left basin (xf < 0.5)
+				if (xf < 0.25f)
+                    waterSurface = max(level, terrain[idx(GRIDSIZE/2, y)] + 2.0f);
+                else if (xf < 0.5f) 
+					waterSurface = max(level, terrain[idx(GRIDSIZE/2, y)]);
+                else 
+					waterSurface = terrain[i]; // Start dry
+            }
+
+            // Standardize height as (Surface - Terrain)
+            h[i] = max(0.0f, waterSurface - (float)terrain[i]);
+            
+            // Sync all buffers to prevent NaN/jitter on first frame
+            hbar[i] = h[i];
+            hbarOld[i] = h[i];
+            q_x[i] = q_y[i] = qbar_x[i] = qbar_y[i] = 0.0f;
+            htilde[i] = 0.0f;
+        }
+    }
+}
+
+Sim::Sim(int terrainType = 0, int waterType = 0, float waterLevel = 5.0f)
 {
 	// Define the total number of cells
     size_t totalCells = GRIDSIZE * GRIDSIZE;
@@ -241,9 +264,9 @@ Sim::Sim()
 	hPast.resize(totalCells, 0.0);
 
     
-    // You can call ResetTerrain(1) and ResetWater(2, 0.f) here once updated
-	// ResetTerrain(1);
-	// ResetWater(2, 0.f);
+    // Initialize terrain and water to default states (flat terrain, no water)
+	SetTerrain(terrainType);
+	SetWater(waterType, waterLevel);
 }
 
 int Sim::Release(void)

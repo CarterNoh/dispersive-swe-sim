@@ -6,16 +6,15 @@
 
 // sim parameters
 #define GRIDSIZE 256 	// grid size in one dimension (# cells)
-#define CELLSIZE 1		// cell size in one dimension (meters?/cell)
+#define CELLSIZE 1		// cell size in one dimension (meters/cell)
 #define TIMESTEP (1.f/60.f)
 #define DEPTH_NUM 4
 const float Depth[DEPTH_NUM] = { 1.f, 4.f, 16.f, 64.f };
-#define TERRAIN_HEIGHT_SHIFT_INIT -10.f // -10 or -20 
-#define TERRAIN_HEIGHT_SCALE_INIT 20.f // 20 or 40
+#define TERRAIN_HEIGHT -10.f // base height of terrain features (meters)
+#define TERRAIN_SCALE 15.f // scale of terrain features (meters)
 #define CFL_CONDITION 0.25f  // max allowed CFL condition for stability
 #define MIN_WATER_HEIGHT 0.01f  // minimum water height for stability
 #define BOUNDARY_TYPE 1 // 0 = wall, 1 = free, 2 = zero
-#define TERRAIN_TYPE 1 // 0 = flat, 1 = hill
 
 // diffusion parameters
 #define DIFFUSION_ITERATIONS 128
@@ -33,11 +32,11 @@ class Sim
 {
 public:
 	// Functions
-	Sim();
+	Sim(int terrainType, int waterType, float waterLevel);	// constructor with parameters for terrain and water initialization
 	int Release(void);
 	void SimStep(bool SWEonly);	// ticks the simulation by one timestep using the following substeps:
-	// void ResetTerrain(int type);
-	// void ResetWater(int type, float level);
+	void SetTerrain(int type);
+	void SetWater(int type, float level);
 	// void EditWaterLocal(float xCoord, float yCoord, float size, float factor);	// add or subtract water locally.
 
 	// Variables carried from one timestep to the next
