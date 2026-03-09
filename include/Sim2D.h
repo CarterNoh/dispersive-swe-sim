@@ -19,7 +19,7 @@ public:
 	int time;					// current simulation time in seconds
 
 	// Simulation parameters
-	static constexpr int GRIDSIZE = 64;		// grid size in one dimension (# cells)
+	static constexpr int GRIDSIZE = 256;	// grid size in one dimension (# cells)
 	static constexpr int CELLSIZE = 1;		// cell size in one dimension (meters/cell)
 	static constexpr float TIMESTEP = 1.f / 30.f;
 	static constexpr float TERRAIN_HEIGHT = -10.f; // base height of terrain features (meters)
@@ -63,6 +63,20 @@ public:
 	std::vector<float> QPast_x; 	// flow rate in x direction from last diffusion iteration
 	std::vector<float> QPast_y; 	// flow rate in y direction from last diffusion iteration
 
+	// eWave Variables
+	// alglib::complex_1d_array htildehat, qtildehat_x, qtildehat_y;	// eWave inputs
+	// alglib::complex_1d_array qtildehat_depth_x[DEPTH_NUM];			// eWave outputs
+	// alglib::complex_1d_array qtildehat_depth_y[DEPTH_NUM];			// eWave outputs
+
+	// SWE Variables
+
+	// Transport Variables
+	std::vector<float> qtildePast_x;// flow rate change in x direction due to advection
+	std::vector<float> qtildePast_y;// flow rate change in y direction due to advection
+	std::vector<float> qAdvect_x; 	// flow rate change in x direction due to advection
+	std::vector<float> qAdvect_y; 	// flow rate change in y direction due to advection
+	std::vector<float> hPast;		// bulk height from last timestep
+
 
 	// Functions
 	Sim();	// default constructor
@@ -91,22 +105,6 @@ private:
 	void HandleFreeBoundary(std::vector<float>& field);
 	void HandleZeroBoundary(std::vector<float>& field);
 	void ApplyBoundaries(std::vector<float>& field, int type);
-
-	
-
-	// eWave Variables
-	// alglib::complex_1d_array htildehat, qtildehat_x, qtildehat_y;	// eWave inputs
-	// alglib::complex_1d_array qtildehat_depth_x[DEPTH_NUM];			// eWave outputs
-	// alglib::complex_1d_array qtildehat_depth_y[DEPTH_NUM];			// eWave outputs
-
-	// SWE Variables
-
-	// Transport Variables
-	std::vector<float> qtildePast_x;// flow rate change in x direction due to advection
-	std::vector<float> qtildePast_y;// flow rate change in y direction due to advection
-	std::vector<float> qAdvect_x; 	// flow rate change in x direction due to advection
-	std::vector<float> qAdvect_y; 	// flow rate change in y direction due to advection
-	std::vector<float> hPast;		// bulk height from last timestep
 
 
 

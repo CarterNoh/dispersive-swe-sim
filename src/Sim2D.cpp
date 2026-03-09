@@ -197,7 +197,7 @@ void Sim::SetWater(int type, float level) {
             }
             else if (type == 1) { // Step/Dam Break
                 if (xf < 0.3f) 
-					waterSurface += 10.0f;
+					waterSurface += 5.0f;
             }
             else if (type == 2) { // Basin Flood
                 // Fill only the left basin (xf < 0.5)
@@ -317,12 +317,13 @@ int Sim::Release(void)
 void Sim::SimStep(bool SWEonly)
 {
 	DecompositionStep(SWEonly);
-	// if (!SWEonly)
-		// eWaveStep();
-		// FFTStep();
-	// SWEStep();
-	// TransportStep();
-	// ComputeValues();
+	// if (!SWEonly) {
+	// eWaveStep();
+	// 	FFTStep();
+	// }
+	SWEStep();
+	TransportStep();
+	ComputeValues();
 	time += TIMESTEP;
 }
 
@@ -375,13 +376,15 @@ void Sim::DecompositionStep(bool SWEonly)
 	*/
 
 	// Loop through grid to calculate diffusion coefficients
+	float max_alpha = CELLSIZE * CELLSIZE / (4.f * DELTA_T); // Max alpha for stability, derived from Von Neumann stability analysis of diffusion equation
 	for (int y = 0; y < GRIDSIZE-1; y++)
 	{
 		for (int x = 0; x < GRIDSIZE-1; x++)
 		{
+			
 			// Alpha_H
 			float denom = 2*DELTA_T*DIFFUSION_ITERATIONS;
-			alpha_H[idx(x,y)] = H[idx(x,y)] * H[idx(x,y)] / denom;
+			alpha_H[idx(x,y)] = std::min(max_alpha, H[idx(x,y)] * H[idx(x,y)] / denom);
 			// Penalize steep gradients
 			float gradient_x = (H[idx(x+1,y)] - H[idx(x,y)]) / CELLSIZE;
 			float gradient_y = (H[idx(x,y+1)] - H[idx(x,y)]) / CELLSIZE;
@@ -391,8 +394,8 @@ void Sim::DecompositionStep(bool SWEonly)
 			// Alpha_Q
 			float avg_H_x = 0.5f * (H[idx(x,y)] + H[idx(x+1,y)]);
 			float avg_H_y = 0.5f * (H[idx(x,y)] + H[idx(x,y+1)]);
-			alpha_Q_x[idx(x,y)] = avg_H_x * avg_H_x / denom;
-			alpha_Q_y[idx(x,y)] = avg_H_y * avg_H_y / denom;
+			alpha_Q_x[idx(x,y)] = std::min(max_alpha, avg_H_x * avg_H_x / denom);
+			alpha_Q_y[idx(x,y)] = std::min(max_alpha, avg_H_y * avg_H_y / denom);
 			alpha_Q_x[idx(x,y)] *= exp(penalty);
 			alpha_Q_y[idx(x,y)] *= exp(penalty);
 		}
@@ -402,7 +405,7 @@ void Sim::DecompositionStep(bool SWEonly)
 	{
 		float denom = 2*DELTA_T*DIFFUSION_ITERATIONS;
 		// Right Edge
-		alpha_H[idx(GRIDSIZE-1,i)] = H[idx(GRIDSIZE-1,i)] * H[idx(GRIDSIZE-1,i)] / denom; // Right Edge
+		alpha_H[idx(GRIDSIZE-1,i)] = std::min(max_alpha, H[idx(GRIDSIZE-1,i)] * H[idx(GRIDSIZE-1,i)] / denom);
 		float grad_x = (H[idx(GRIDSIZE-1,i)] - H[idx(GRIDSIZE-2,i)]) / CELLSIZE;
 		float grad_y = (H[idx(GRIDSIZE-1, std::min(i+1, GRIDSIZE-1))] - H[idx(GRIDSIZE-1,i)]) / CELLSIZE;
 		float penalty = - DIFFUSION_PENALTY * (grad_x * grad_x + grad_y * grad_y);
@@ -410,16 +413,18 @@ void Sim::DecompositionStep(bool SWEonly)
 		float H_next_y = H[idx(GRIDSIZE-1, std::min(i+1, GRIDSIZE-1))];
 		float avg_H_y = 0.5f * (H[idx(GRIDSIZE-1,i)] + H_next_y);
 		alpha_Q_x[idx(GRIDSIZE-1,i)] = alpha_H[idx(GRIDSIZE-1,i)];
-		alpha_Q_y[idx(GRIDSIZE-1,i)] = avg_H_y * avg_H_y / denom * exp(penalty);
+		alpha_Q_y[idx(GRIDSIZE-1,i)] = std::min(max_alpha, avg_H_y * avg_H_y / denom);
+		alpha_Q_y[idx(GRIDSIZE-1,i)] *= exp(penalty);
 		// Top Edge
-		alpha_H[idx(i,GRIDSIZE-1)] = H[idx(i,GRIDSIZE-1)] * H[idx(i,GRIDSIZE-1)] / denom;
+		alpha_H[idx(i,GRIDSIZE-1)] = std::min(max_alpha, H[idx(i,GRIDSIZE-1)] * H[idx(i,GRIDSIZE-1)] / denom);
 		grad_x = (H[idx(std::min(i+1, GRIDSIZE-1),GRIDSIZE-1)] - H[idx(i,GRIDSIZE-1)]) / CELLSIZE;
 		grad_y = (H[idx(i,GRIDSIZE-1)] - H[idx(i,GRIDSIZE-2)]) / CELLSIZE;
 		penalty = - DIFFUSION_PENALTY * (grad_x * grad_x + grad_y * grad_y);
 		alpha_H[idx(i, GRIDSIZE-1)] *= exp(penalty);
 		float H_next_x = H[idx(std::min(i+1, GRIDSIZE-1),GRIDSIZE-1)];
 		float avg_H_x = 0.5f * (H[idx(i,GRIDSIZE-1)] + H_next_x);
-		alpha_Q_x[idx(i,GRIDSIZE-1)] = avg_H_x * avg_H_x / denom * exp(penalty);
+		alpha_Q_x[idx(i,GRIDSIZE-1)] = std::min(max_alpha, avg_H_x * avg_H_x / denom);
+		alpha_Q_x[idx(i,GRIDSIZE-1)] *= exp(penalty);
 		alpha_Q_y[idx(i,GRIDSIZE-1)] = alpha_H[idx(i,GRIDSIZE-1)];
 	}
 	
