@@ -35,6 +35,35 @@ public:
 	static constexpr float DIFFUSION_PENALTY = 0.01f; // penalty factor for diffusion, higher means more diffusion and more stability but also more damping of waves
 	static constexpr float GAMMA_TRANSPORT = 0.25f; // blending factor for transport step, higher means more stable but also more damping of waves
 
+	
+	// variables carried from one timestep to the next
+	std::vector<float> hbarOld;		// last timestep hbar, used for resampling in time
+	std::vector<float> htildeOld;	// last timestep htilde, used for resampling in time
+
+	// variables that could be allocated locally but we make gloabl so all functions can modify
+	std::vector<float> hbar;		// bulk height
+	std::vector<float> qbar_x;		// bulk flow rate
+	std::vector<float> qbar_y;		// bulk flow rate
+	std::vector<float> htilde;		// surface height
+	std::vector<float> qtilde_x;	// surface flow rate												
+	std::vector<float> qtilde_y;	// surface flow rate
+	std::vector<float> ubar_x;		// bulk velocity
+	std::vector<float> ubar_y;		// bulk velocity
+	std::vector<float> ubarNew_x;	// bulk velocity after SWE step but before transport step
+	std::vector<float> ubarNew_y;	// bulk velocity after SWE step but before transport step
+
+	// Decomposition Variables
+	std::vector<float> alpha_H; 	// diffusion coefficient for height
+	std::vector<float> alpha_Q_x; 	// diffusion coefficient for flow rate in x direction
+	std::vector<float> alpha_Q_y; 	// diffusion coefficient for flow rate in y direction
+	std::vector<float> H; 			// Combined water + terrain height used for diffusion
+	std::vector<float> Q_x; 		// current flow rate in x direction used for diffusion
+	std::vector<float> Q_y; 		// current flow rate in y direction used for diffusion
+	std::vector<float> HPast; 		// Combined water + terrain height from last diffusion iteration
+	std::vector<float> QPast_x; 	// flow rate in x direction from last diffusion iteration
+	std::vector<float> QPast_y; 	// flow rate in y direction from last diffusion iteration
+
+
 	// Functions
 	Sim();	// default constructor
 	Sim(int terrainType, int waterType, float waterLevel);	// constructor with parameters for terrain and water initialization
@@ -63,32 +92,7 @@ private:
 	void HandleZeroBoundary(std::vector<float>& field);
 	void ApplyBoundaries(std::vector<float>& field, int type);
 
-	// variables carried from one timestep to the next
-	std::vector<float> hbarOld;		// last timestep hbar, used for resampling in time
-	std::vector<float> htildeOld;	// last timestep htilde, used for resampling in time
-
-	// variables that could be allocated locally but we make gloabl so all functions can modify
-	std::vector<float> hbar;		// bulk height
-	std::vector<float> qbar_x;		// bulk flow rate
-	std::vector<float> qbar_y;		// bulk flow rate
-	std::vector<float> htilde;		// surface height
-	std::vector<float> qtilde_x;	// surface flow rate												
-	std::vector<float> qtilde_y;	// surface flow rate
-	std::vector<float> ubar_x;		// bulk velocity
-	std::vector<float> ubar_y;		// bulk velocity
-	std::vector<float> ubarNew_x;	// bulk velocity after SWE step but before transport step
-	std::vector<float> ubarNew_y;	// bulk velocity after SWE step but before transport step
-
-	// Decomposition Variables
-	std::vector<float> alpha_H; 	// diffusion coefficient for height
-	std::vector<float> alpha_Q_x; 	// diffusion coefficient for flow rate in x direction
-	std::vector<float> alpha_Q_y; 	// diffusion coefficient for flow rate in y direction
-	std::vector<float> H; 			// Combined water + terrain height used for diffusion
-	std::vector<float> Q_x; 		// current flow rate in x direction used for diffusion
-	std::vector<float> Q_y; 		// current flow rate in y direction used for diffusion
-	std::vector<float> HPast; 		// Combined water + terrain height from last diffusion iteration
-	std::vector<float> QPast_x; 	// flow rate in x direction from last diffusion iteration
-	std::vector<float> QPast_y; 	// flow rate in y direction from last diffusion iteration
+	
 
 	// eWave Variables
 	// alglib::complex_1d_array htildehat, qtildehat_x, qtildehat_y;	// eWave inputs

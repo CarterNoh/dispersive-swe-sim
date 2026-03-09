@@ -160,7 +160,7 @@ void Sim::SimStep(bool SWEonly)
 	for (int x = 0; x < GRIDRESOLUTION; x++)
 	{
 		alpha_H[x] = 0.f;
-		float maxGround = max(terrain[x], terrain[x_plus])
+		float maxGround = max(terrain[x], terrain[x_plus]);
 		float minWaterlevel = 0.5f * (H[x] + H[x_plus]);
 		if ((h[x] > 0.f) && (h[x_plus] > 0.f))
 		{
@@ -171,7 +171,7 @@ void Sim::SimStep(bool SWEonly)
 		// gradient filter
 		float gradient = abs(H[x] - H[x_plus]);
 		alpha_H[x] *= exp(- 0.01f * gradient * gradient);
-		alpha_Q[x] = 0.5f * (alpha_H[max(0, x - 1)] + alpha_H[x]);
+		alpha_Q[x] = 0.5f * (alpha_H[x_plus] + alpha_H[x]);
 	}
 	// run diffusion
 	static float H_dummy[GRIDRESOLUTION];
