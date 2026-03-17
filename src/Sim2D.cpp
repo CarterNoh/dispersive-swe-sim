@@ -143,6 +143,26 @@ void Sim::ApplyBoundaries(std::vector<float>& field, int type)
 		Sim::HandleZeroBoundary(field);
 }
 
+float Sim::Diffusion(std::vector<float>& F, std::vector<float>& alpha, int x, int y)
+{
+	// dH/dT = Del * ( alpha_H * Del H )
+
+	// Direct discrete integration
+	float neighbors = F[idx(x+1,y)] + F[idx(x-1,y)] + F[idx(x,y+1)] + F[idx(x,y-1)];
+	float curvature_term = alpha[idx(x,y)] * (neighbors - 4.f * F[idx(x,y)]) / (CELLSIZE * CELLSIZE);
+	float aH_neighbor = alpha[idx(x+1,y)]*F[idx(x+1,y)] + alpha[idx(x-1,y)]*F[idx(x-1,y)] + alpha[idx(x,y+1)]*F[idx(x,y+1)] + alpha[idx(x,y-1)]*F[idx(x,y-1)];
+	float aH_cross    = alpha[idx(x+1,y)]*F[idx(x-1,y)] + alpha[idx(x,y+1)]*F[idx(x,y-1)] + alpha[idx(x-1,y)]*F[idx(x+1,y)] + alpha[idx(x,y-1)]*F[idx(x,y+1)];
+	float alpha_term = (aH_neighbor - aH_cross) / (2 * CELLSIZE);
+	return curvature_term + alpha_term;
+
+	// // Half-step averaging approach: use alphas averaged at borders
+	// float a_xp = (alpha[idx(x+1,y)] + alpha[idx(x,y)]) / 2;
+	// float a_xm = (alpha[idx(x-1,y)] + alpha[idx(x,y)]) / 2;
+	// float a_yp = (alpha[idx(x,y+1)] + alpha[idx(x,y)]) / 2;
+	// float a_ym = (alpha[idx(x,y-1)] + alpha[idx(x,y)]) / 2;
+	// float neighbors = a_xp*F[idx(x+1,y)] + a_xm*F[idx(x-1,y)] + a_yp*F[idx(x,y+1)] + a_ym*F[idx(x,y-1)]
+}
+
 
 // ********************************************************************************************************************
 // Init functions
@@ -375,27 +395,41 @@ void Sim::DecompositionStep(bool SWEonly)
 	} 
 	*/
 
+	// Diffusion is the same as a gaussian blur, but with a spatially-varying sigma. 
+	// Sigma is defined to be the height of the water column. 
+
+	// Explicit: Forward Euler diffusion, uses forward step in time and runs for a certain number of iterations.
+	// Timestep represents fictitious time of one diffusion iteration. 
+	// float delta_T = DELTA_T;
+	
+	// Implicit: Backward Euler diffusion. Iterates until convergence (or for a fixed # of steps).
+	// Timestep represents the a fixed timestep of the diffusion (sum of fictitious timesteps from explicit).
+	
+
 	// Loop through grid to calculate diffusion coefficients
-	float max_alpha = CELLSIZE * CELLSIZE / (4.f * DELTA_T); // Max alpha for stability, derived from Von Neumann stability analysis of diffusion equation
+	float max_alpha = CELLSIZE * CELLSIZE / (4.f * DELTA_T); // Max alpha for Explicit Diffusion stability, derived from Von Neumann stability analysis of diffusion equation
 	for (int y = 0; y < GRIDSIZE-1; y++)
 	{
 		for (int x = 0; x < GRIDSIZE-1; x++)
 		{
 			
-			// Alpha_H
 			float denom = 2*DELTA_T*DIFFUSION_ITERATIONS;
-			alpha_H[idx(x,y)] = std::min(max_alpha, H[idx(x,y)] * H[idx(x,y)] / denom);
+			alpha_H[idx(x,y)] = H[idx(x,y)] * H[idx(x,y)] / denom;
+			float avg_H_x = 0.5f * (H[idx(x,y)] + H[idx(x+1,y)]);
+			float avg_H_y = 0.5f * (H[idx(x,y)] + H[idx(x,y+1)]);
+			alpha_Q_x[idx(x,y)] = avg_H_x * avg_H_x / denom;
+			alpha_Q_y[idx(x,y)] = avg_H_y * avg_H_y / denom;
+			if (!USE_IMPLICIT_DIFFUSION)
+			{
+				alpha_H[idx(x,y)] = std::min(max_alpha, alpha_H[idx(x,y)]); // clamp if using Forward Euler diffusion
+				alpha_Q_x[idx(x,y)] = std::min(max_alpha, alpha_Q_x[idx(x,y)]); // clamp if using Forward Euler diffusion
+				alpha_Q_y[idx(x,y)] = std::min(max_alpha, alpha_Q_y[idx(x,y)]); // clamp if using Forward Euler diffusion
+			}
 			// Penalize steep gradients
 			float gradient_x = (H[idx(x+1,y)] - H[idx(x,y)]) / CELLSIZE;
 			float gradient_y = (H[idx(x,y+1)] - H[idx(x,y)]) / CELLSIZE;
 			float penalty = - DIFFUSION_PENALTY * (gradient_x * gradient_x + gradient_y * gradient_y);
 			alpha_H[idx(x,y)] *= exp(penalty);
-
-			// Alpha_Q
-			float avg_H_x = 0.5f * (H[idx(x,y)] + H[idx(x+1,y)]);
-			float avg_H_y = 0.5f * (H[idx(x,y)] + H[idx(x,y+1)]);
-			alpha_Q_x[idx(x,y)] = std::min(max_alpha, avg_H_x * avg_H_x / denom);
-			alpha_Q_y[idx(x,y)] = std::min(max_alpha, avg_H_y * avg_H_y / denom);
 			alpha_Q_x[idx(x,y)] *= exp(penalty);
 			alpha_Q_y[idx(x,y)] *= exp(penalty);
 		}
@@ -405,7 +439,8 @@ void Sim::DecompositionStep(bool SWEonly)
 	{
 		float denom = 2*DELTA_T*DIFFUSION_ITERATIONS;
 		// Right Edge
-		alpha_H[idx(GRIDSIZE-1,i)] = std::min(max_alpha, H[idx(GRIDSIZE-1,i)] * H[idx(GRIDSIZE-1,i)] / denom);
+		alpha_H[idx(GRIDSIZE-1,i)] = H[idx(GRIDSIZE-1,i)] * H[idx(GRIDSIZE-1,i)] / denom;
+		alpha_H[idx(GRIDSIZE-1,i)] = std::min(max_alpha, alpha_H[idx(GRIDSIZE-1,i)]); // clamp if using Forward Euler diffusion
 		float grad_x = (H[idx(GRIDSIZE-1,i)] - H[idx(GRIDSIZE-2,i)]) / CELLSIZE;
 		float grad_y = (H[idx(GRIDSIZE-1, std::min(i+1, GRIDSIZE-1))] - H[idx(GRIDSIZE-1,i)]) / CELLSIZE;
 		float penalty = - DIFFUSION_PENALTY * (grad_x * grad_x + grad_y * grad_y);
@@ -413,7 +448,8 @@ void Sim::DecompositionStep(bool SWEonly)
 		float H_next_y = H[idx(GRIDSIZE-1, std::min(i+1, GRIDSIZE-1))];
 		float avg_H_y = 0.5f * (H[idx(GRIDSIZE-1,i)] + H_next_y);
 		alpha_Q_x[idx(GRIDSIZE-1,i)] = alpha_H[idx(GRIDSIZE-1,i)];
-		alpha_Q_y[idx(GRIDSIZE-1,i)] = std::min(max_alpha, avg_H_y * avg_H_y / denom);
+		alpha_Q_y[idx(GRIDSIZE-1,i)] = avg_H_y * avg_H_y / denom;
+		alpha_Q_y[idx(GRIDSIZE-1,i)] = std::min(max_alpha, alpha_Q_y[idx(GRIDSIZE-1,i)]); // clamp if using Forward Euler diffusion
 		alpha_Q_y[idx(GRIDSIZE-1,i)] *= exp(penalty);
 		// Top Edge
 		alpha_H[idx(i,GRIDSIZE-1)] = std::min(max_alpha, H[idx(i,GRIDSIZE-1)] * H[idx(i,GRIDSIZE-1)] / denom);
@@ -429,33 +465,38 @@ void Sim::DecompositionStep(bool SWEonly)
 	}
 	
 	// Run diffusion to low-pass filter H and Q
-	for (int j = 0; (j < DIFFUSION_ITERATIONS); j++)
+	float delta_T = DELTA_T;
+	int n_iters = DIFFUSION_ITERATIONS;
+	if (USE_IMPLICIT_DIFFUSION)
+	{
+		delta_T = DELTA_T * DIFFUSION_ITERATIONS;
+		n_iters = 20;
+	}
+	for (int j = 0; (j < n_iters); j++)
 	{
 		HPast = H;
 		QPast_x = Q_x;
 		QPast_y = Q_y;
+		
 		for (int y = 1; y < GRIDSIZE-1; y++) // one diffusion iteration
 		{
 			for (int x = 1; x < GRIDSIZE - 1; x++)
 			{
-				// Diffusion step for H: dH/dt = Del * ( alpha_H * Del H )
-				float dH_x = alpha_H[idx(x,y)] * (HPast[idx(x+1,y)] - HPast[idx(x,y)]) - alpha_H[idx(x-1,y)] * (HPast[idx(x,y)] - HPast[idx(x-1,y)]);
-				float dH_y = alpha_H[idx(x,y)] * (HPast[idx(x,y+1)] - HPast[idx(x,y)]) - alpha_H[idx(x,y-1)] * (HPast[idx(x,y)] - HPast[idx(x,y-1)]);
-				float dHdT = (dH_x + dH_y) / (CELLSIZE*CELLSIZE);
-				H[idx(x,y)] = HPast[idx(x,y)] + DELTA_T * dHdT;
-				H[idx(x,y)] = std::max(terrain[idx(x,y)], H[idx(x,y)]); // ensure water surface is above terrain
-
-				// Diffusion step for Q: dQ/dt = Del * ( alpha_Q * Del Q )
-				// Q has two components, so we do them separately
-				// This could be redundant, maybe only need x component for Q_x and y component for Q_y? Leave for now unless looks weird. 
-				float dQ_x_x = alpha_Q_x[idx(x,y)] * (QPast_x[idx(x+1,y)] - QPast_x[idx(x,y)]) - alpha_Q_x[idx(x-1,y)] * (QPast_x[idx(x,y)] - QPast_x[idx(x-1,y)]);
-				float dQ_x_y = alpha_Q_y[idx(x,y)] * (QPast_x[idx(x,y+1)] - QPast_x[idx(x,y)]) - alpha_Q_y[idx(x,y-1)] * (QPast_x[idx(x,y)] - QPast_x[idx(x,y-1)]); // = 0.f ? 
-				float dQdT_x = (dQ_x_x + dQ_x_y) / (CELLSIZE*CELLSIZE);
-				Q_x[idx(x,y)] = QPast_x[idx(x,y)] + DELTA_T * dQdT_x;
-				float dQ_y_x = alpha_Q_y[idx(x,y)] * (QPast_y[idx(x,y+1)] - QPast_y[idx(x,y)]) - alpha_Q_y[idx(x,y-1)] * (QPast_y[idx(x,y)] - QPast_y[idx(x,y-1)]); // = 0.f ?
-				float dQ_y_y = alpha_Q_x[idx(x,y)] * (QPast_y[idx(x+1,y)] - QPast_y[idx(x,y)]) - alpha_Q_x[idx(x-1,y)] * (QPast_y[idx(x,y)] - QPast_y[idx(x-1,y)]);
-				float dQdT_y = (dQ_y_x + dQ_y_y) / (CELLSIZE*CELLSIZE);
-				Q_y[idx(x,y)] = QPast_y[idx(x,y)] + DELTA_T * dQdT_y;
+				if (USE_IMPLICIT_DIFFUSION)
+				{
+					H[idx(x,y)] = (h[idx(x,y)]+terrain[idx(x,y)]) + delta_T * Sim::Diffusion(HPast, alpha_H, x, y);
+					H[idx(x,y)] = std::max(terrain[idx(x,y)], H[idx(x,y)]); // ensure water surface is above terrain
+					Q_x[idx(x,y)] = q_x[idx(x,y)] + delta_T * Sim::Diffusion(QPast_x, alpha_Q_x, x, y);
+					Q_y[idx(x,y)] = q_y[idx(x,y)] + delta_T * Sim::Diffusion(QPast_y, alpha_Q_y, x, y);
+				}
+				else 
+				{
+					H[idx(x,y)] = HPast[idx(x,y)] + delta_T * Sim::Diffusion(HPast, alpha_H, x, y);
+					H[idx(x,y)] = std::max(terrain[idx(x,y)], H[idx(x,y)]); // ensure water surface is above terrain
+					Q_x[idx(x,y)] = QPast_x[idx(x,y)] + delta_T * Sim::Diffusion(QPast_x, alpha_Q_x, x, y);
+					Q_y[idx(x,y)] = QPast_y[idx(x,y)] + delta_T * Sim::Diffusion(QPast_y, alpha_Q_y, x, y);
+				}
+				
 			}
 		}
 		// Handle boundaries for H and Q after each diffusion iteration
