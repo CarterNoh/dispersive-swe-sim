@@ -7,8 +7,39 @@ set(CMAKE_CXX_STANDARD 17)
 # Tell CMake where your header files are
 include_directories(include)
 
+# Add DirectX SDK paths
+include_directories("C:/Program Files (x86)/Windows Kits/10/Include/10.0.22621.0/um")
+include_directories("C:/Program Files (x86)/Windows Kits/10/Include/10.0.22621.0/shared")
+
+# Link DirectX 12 libraries
+link_directories("C:/Program Files (x86)/Windows Kits/10/Lib/10.0.22621.0/um/x64")
+
+# Function to compile HLSL shaders
+function(add_hlsl_shader SHADER_FILE SHADER_ENTRY SHADER_TARGET)
+    get_filename_component(SHADER_NAME ${SHADER_FILE} NAME_WE)
+    set(COMPILED_SHADER "${CMAKE_CURRENT_BINARY_DIR}/${SHADER_NAME}.cso")
+    
+    add_custom_command(
+        OUTPUT ${COMPILED_SHADER}
+        COMMAND dxc.exe -E${SHADER_ENTRY} -Tcs_6_6 "${SHADER_FILE}" -Fo"${COMPILED_SHADER}"
+        DEPENDS ${SHADER_FILE}
+        COMMENT "Compiling HLSL shader: ${SHADER_FILE}"
+    )
+    
+    set(${SHADER_TARGET} ${COMPILED_SHADER} PARENT_SCOPE)
+endfunction()
+
+# Compile HLSL shader
+add_hlsl_shader(src/fft/fft_gpu.hlsl FFTKernel_1D FFT_SHADER_CSO)
+
 # Define the executable and the files needed to build it
 add_executable(Simulator 
     src/main.cpp 
     src/Sim2D.cpp
+    src/fft/fft_gpu_cpu_emu.cpp
+    src/fft/fft_gpu_wrapper.cpp
+    ${FFT_SHADER_CSO}
 )
+
+# Link DirectX 12
+target_link_libraries(Simulator d3d12 dxgi d3dcompiler)

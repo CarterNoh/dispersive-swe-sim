@@ -2,14 +2,6 @@
 #include <windows.h>
 #include "Sim2D.h"
 
-/*
-Note: Every loop through the grid only covers interior cells and a separate loop covers boundaries. This was done 
-to increase simulation speed, but added a lot of complexity. I'm not positive that all the boundary checks are 
-right, and one thing to do eventually would be compare the speed of the sim with and without parts to see where 
-it matters. It would cut down on complexity and total length of code to do it all in the loop oinstead of separate 
-boundary handling. 
-*/
-
 // ********************************************************************************************************************
 // Helper functions
 // ********************************************************************************************************************
@@ -142,7 +134,6 @@ void Sim::ApplyBoundaries(std::vector<float>& field, int type)
 	else if (type == 2)
 		Sim::HandleZeroBoundary(field);
 }
-
 
 // ********************************************************************************************************************
 // Init functions
@@ -327,6 +318,14 @@ void Sim::SimStep(bool SWEonly)
 	time += TIMESTEP;
 }
 
+float Sim::CalculateDiffusion(std::vector<float>& field, std::vector<float>& alpha, int x, int y)
+{
+	float dF_x = alpha[idx(x,y)] * (field[idx(x+1,y)] - field[idx(x,y)]) - alpha[idx(x-1,y)] * (field[idx(x,y)] - field[idx(x-1,y)]);
+	float dF_y = alpha[idx(x,y)] * (field[idx(x,y+1)] - field[idx(x,y)]) - alpha[idx(x,y-1)] * (field[idx(x,y)] - field[idx(x,y-1)]);
+	float dFdT = (dF_x + dF_y) / (CELLSIZE*CELLSIZE);
+	return dFdT;
+}
+
 void Sim::DecompositionStep(bool SWEonly)
 {
 	/******* Bulk vs Surface Wave Decomposition ******/
@@ -415,24 +414,12 @@ void Sim::DecompositionStep(bool SWEonly)
 		{
 			for (int x = 1; x < GRIDSIZE - 1; x++)
 			{
-				// Diffusion step for H: dH/dt = Del * ( alpha_H * Del H )
-				float dH_x = alpha_H[idx(x,y)] * (HPast[idx(x+1,y)] - HPast[idx(x,y)]) - alpha_H[idx(x-1,y)] * (HPast[idx(x,y)] - HPast[idx(x-1,y)]);
-				float dH_y = alpha_H[idx(x,y)] * (HPast[idx(x,y+1)] - HPast[idx(x,y)]) - alpha_H[idx(x,y-1)] * (HPast[idx(x,y)] - HPast[idx(x,y-1)]);
-				float dHdT = (dH_x + dH_y) / (CELLSIZE*CELLSIZE);
-				H[idx(x,y)] = HPast[idx(x,y)] + DELTA_T * dHdT;
-				H[idx(x,y)] = std::max(terrain[idx(x,y)], H[idx(x,y)]); // ensure water surface is above terrain
-
-				// Diffusion step for Q: dQ/dt = Del * ( alpha_Q * Del Q )
+				// Diffusion step: dF/dt = Del * (alpha_F * Del F)
 				// Q has two components, so we do them separately
-				// This could be redundant, maybe only need x component for Q_x and y component for Q_y? Leave for now unless looks weird. 
-				float dQ_x_x = alpha_Q_x[idx(x,y)] * (QPast_x[idx(x+1,y)] - QPast_x[idx(x,y)]) - alpha_Q_x[idx(x-1,y)] * (QPast_x[idx(x,y)] - QPast_x[idx(x-1,y)]);
-				float dQ_x_y = alpha_Q_y[idx(x,y)] * (QPast_x[idx(x,y+1)] - QPast_x[idx(x,y)]) - alpha_Q_y[idx(x,y-1)] * (QPast_x[idx(x,y)] - QPast_x[idx(x,y-1)]); // = 0.f ? 
-				float dQdT_x = (dQ_x_x + dQ_x_y) / (CELLSIZE*CELLSIZE);
-				Q_x[idx(x,y)] = QPast_x[idx(x,y)] + DELTA_T * dQdT_x;
-				float dQ_y_x = alpha_Q_y[idx(x,y)] * (QPast_y[idx(x,y+1)] - QPast_y[idx(x,y)]) - alpha_Q_y[idx(x,y-1)] * (QPast_y[idx(x,y)] - QPast_y[idx(x,y-1)]); // = 0.f ?
-				float dQ_y_y = alpha_Q_x[idx(x,y)] * (QPast_y[idx(x+1,y)] - QPast_y[idx(x,y)]) - alpha_Q_x[idx(x-1,y)] * (QPast_y[idx(x,y)] - QPast_y[idx(x-1,y)]);
-				float dQdT_y = (dQ_y_x + dQ_y_y) / (CELLSIZE*CELLSIZE);
-				Q_y[idx(x,y)] = QPast_y[idx(x,y)] + DELTA_T * dQdT_y;
+				Q_x[idx(x,y)] = QPast_x[idx(x,y)] + DELTA_T * CalculateDiffusion(QPast_x, alpha_Q_x, x, y);
+				Q_y[idx(x,y)] = QPast_y[idx(x,y)] + DELTA_T * CalculateDiffusion(QPast_y, alpha_Q_y, x, y);
+				H[idx(x,y)]   = HPast[idx(x,y)]   + DELTA_T * CalculateDiffusion(HPast,   alpha_H,   x, y);
+				H[idx(x,y)]   = std::max(terrain[idx(x,y)], H[idx(x,y)]); // ensure water surface is above terrain
 			}
 		}
 		ApplyBoundaries(H, BOUNDARY_TYPE);

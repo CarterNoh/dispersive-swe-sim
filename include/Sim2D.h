@@ -88,6 +88,7 @@ public:
 
 private:
 	// Functions
+	float CalculateDiffusion(std::vector<float>& field, std::vector<float>& alpha, int x, int y);
 	void DecompositionStep(bool SWEonly); 	// bulk vs surface decomposition
 	// void eWaveStep(bool SWEonly);			// surface wave simulation step
 	void SWEStep();							// SWE bulk simulation step
