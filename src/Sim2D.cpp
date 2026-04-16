@@ -302,6 +302,27 @@ Sim::Sim(int terrainType = 0, int waterType = 0, float waterLevel = 5.0f)
     // Initialize terrain and water to default states (flat terrain, no water)
 	SetTerrain(terrainType);
 	SetWater(waterType, waterLevel);
+
+	// Set up GPU Shaders
+	gpu = new GPU();
+    if (!gpu->Init()) std::cerr << "GPU INIT FAILED" << std::endl;
+	gpu->CreateGridTexture(&tex_terrain, &uav_terrain, GRIDSIZE);
+    gpu->CreateGridTexture(&tex_H, &uav_H, GRIDSIZE);
+	gpu->CreateGridTexture(&tex_Q_x, &uav_Q_x, GRIDSIZE);
+	gpu->CreateGridTexture(&tex_Q_y, &uav_Q_y, GRIDSIZE);
+    gpu->CreateGridTexture(&tex_HPast, &uav_HPast, GRIDSIZE);
+	gpu->CreateGridTexture(&tex_QPast_x, &uav_QPast_x, GRIDSIZE);
+	gpu->CreateGridTexture(&tex_QPast_y, &uav_QPast_y, GRIDSIZE);
+    gpu->CreateGridTexture(&tex_alpha_H, &uav_alpha_H, GRIDSIZE);
+	gpu->CreateGridTexture(&tex_alpha_Q_x, &uav_alpha_Q_x, GRIDSIZE);
+	gpu->CreateGridTexture(&tex_alpha_Q_y, &uav_alpha_Q_y, GRIDSIZE);
+	gpu->CompileShader(L"shaders/kernels.hlsl", "CalcDiffusionCoeffs", &shader_CalcDiff);
+    gpu->CompileShader(L"shaders/kernels.hlsl", "DiffusionStep", &shader_Diffusion);
+	// gpu->CompileShader(L"shaders/kernels.hlsl", "ApplyBoundaries", &shader_Boundaries);
+	gpu->UploadToGPU(tex_terrain, terrain, GRIDSIZE);
+    SimConstants constants = {GRIDSIZE, CELLSIZE, DELTA_T, DIFFUSION_PENALTY, 
+		DIFFUSION_ITERATIONS, BOUNDARY_TYPE, 0.f, 0.f};
+    gpu->UpdateConstants(constants);
 }
 
 int Sim::Release(void)
@@ -356,6 +377,11 @@ void Sim::DecompositionStep(bool SWEonly)
 		Q_x[i] = q_x[i];
 		Q_y[i] = q_y[i];
 	}
+	gpu->UploadToGPU(tex_H, H, GRIDSIZE);
+	gpu->UploadToGPU(tex_Q_x, Q_x, GRIDSIZE);
+	gpu->UploadToGPU(tex_Q_y, Q_y, GRIDSIZE);
+
+	
 
 	/*	NOTE: Their implementation uses an average height across neighbor cells (I assume to improve stability, 
 	but reduces accuracy?). I am choosing to use only local cell values to align with eqn from paper, we'll 
@@ -376,38 +402,53 @@ void Sim::DecompositionStep(bool SWEonly)
 	*/
 
 	// Loop through grid to calculate diffusion coefficients
-	float max_alpha = CELLSIZE * CELLSIZE / (4.f * DELTA_T); // Max alpha for stability, derived from Von Neumann stability analysis of diffusion equation
-	for (int y = 0; y < GRIDSIZE-1; y++)
-	{
-		for (int x = 0; x < GRIDSIZE-1; x++)
-		{
-			
-			// Alpha_H
-			float denom = 2*DELTA_T*DIFFUSION_ITERATIONS;
-			alpha_H[idx(x,y)] = std::min(max_alpha, H[idx(x,y)] * H[idx(x,y)] / denom);
-			// Penalize steep gradients
-			float gradient_x = (H[idx(x+1,y)] - H[idx(x,y)]) / CELLSIZE;
-			float gradient_y = (H[idx(x,y+1)] - H[idx(x,y)]) / CELLSIZE;
-			float penalty = - DIFFUSION_PENALTY * (gradient_x * gradient_x + gradient_y * gradient_y);
-			alpha_H[idx(x,y)] *= exp(penalty);
+	int groups = GRIDSIZE / 16;
+	gpu->ClearUAV(uav_alpha_H, 0.0f);
+	gpu->ClearUAV(uav_alpha_Q_x, 0.0f);
+	gpu->ClearUAV(uav_alpha_Q_y, 0.0f);
+    gpu->Dispatch(shader_CalcDiff, {uav_terrain, uav_H, uav_Q_x, uav_Q_y, 
+		uav_HPast, uav_QPast_x, uav_QPast_y, uav_alpha_H, uav_alpha_Q_x, uav_alpha_Q_y}, groups, groups);
+	// float max_alpha = CELLSIZE * CELLSIZE / (4.f * DELTA_T); // Max alpha for stability, derived from Von Neumann stability analysis of diffusion equation
+	// float denom = 2*DELTA_T*DIFFUSION_ITERATIONS;
+	// for (int y = 0; y < GRIDSIZE-1; y++)
+	// {
+	// 	for (int x = 0; x < GRIDSIZE-1; x++)
+	// 	{
+	// 		// Alpha_H
+	// 		float grad_x = (H[idx(x+1,y)] - H[idx(x,y)]) / CELLSIZE;
+	// 		float grad_y = (H[idx(x,y+1)] - H[idx(x,y)]) / CELLSIZE;
+	// 		float penalty = - DIFFUSION_PENALTY * (grad_x * grad_x + grad_y * grad_y); // Penalize steep gradients
+	// 		alpha_H[idx(x,y)] = std::min(max_alpha, H[idx(x,y)] * H[idx(x,y)] / denom) * exp(penalty);
 
-			// Alpha_Q
-			float avg_H_x = 0.5f * (H[idx(x,y)] + H[idx(x+1,y)]);
-			float avg_H_y = 0.5f * (H[idx(x,y)] + H[idx(x,y+1)]);
-			alpha_Q_x[idx(x,y)] = std::min(max_alpha, avg_H_x * avg_H_x / denom);
-			alpha_Q_y[idx(x,y)] = std::min(max_alpha, avg_H_y * avg_H_y / denom);
-			alpha_Q_x[idx(x,y)] *= exp(penalty);
-			alpha_Q_y[idx(x,y)] *= exp(penalty);
-		}
-	}
+	// 		// Alpha_Q
+	// 		float avg_H_x = 0.5f * (H[idx(x,y)] + H[idx(x+1,y)]);
+	// 		float avg_H_y = 0.5f * (H[idx(x,y)] + H[idx(x,y+1)]);
+	// 		alpha_Q_x[idx(x,y)] = std::min(max_alpha, avg_H_x * avg_H_x / denom) * exp(penalty);
+	// 		alpha_Q_y[idx(x,y)] = std::min(max_alpha, avg_H_y * avg_H_y / denom) * exp(penalty);
+	// 	}
+	// }
+	gpu->DownloadFromGPU(tex_alpha_H, alpha_H, GRIDSIZE);
+	gpu->DownloadFromGPU(tex_alpha_Q_x, alpha_Q_x, GRIDSIZE);
+	gpu->DownloadFromGPU(tex_alpha_Q_y, alpha_Q_y, GRIDSIZE);
+
 	ApplyBoundaries(alpha_H, BOUNDARY_TYPE);
 	ApplyBoundaries(alpha_Q_x, BOUNDARY_TYPE);
 	ApplyBoundaries(alpha_Q_y, BOUNDARY_TYPE);
 	
-	
 	// Run diffusion to low-pass filter H and Q
 	for (int j = 0; (j < DIFFUSION_ITERATIONS); j++)
 	{
+
+		// Swap H and HPast pointers for ping-ponging
+        // std::swap(uav_H, uav_HPast); 
+        // std::swap(tex_H, tex_HPast);
+		// gpu->Dispatch(shader_Diffusion, {uav_terrain, uav_H, uav_HPast, uav_alpha_H}, groups, groups);
+		// gpu->Dispatch(shader_Diffusion, {uav_terrain, uav_H, uav_HPast, uav_alpha_H}, groups, groups);
+		// gpu->Dispatch(shader_Boundaries, {uav_H}, groups, groups);
+		// gpu->Dispatch(shader_Boundaries, {uav_Q_x}, groups, groups);
+		// gpu->Dispatch(shader_Boundaries, {uav_Q_y}, groups, groups);
+
+
 		HPast = H;
 		QPast_x = Q_x;
 		QPast_y = Q_y;

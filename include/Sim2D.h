@@ -2,7 +2,7 @@
 #include <iostream>
 #include <vector>
 #include <algorithm>
-// #include "alglib\fasttransforms.h"  // https://www.alglib.net/download.php#cpp
+#include "gpu.h"
 
 // constants
 #define GRAVITY 9.80665
@@ -20,11 +20,11 @@ public:
 
 	// Simulation parameters
 	static constexpr int GRIDSIZE = 256;	// grid size in one dimension (# cells)
-	static constexpr int CELLSIZE = 1;		// cell size in one dimension (meters/cell)
+	static constexpr float CELLSIZE = 1.f;	// cell size in one dimension (meters/cell)
 	static constexpr float TIMESTEP = 1.f / 30.f;
 	static constexpr float TERRAIN_HEIGHT = -10.f; // base height of terrain features (meters)
 	static constexpr float TERRAIN_SCALE = 15.f; // scale of terrain features (meters)
-	static constexpr float BOUNDARY_TYPE = 1; // 0 = wall, 1 = free, 2 = zero
+	static constexpr int BOUNDARY_TYPE = 1; // 0 = wall, 1 = free, 2 = zero
 
 	static constexpr int DEPTH_NUM = 4;		// number of discrete water depth solutions to compute for eWave dispersion correction
 	static constexpr float Depth[4] = { 1.f, 4.f, 16.f, 64.f };
@@ -85,6 +85,15 @@ public:
 	void SimStep(bool SWEonly);	// ticks the simulation by one timestep using the following substeps:
 	void SetTerrain(int type);
 	void SetWater(int type, float level);
+
+	// GPU Stuff
+	GPU* gpu;
+    // D3D11 Resource Pointers
+    ID3D11Texture2D *tex_terrain, *tex_H, *tex_Q_x, *tex_Q_y, *tex_HPast, *tex_QPast_x, *tex_QPast_y, 
+	*tex_alpha_H, *tex_alpha_Q_x,*tex_alpha_Q_y;
+    ID3D11UnorderedAccessView *uav_terrain, *uav_H, *uav_Q_x, *uav_Q_y, *uav_HPast, *uav_QPast_x, *uav_QPast_y, 
+	*uav_alpha_H, *uav_alpha_Q_x,*uav_alpha_Q_y;
+    ID3D11ComputeShader *shader_CalcDiff, *shader_Diffusion; //, *shader_Boundaries;
 
 private:
 	// Functions

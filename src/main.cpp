@@ -9,7 +9,7 @@ namespace fs = std::filesystem;
 
 // Parameters
 int numTicks = 100; // Number of simulation steps to run
-bool SWEonly = true; // Whether to run only the SWE step or include the full simulation steps
+bool SWEonly = false; // Whether to run only the SWE step or include the full simulation steps
 int terrainType = 0; // 0 = flat, 1 = ramp, 2 = bumps, 3 = basins, 4 = beach
 int waterType = 1; // 0 = localized splash, 1 = step/dam break, 2 = basin flood
 float waterLevel = 10.0f; // Initial water level
@@ -37,6 +37,7 @@ void SaveToCSV(const std::vector<float>& h, int size, int tick) {
 }
 
 int main() {
+    
     // Clear the data folder before starting the simulation
     if (fs::exists("data")) {  
         for (const auto& entry : fs::directory_iterator("data")) {
