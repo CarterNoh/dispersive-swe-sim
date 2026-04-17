@@ -45,7 +45,7 @@ bool GPU::Init() {
     return true;
 }
 
-bool GPU::CreateGridTexture(ID3D11Texture2D** tex, ID3D11UnorderedAccessView** uav, int size) {
+bool GPU::CreateGridTexture(GPUField* field, int size) {
     D3D11_TEXTURE2D_DESC desc = {};
     desc.Width = size;
     desc.Height = size;
@@ -55,13 +55,18 @@ bool GPU::CreateGridTexture(ID3D11Texture2D** tex, ID3D11UnorderedAccessView** u
     desc.SampleDesc.Count = 1;
     desc.Usage = D3D11_USAGE_DEFAULT;
     desc.BindFlags = D3D11_BIND_UNORDERED_ACCESS | D3D11_BIND_SHADER_RESOURCE;
+    if (FAILED(device->CreateTexture2D(&desc, nullptr, &field->tex))) return false;
 
-    if (FAILED(device->CreateTexture2D(&desc, nullptr, tex))) return false;
+    D3D11_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
+    srvDesc.Format = desc.Format;
+    srvDesc.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
+    srvDesc.Texture2D.MipLevels = 1;
+    if (FAILED(device->CreateShaderResourceView(field->tex, &srvDesc, &field->srv))) return false;
     
     D3D11_UNORDERED_ACCESS_VIEW_DESC uavDesc = {};
     uavDesc.Format = desc.Format;
     uavDesc.ViewDimension = D3D11_UAV_DIMENSION_TEXTURE2D;
-    if (FAILED(device->CreateUnorderedAccessView(*tex, &uavDesc, uav))) return false;
+    if (FAILED(device->CreateUnorderedAccessView(field->tex, &uavDesc, &field->uav))) return false;
 
     return true;
 }
@@ -102,6 +107,17 @@ void GPU::ClearUAV(ID3D11UnorderedAccessView* uav, float clearValue) {
     context->ClearUnorderedAccessViewFloat(uav, clearColor);
 }
 
+void GPU::Flush() {
+    D3D11_QUERY_DESC queryDesc = {};
+    queryDesc.Query = D3D11_QUERY_EVENT;
+    ID3D11Query* query = nullptr;
+    device->CreateQuery(&queryDesc, &query);
+    context->End(query);
+    BOOL done = FALSE;
+    while (context->GetData(query, &done, sizeof(BOOL), 0) == S_FALSE || !done) {}
+    query->Release();
+}
+
 bool GPU::CompileShader(const std::wstring& file, const std::string& entryPoint, ID3D11ComputeShader** shader) {
     ID3DBlob* shaderBlob = nullptr;
     ID3DBlob* errorBlob = nullptr;
@@ -133,14 +149,19 @@ void GPU::UpdateConstants(const SimConstants& constants) {
     }
 }
 
-void GPU::Dispatch(ID3D11ComputeShader* shader, const std::vector<ID3D11UnorderedAccessView*>& uavs, int groupsX, int groupsY) {
+void GPU::Dispatch(ID3D11ComputeShader* shader, 
+                   const std::vector<ID3D11ShaderResourceView*>& srvs, 
+                   const std::vector<ID3D11UnorderedAccessView*>& uavs, 
+                   int groupsX, int groupsY) {
     context->CSSetShader(shader, nullptr, 0);
+    context->CSSetShaderResources(0, srvs.size(), srvs.data());
     context->CSSetUnorderedAccessViews(0, uavs.size(), uavs.data(), nullptr);
-    
     context->Dispatch(groupsX, groupsY, 1);
 
     // Unbind to prevent read/write hazards
+    std::vector<ID3D11ShaderResourceView*> nullSRVs(srvs.size(), nullptr);
     std::vector<ID3D11UnorderedAccessView*> nullUAVs(uavs.size(), nullptr);
+    context->CSSetShaderResources(0, nullSRVs.size(), nullSRVs.data());
     context->CSSetUnorderedAccessViews(0, nullUAVs.size(), nullUAVs.data(), nullptr);
 }
 

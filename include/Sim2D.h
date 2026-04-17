@@ -24,7 +24,7 @@ public:
 	static constexpr float TIMESTEP = 1.f / 30.f;
 	static constexpr float TERRAIN_HEIGHT = -10.f; // base height of terrain features (meters)
 	static constexpr float TERRAIN_SCALE = 15.f; // scale of terrain features (meters)
-	static constexpr int BOUNDARY_TYPE = 1; // 0 = wall, 1 = free, 2 = zero
+	static constexpr int BOUNDARY_TYPE = 0; // 0 = wall, 1 = free, 2 = zero
 
 	static constexpr int DEPTH_NUM = 4;		// number of discrete water depth solutions to compute for eWave dispersion correction
 	static constexpr float Depth[4] = { 1.f, 4.f, 16.f, 64.f };
@@ -40,7 +40,7 @@ public:
 	std::vector<float> hbarOld;		// last timestep hbar, used for resampling in time
 	std::vector<float> htildeOld;	// last timestep htilde, used for resampling in time
 
-	// variables that could be allocated locally but we make gloabl so all functions can modify
+	// variables that could be allocated locally but we make global so all functions can modify
 	std::vector<float> hbar;		// bulk height
 	std::vector<float> qbar_x;		// bulk flow rate
 	std::vector<float> qbar_y;		// bulk flow rate
@@ -77,7 +77,24 @@ public:
 	std::vector<float> qAdvect_y; 	// flow rate change in y direction due to advection
 	std::vector<float> hPast;		// bulk height from last timestep
 
+	std::vector<float>* fields[30] = {&terrain, &h, &q_x, &q_y, &hbarOld, &htildeOld, &hbar, &qbar_x, &qbar_y, 
+		&htilde, &qtilde_x, &qtilde_y, &ubar_x, &ubar_y, &ubarNew_x, &ubarNew_y, &alpha_H, &alpha_Q_x, &alpha_Q_y, 
+		&H, &Q_x, &Q_y, &HPast, &QPast_x, &QPast_y, &qtildePast_x, &qtildePast_y, &qAdvect_x, &qAdvect_y, &hPast};
 
+
+	// GPU Stuff
+	GPU* gpu;
+	GPUField gpu_terrain, gpu_H, gpu_Q_x, gpu_Q_y, gpu_HPast, gpu_QPast_x, 
+	gpu_QPast_y, gpu_alpha_H, gpu_alpha_Q_x, gpu_alpha_Q_y;
+	GPUField* gpu_fields[10] = {&gpu_terrain, &gpu_H, &gpu_Q_x, &gpu_Q_y, &gpu_HPast, &gpu_QPast_x, 
+		&gpu_QPast_y, &gpu_alpha_H, &gpu_alpha_Q_x, &gpu_alpha_Q_y};
+    ID3D11ComputeShader *shader_CalcDiff, *shader_Diffusion, *shader_Boundaries;
+	ID3D11ComputeShader** shaders[3] = {&shader_CalcDiff, &shader_Diffusion, &shader_Boundaries};
+	char* names[3] = {"CalcDiffusionCoeffs", "DiffusionStep", "ApplyBoundaries"};
+	SimConstants constants = {GRIDSIZE, CELLSIZE, DELTA_T, DIFFUSION_PENALTY, 
+		DIFFUSION_ITERATIONS, BOUNDARY_TYPE, 0.f, 0.f};
+	int group = GRIDSIZE / 16; // number of thread groups to dispatch for compute shaders, assuming 16x16 threads per group
+	
 	// Functions
 	Sim();	// default constructor
 	Sim(int terrainType, int waterType, float waterLevel);	// constructor with parameters for terrain and water initialization
@@ -85,15 +102,6 @@ public:
 	void SimStep(bool SWEonly);	// ticks the simulation by one timestep using the following substeps:
 	void SetTerrain(int type);
 	void SetWater(int type, float level);
-
-	// GPU Stuff
-	GPU* gpu;
-    // D3D11 Resource Pointers
-    ID3D11Texture2D *tex_terrain, *tex_H, *tex_Q_x, *tex_Q_y, *tex_HPast, *tex_QPast_x, *tex_QPast_y, 
-	*tex_alpha_H, *tex_alpha_Q_x,*tex_alpha_Q_y;
-    ID3D11UnorderedAccessView *uav_terrain, *uav_H, *uav_Q_x, *uav_Q_y, *uav_HPast, *uav_QPast_x, *uav_QPast_y, 
-	*uav_alpha_H, *uav_alpha_Q_x,*uav_alpha_Q_y;
-    ID3D11ComputeShader *shader_CalcDiff, *shader_Diffusion; //, *shader_Boundaries;
 
 private:
 	// Functions

@@ -8,7 +8,7 @@
 namespace fs = std::filesystem;
 
 // Parameters
-int numTicks = 100; // Number of simulation steps to run
+int numTicks = 50; // Number of simulation steps to run
 bool SWEonly = false; // Whether to run only the SWE step or include the full simulation steps
 int terrainType = 0; // 0 = flat, 1 = ramp, 2 = bumps, 3 = basins, 4 = beach
 int waterType = 1; // 0 = localized splash, 1 = step/dam break, 2 = basin flood
@@ -55,7 +55,6 @@ int main() {
     auto totalStart = std::chrono::high_resolution_clock::now();
     for (int tick = 1; tick < numTicks; ++tick) {
         auto start = std::chrono::high_resolution_clock::now();
-
         sim.SimStep(SWEonly);
         SaveToCSV(sim.h, size, tick);
 

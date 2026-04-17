@@ -17,6 +17,12 @@ struct SimConstants {
     float buffer3;
 };
 
+struct GPUField {
+    ID3D11Texture2D* tex;
+    ID3D11ShaderResourceView* srv;   // read
+    ID3D11UnorderedAccessView* uav;  // write
+};
+
 class GPU {
 public:
     GPU();
@@ -25,18 +31,21 @@ public:
     bool Init();
     
     // Memory Management
-    bool CreateGridTexture(ID3D11Texture2D** tex, ID3D11UnorderedAccessView** uav, int size);
+    bool CreateGridTexture(GPUField* field, int size);
     bool UploadToGPU(ID3D11Texture2D* tex, const std::vector<float>& data, int size);
     bool DownloadFromGPU(ID3D11Texture2D* tex, std::vector<float>& data, int size);
     void ClearUAV(ID3D11UnorderedAccessView* uav, float clearValue);
+    void Flush();
 
     // Shader Management
     bool CompileShader(const std::wstring& file, const std::string& entryPoint, ID3D11ComputeShader** shader);
     void UpdateConstants(const SimConstants& constants);
     
-    
     // Execution
-    void Dispatch(ID3D11ComputeShader* shader, const std::vector<ID3D11UnorderedAccessView*>& uavs, int groupsX, int groupsY);
+    void Dispatch(ID3D11ComputeShader* shader, 
+                  const std::vector<ID3D11ShaderResourceView*>& srvs, 
+                  const std::vector<ID3D11UnorderedAccessView*>& uavs, 
+                  int groupsX, int groupsY);
 
 private:
     ID3D11Device* device = nullptr;
