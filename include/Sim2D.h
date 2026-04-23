@@ -25,14 +25,20 @@ public:
 	static constexpr float TERRAIN_HEIGHT = -10.f; // base height of terrain features (meters)
 	static constexpr float TERRAIN_SCALE = 15.f; // scale of terrain features (meters)
 	static constexpr int BOUNDARY_TYPE = 0; // 0 = wall, 1 = free, 2 = zero
-
-	static constexpr int DEPTH_NUM = 4;		// number of discrete water depth solutions to compute for eWave dispersion correction
-	static constexpr float Depth[4] = { 1.f, 4.f, 16.f, 64.f };
+	static constexpr float WATER_LEVEL = 10.f; 
 	static constexpr float MIN_WATER_HEIGHT = 0.01f;  // minimum water height for stability
-	static constexpr float CFL_CONDITION = 0.5f;  // max allowed CFL condition for stability of SWE step, can be higher than overall CFL condition since diffusion and transport steps handle stability as well
+	
+	// Decomposition Parameters
 	static constexpr int DIFFUSION_ITERATIONS = 128; // number of iterations for diffusion step, more iterations means more stable but also more expensive
 	static constexpr float DELTA_T = 0.25f;
 	static constexpr float DIFFUSION_PENALTY = 0.01f; // penalty factor for diffusion, higher means more diffusion and more stability but also more damping of waves
+	
+	// eWave, SWE, & Transport Parameters
+	static constexpr int DEPTH_NUM = 4;		// number of discrete water depth solutions to compute for eWave dispersion correction
+	static constexpr float Depth[4] = { 1.f, 4.f, 16.f, 64.f };
+
+	// Transport Parameters
+	static constexpr float CFL_CONDITION = 0.5f;  // max allowed CFL condition for stability of SWE step, can be higher than overall CFL condition since diffusion and transport steps handle stability as well
 	static constexpr float GAMMA_TRANSPORT = 0.25f; // blending factor for transport step, higher means more stable but also more damping of waves
 
 	
@@ -77,22 +83,37 @@ public:
 	std::vector<float> qAdvect_y; 	// flow rate change in y direction due to advection
 	std::vector<float> hPast;		// bulk height from last timestep
 
-	std::vector<float>* fields[30] = {&terrain, &h, &q_x, &q_y, &hbarOld, &htildeOld, &hbar, &qbar_x, &qbar_y, 
-		&htilde, &qtilde_x, &qtilde_y, &ubar_x, &ubar_y, &ubarNew_x, &ubarNew_y, &alpha_H, &alpha_Q_x, &alpha_Q_y, 
-		&H, &Q_x, &Q_y, &HPast, &QPast_x, &QPast_y, &qtildePast_x, &qtildePast_y, &qAdvect_x, &qAdvect_y, &hPast};
+	std::vector<float>* fields[30] = {
+		&terrain, &H, &Q_x, &Q_y, &h, &q_x, &q_y, 
+		&HPast, &QPast_x, &QPast_y, &alpha_H, &alpha_Q_x, &alpha_Q_y,
+		&hbar, &qbar_x, &qbar_y, &htilde, &qtilde_x, &qtilde_y, 
+		&ubar_x, &ubar_y, &ubarNew_x, &ubarNew_y,
+		&qtildePast_x, &qtildePast_y, &qAdvect_x, &qAdvect_y,
+		&hPast, &hbarOld, &htildeOld
+	};
 
 
 	// GPU Stuff
 	GPU* gpu;
-	GPUField gpu_terrain, gpu_H, gpu_Q_x, gpu_Q_y, gpu_HPast, gpu_QPast_x, 
-	gpu_QPast_y, gpu_alpha_H, gpu_alpha_Q_x, gpu_alpha_Q_y;
-	GPUField* gpu_fields[10] = {&gpu_terrain, &gpu_H, &gpu_Q_x, &gpu_Q_y, &gpu_HPast, &gpu_QPast_x, 
-		&gpu_QPast_y, &gpu_alpha_H, &gpu_alpha_Q_x, &gpu_alpha_Q_y};
-    ID3D11ComputeShader *shader_CalcDiff, *shader_Diffusion, *shader_Boundaries;
-	ID3D11ComputeShader** shaders[3] = {&shader_CalcDiff, &shader_Diffusion, &shader_Boundaries};
-	char* names[3] = {"CalcDiffusionCoeffs", "DiffusionStep", "ApplyBoundaries"};
-	SimConstants constants = {GRIDSIZE, CELLSIZE, DELTA_T, DIFFUSION_PENALTY, 
-		DIFFUSION_ITERATIONS, BOUNDARY_TYPE, 0.f, 0.f};
+	GPUField gpu_terrain, gpu_H, gpu_Q_x, gpu_Q_y, gpu_h, gpu_q_x, gpu_q_y, 
+			 gpu_HPast, gpu_QPast_x, gpu_QPast_y, gpu_alpha_H, gpu_alpha_Q_x, gpu_alpha_Q_y, 
+			 gpu_hbar, gpu_qbar_x, gpu_qbar_y, gpu_htilde, gpu_qtilde_x, gpu_qtilde_y,
+			 gpu_ubar_x, gpu_ubar_y, gpu_ubarNew_x, gpu_ubarNew_y,
+			 gpu_qtildePast_x, gpu_qtildePast_y, gpu_qAdvect_x, gpu_qAdvect_y, 
+			 gpu_hPast, gpu_hBarOld, gpu_htildeOld;
+	GPUField* gpu_fields[30] = {
+		&gpu_terrain, &gpu_H, &gpu_Q_x, &gpu_Q_y, &gpu_h, &gpu_q_x, &gpu_q_y, 
+		&gpu_HPast, &gpu_QPast_x, &gpu_QPast_y, &gpu_alpha_H, &gpu_alpha_Q_x, &gpu_alpha_Q_y,
+		&gpu_hbar, &gpu_qbar_x, &gpu_qbar_y, &gpu_htilde, &gpu_qtilde_x, &gpu_qtilde_y, 
+		&gpu_ubar_x, &gpu_ubar_y, &gpu_ubarNew_x, &gpu_ubarNew_y,
+		&gpu_qtildePast_x, &gpu_qtildePast_y, &gpu_qAdvect_x, &gpu_qAdvect_y, 
+		&gpu_hPast, &gpu_hBarOld, &gpu_htildeOld
+	};
+    ID3D11ComputeShader *shader_Boundaries, *shader_InitDecomp, *shader_CalcDiff, *shader_Diffusion, *shader_Decompose;
+	ID3D11ComputeShader** shaders[5] = {&shader_Boundaries, &shader_InitDecomp, &shader_CalcDiff, &shader_Diffusion, &shader_Decompose};
+	char* names[12] = {"ApplyBoundaries", "InitDecomposition", "CalcDiffusionCoeffs", "DiffusionStep", "DecomposeFields"};
+	SimConstants constants = {GRIDSIZE, CELLSIZE, TIMESTEP, BOUNDARY_TYPE, MIN_WATER_HEIGHT,
+							  DIFFUSION_ITERATIONS, DELTA_T, DIFFUSION_PENALTY, CFL_CONDITION, GAMMA_TRANSPORT, 0.f, 0.f};
 	int group = GRIDSIZE / 16; // number of thread groups to dispatch for compute shaders, assuming 16x16 threads per group
 	
 	// Functions

@@ -7,14 +7,23 @@
 
 // The constant buffer must be padded to a multiple of 16 bytes for HLSL
 struct SimConstants {
+    // Simulation params
     int gridSize;
     float cellSize;
+    float timeStep;
+    int boundaryType;
+    float minWaterHeight;
+    // Decomposition params
+    int diffusionIterations;
     float deltaT;
     float diffusionPenalty;
-    int diffusionIterations;
-    int boundaryType; 
-    float buffer2; 
-    float buffer3;
+    // SWE & Transport Params
+    float cflCondition;
+    float gammaTransport;
+    // Padding for 16-byte alignment
+    float buffer1;
+    float buffer2;
+    
 };
 
 struct GPUField {
