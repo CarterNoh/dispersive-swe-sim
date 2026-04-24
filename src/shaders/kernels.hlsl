@@ -70,13 +70,21 @@ bool stopFlowOnTerrainBoundary(Texture2D<float> h, Texture2D<float> terrain, uin
 	}
 }
 
-float Sim::SampleCubicClamped(std::vector<float>& dataField, float samplePos, uint2 curr, bool isYDirection=false) {
+float LimitVelocity(float velocity_in)
+{
+	if (velocity_in >= 0.f)
+		return min(velocity_in, cflCondition * cellSize / timeStep);   // 0.25 since other neighbors might take from this source cell as well
+	else
+		return max(velocity_in, -cflCondition * cellSize / timeStep);
+}
+
+float SampleCubicClamped(Texture2D<float> dataField, float samplePos, uint2 curr, bool isYDirection=false) {
 	// cubic interpolation with Catmull-Rom Spline https://en.wikipedia.org/wiki/Cubic_Hermite_spline#Interpolating_a_data_set
-	int id_start = floor(samplePos) - 1;
-	int id0 = max(0, min(id_start + 0, gridSize - 1));
-	int id1 = max(0, min(id_start + 1, gridSize - 1));
-	int id2 = max(0, min(id_start + 2, gridSize - 1));
-	int id3 = max(0, min(id_start + 3, gridSize - 1));
+	uint id_start = floor(samplePos) - 1;
+	uint id0 = max(0, min(id_start + 0, (uint)gridSize - 1));
+	uint id1 = max(0, min(id_start + 1, (uint)gridSize - 1));
+	uint id2 = max(0, min(id_start + 2, (uint)gridSize - 1));
+	uint id3 = max(0, min(id_start + 3, (uint)gridSize - 1));
 	float fx = max(0.f, min(1.f, samplePos - floor(samplePos)));
 	float x2 = fx * fx;
 	float x3 = x2 * fx;
@@ -84,17 +92,27 @@ float Sim::SampleCubicClamped(std::vector<float>& dataField, float samplePos, ui
 	float xcubicY =  3.f * x3 - 5.f * x2 + 2.f;
 	float xcubicZ = -3.f * x3 + 4.f * x2 + fx;
 	float xcubicW =  x3 - x2;
-    if (isYDirection)
-        float out = 0.5f * (xcubicX * dataField[id0 * gridSize + curr.x] + xcubicY * dataField[id1 * gridSize + curr.x] + 
-                       xcubicZ * dataField[id2 * gridSize + curr.x] + xcubicW * dataField[id3 * gridSize + curr.x]);
-        out = min(max(dataField[id1 * gridSize + curr.x], dataField[id2 * gridSize + curr.x]), out);  // value-limiting
-	    out = max(min(dataField[id1 * gridSize + curr.x], dataField[id2 * gridSize + curr.x]), out);  // value-limiting
-    else
-        float out = 0.5f * (xcubicX * dataField[curr.y * gridSize + id0] + xcubicY * dataField[curr.y * gridSize + id1] + 
-                       xcubicZ * dataField[curr.y * gridSize + id2] + xcubicW * dataField[curr.y * gridSize + id3]);
-        out = min(max(dataField[curr.y * gridSize + id1], dataField[curr.y * gridSize + id2]), out);  // value-limiting
-	    out = max(min(dataField[curr.y * gridSize + id1], dataField[curr.y * gridSize + id2]), out);  // value-limiting
-	return out;
+
+    float result; 
+    if (isYDirection) {
+        float data0 = dataField[uint2(curr.x, id0)];
+        float data1 = dataField[uint2(curr.x, id1)];
+        float data2 = dataField[uint2(curr.x, id2)];
+        float data3 = dataField[uint2(curr.x, id3)];
+        result = 0.5f * (xcubicX * data0 + xcubicY * data1 + xcubicZ * data2 + xcubicW * data3);
+        result = min(max(data1, data2), result);  // value-limiting
+	    result = max(min(data1, data2), result);  // value-limiting
+    }
+    else {
+        float data0 = dataField[uint2(id0, curr.y)];
+        float data1 = dataField[uint2(id1, curr.y)];
+        float data2 = dataField[uint2(id2, curr.y)];
+        float data3 = dataField[uint2(id3, curr.y)];
+        result = 0.5f * (xcubicX * data0 + xcubicY * data1 + xcubicZ * data2 + xcubicW * data3);
+        result = min(max(data1, data2), result);  // value-limiting
+	    result = max(min(data1, data2), result);  // value-limiting
+    }
+	return result;
 }
 
 //////////////////// COMPUTE SHADERS /////////////////////////
@@ -149,10 +167,10 @@ void ApplyBoundaries(uint3 id : SV_DispatchThreadID){
         // out3[id.xy] = 2.0f * in3[src] - in3[src + dir];
     }
     else if (boundaryType == 2) { // zero (absorbing)
-        out0[id.xy] = waterLevel;
-        out1[id.xy] = waterLevel; 
-        out2[id.xy] = waterLevel;
-        // out3[id.xy] = waterLevel;
+        out0[id.xy] = 0.f;
+        out1[id.xy] = 0.f;
+        out2[id.xy] = 0.f;
+        // out3[id.xy] = 0.f;
     } 
 }
 
@@ -163,7 +181,7 @@ void ApplyBoundaries(uint3 id : SV_DispatchThreadID){
 void InitDecomp(uint3 id : SV_DispatchThreadID) {
     // Inputs: in0 = h, in1 = q_x, in2 = q_y, in3 = terrain
     // Outputs: out0 = H, out1 = Q_x, out2 = Q_y
-    out0[id.xy] = in3[id.xy] + in0[id.xy];
+    out0[id.xy] = in0[id.xy] + in3[id.xy];
     out1[id.xy] = in1[id.xy];
     out2[id.xy] = in2[id.xy];
 }
@@ -235,23 +253,27 @@ void DecomposeFields(uint3 id : SV_DispatchThreadID) {
     //         in3 = h, in4 = q_x, in5 = q_y, in6 = terrain
     // Outputs: out0 = hbar, out1 = qbar_x, out2 = qbar_y, 
     //          out3 = htilde, out4 = qtilde_x, out5 = qtilde_y
-    if (id.x < 1 || id.x >= (uint)(gridSize - 1) || id.y < 1 || id.y >= (uint)(gridSize - 1)) return;
-    current = id.xy;
+    float hbar = max(0.f, in0[id.xy] - in6[id.xy]);
+    out0[id.xy] = hbar;
+    out1[id.xy] = in1[id.xy];
+    out2[id.xy] = in2[id.xy];
+	out3[id.xy] = in3[id.xy] - hbar;
+    out4[id.xy] = in4[id.xy] - in1[id.xy];
+    out5[id.xy] = in5[id.xy] - in2[id.xy];
+}
 
-    out0[curr] = std::max(0.f, H[curr] - in0[curr]);
-	out1[curr] = Q_x[curr];
-	out2[curr] = Q_y[curr];
-	out3[curr] = h[curr] - out0[curr];
-	out4[curr] = q_x[curr] - out1[curr];
-	out5[curr] = q_y[curr] - out2[curr];
-
-    if (stopFlowOnTerrainBoundary(in3, in6, curr, false)) { // stop flow in x direction
-        qbar_x[curr] = 0.f;
-        qtilde_x[curr] = 0.f;
+[numthreads(16, 16, 1)]
+void StopFlow(uint3 id : SV_DispatchThreadID) {
+    // Inputs: in0 = h, in1 = terrain
+    // Outputs: out0 = qbar_x, out1 = qbar_y, out2 = qtilde_x, out3 = qtilde_y
+    if (id.x >= (uint)(gridSize - 1) || id.y >= (uint)(gridSize - 1)) return;
+    if (stopFlowOnTerrainBoundary(in0, in1, id.xy, false)) { // stop flow in x direction
+        out0[id.xy] = 0.f;
+        out2[id.xy] = 0.f;
     }
-    if (stopFlowOnTerrainBoundary(in3, in6, curr, true)) { // stop flow in y direction
-        qbar_y[curr] = 0.f;
-        qtilde_y[curr] = 0.f;
+    if (stopFlowOnTerrainBoundary(in0, in1, id.xy, true)) { // stop flow in y direction
+        out1[id.xy] = 0.f;
+        out3[id.xy] = 0.f;
     }
 }
 
@@ -263,8 +285,30 @@ void DecomposeFields(uint3 id : SV_DispatchThreadID) {
 
 /////////// SWE ///////////
 
-// [numthreads(16, 16, 1)]
-// void CalcDiffusionCoeffs(uint3 id : SV_DispatchThreadID) {}
+[numthreads(16, 16, 1)]
+void Ubar(uint3 id : SV_DispatchThreadID) {
+    // Inputs: in0 = qbar_x, in1 = qbar_y, in2 = hbarOld
+    // Outputs: out0 = hbar, out1 = qbar_x, out2 = qbar_y, 
+    //          out3 = htilde, out4 = qtilde_x, out5 = qtilde_y
+    float ubar_x = in0[id.xy];
+    float ubar_y = in1[id.xy];
+
+    // First-Order Up-Winding
+    // SOMEDAY: Try interpolating h or using higher-order upwinding for better accuracy?
+    // Technically u = q / H, not h?? Different derivations differ here
+    if (ubar_x >= 0.f || id.x == gridSize-1)
+        ubar_x /= max(minWaterHeight, in2[id.xy]);
+    else
+        ubar_x /= max(minWaterHeight, in2[id.xy + uint2(1,0)]);
+    if (ubar_y >= 0.f || id.y == gridSize-1)
+        ubar_y /= max(minWaterHeight, in2[id.xy]);
+    else
+        ubar_y /= max(minWaterHeight, in2[id.xy + uint2(0,1)]);
+
+    // Enforcing CFL condition for later surface waves advection
+    ubar_x[id.xy] = LimitVelocity(ubar_x);  
+    ubar_y[id.xy] = LimitVelocity(ubar_y); 
+}
 
 // [numthreads(16, 16, 1)]
 // void CalcDiffusionCoeffs(uint3 id : SV_DispatchThreadID) {}
@@ -303,24 +347,24 @@ void UpdateTilde(uint3 id : SV_DispatchThreadID) {
         ((bulkVelocity_x < 0.f) && (in6[uint2(id.x + 1, id.y)] < minWaterHeight)))
         out0[id.xy] = 0.f;
     else
-        out0[id.xy] = SampleCubicClamped(id.x + step_x, in4, id.xy, false) * exp(-div_ubar * timeStep);
+        out0[id.xy] = SampleCubicClamped(in4, id.x + step_x, id.xy, false) * exp(-div_ubar * timeStep);
     if (((bulkVelocity_y >= 0.f) && (in6[id.xy] < minWaterHeight)) ||
         ((bulkVelocity_y < 0.f) && (in6[uint2(id.x, id.y + 1)] < minWaterHeight)))
         out1[id.xy] = 0.f;
     else
-        out1[id.xy] = SampleCubicClamped(id.y + step_y, in5, id.xy, true) * exp(-div_ubar * timeStep);
+        out1[id.xy] = SampleCubicClamped(in5, id.y + step_y, id.xy, true) * exp(-div_ubar * timeStep);
 
     // Update htilde using ubar divergence
     div_ubar_x = (in0[id.xy] - in0[uint2(id.x-1, id.y)]) / cellSize;
     div_ubar_y = (in2[id.xy] - in2[uint2(id.x, id.y-1)]) / cellSize;
     div_ubar = div_ubar_x + div_ubar_y;
     if (div_ubar < 0.f) // dampen if converging to avoid breaking waves
-        div_ubar *= GAMMA_TRANSPORT;
-    htilde[id.xy] *= exp(-div_ubar * timeStep);
+        div_ubar *= gammaTransport;
+    out2[id.xy] *= exp(-div_ubar * timeStep);
 }
 
 [numthreads(16, 16, 1)]
-void UpdateHtilde(uint3 id : SV_DispatchThreadID) {
+void UpdateQAdvect(uint3 id : SV_DispatchThreadID) {
 
 }
 

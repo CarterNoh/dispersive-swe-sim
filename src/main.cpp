@@ -8,7 +8,7 @@
 namespace fs = std::filesystem;
 
 // Parameters
-int numTicks = 40; // Number of simulation steps to run
+int numTicks = 30; // Number of simulation steps to run
 bool SWEonly = false; // Whether to run only the SWE step or include the full simulation steps
 int terrainType = 0; // 0 = flat, 1 = ramp, 2 = bumps, 3 = basins, 4 = beach
 int waterType = 1; // 0 = localized splash, 1 = step/dam break, 2 = basin flood
