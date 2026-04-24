@@ -288,8 +288,7 @@ void StopFlow(uint3 id : SV_DispatchThreadID) {
 [numthreads(16, 16, 1)]
 void Ubar(uint3 id : SV_DispatchThreadID) {
     // Inputs: in0 = qbar_x, in1 = qbar_y, in2 = hbarOld
-    // Outputs: out0 = hbar, out1 = qbar_x, out2 = qbar_y, 
-    //          out3 = htilde, out4 = qtilde_x, out5 = qtilde_y
+    // Outputs: out0 = ubar_x, out1 = ubar_y
     float ubar_x = in0[id.xy];
     float ubar_y = in1[id.xy];
 
@@ -306,15 +305,106 @@ void Ubar(uint3 id : SV_DispatchThreadID) {
         ubar_y /= max(minWaterHeight, in2[id.xy + uint2(0,1)]);
 
     // Enforcing CFL condition for later surface waves advection
-    ubar_x[id.xy] = LimitVelocity(ubar_x);  
-    ubar_y[id.xy] = LimitVelocity(ubar_y); 
+    out0[id.xy] = LimitVelocity(ubar_x);  
+    out1[id.xy] = LimitVelocity(ubar_y); 
 }
 
-// [numthreads(16, 16, 1)]
-// void CalcDiffusionCoeffs(uint3 id : SV_DispatchThreadID) {}
+[numthreads(16, 16, 1)]
+void SWE(uint3 id : SV_DispatchThreadID) {
+    // Inputs: in0 = ubar_x, in1 = ubar_y, in2 = hbar, in3 = H
+    // Outputs: out0 = ubarNew_x, out1 = ubarNew_y, out2 = qbar_x, out3 = qbar_y
 
-// [numthreads(16, 16, 1)]
-// void CalcDiffusionCoeffs(uint3 id : SV_DispatchThreadID) {}
+    // Compute intermediate values needed for du/dt calculations
+    // Need: q_x/y_ij, q_x_i-0.5_j, q_y_i_j-0.5, 
+    // 	     h_i+0.5_j, h_i_j+0.5, h_ij=hbar[x,y], h_i+1_j=hbar[x+1,y], h_i_j+1=hbar[x,y+1],
+    //       u_x_i+0.5_j=ubar_x[x,y], u_x_i-0.5_j=ubar_x[x-1,y], 
+    //       u_y_i_j+0.5=ubar_y[x,y], u_y_i_j-0.5=ubar_y[x,y-1], 
+    //       u_x_i+0.5_j-1=ubar_x[x,y-1], u_y_i-1_j+0.5=ubar_y[x-1,y]
+    // Note: The 1D implementation uses far more intermeidate values that the paper, and I don't know why. 
+    // The commented sections below are the conversion of their 1D code with all its complexity, and the 
+    // uncommented sections are my simplified version that tries to stay more true to the paper. We'll see 
+    // if it causes stability/accuracy issues.
+
+    ////// X DIRECTION //////
+    // Use upwinding to evaluate q_(i-0.5,j), q_(i+0.5,j), q_(i+1.5,j) 
+    // for x direction to get q_x_(i,j), q_x_(i+1,j)
+    float q_x_m05 = in0[id.xy - uint2(1, 0)];
+    if (q_x_m05 >= 0.f)
+        q_x_m05 *= in2[id.xy - uint2(1, 0)];
+    else
+        q_x_m05 *= in2[id.xy];
+    float q_x_p05 = in0[id.xy];  
+    if (q_x_p05 >= 0.f)
+        q_x_p05 *= in2[id.xy];
+    else
+        q_x_p05 *= in2[id.xy + uint2(1, 0)];
+    float q_x_0 = 0.5f * (q_x_m05 + q_x_p05);
+    // float q_x_p15 = ubar_x[idx(x+1,y)];  //q_(i+1.5,j) = hfr at position x
+    // if (q_x_p15 >= 0.f)
+    // 	q_x_p15 *= hbar[idx(x+1,y)];
+    // else
+    // 	q_x_p15 *= hbar[std::min(idx(x+1,y) + 1, GRIDSIZE*GRIDSIZE-1)];
+    // float q_x_p1 = 0.5f * (q_x_p05 + q_x_p15);
+    // Calculate corresponding vaules for u_x_(i,j) using upwinding
+    // (why do we use upwinding here instead of averaging like q?)
+    // float u_star_x_0 = 0.f;
+    // if (q_x_0 >= 0.f)
+    // 	u_star_x_0 = ubar_x[idx(x-1,y)];
+    // else
+    // 	u_star_x_0 = ubar_x[idx(x,y)];
+    // float u_star_x_p1 = 0.f;
+    // if (q_x_p1 > 0.f)
+    // 	u_star_x_p1 = ubar_x[idx(x,y)];
+    // else
+    // 	u_star_x_p1 = ubar_x[idx(x+1,y)];
+    // Calculate h_(i+0.5,j) and h_(i-0.5,j) using upwinding
+    // float h_avg_x_p05 = (hbar[idx(x,y)] + hbar[idx(x+1,y)]) / 2.f; // averaging, for some reason the old paper used this
+    float h_x_p05 = 0.f;
+    if (in0[id.xy] >= 0.f)
+        h_x_p05 = in2[id.xy];
+    else
+        h_x_p05 = in2[id.xy + uint2(1, 0)];
+
+    /////// Y DIRECTION //////
+    // Use upwinding to evaluate q_(i,j-0.5), q_(i,j+0.5), q_(i,j+1.5) 
+    // for y direction to get q_y_(i,j), q_y_(i,j+1)
+    float q_y_m05 = in1[id.xy - uint2(0, 1)];
+    if (q_y_m05 >= 0.f)
+        q_y_m05 *= in2[id.xy - uint2(0, 1)];
+    else
+        q_y_m05 *= in2[id.xy];
+    float q_y_p05 = in1[id.xy];  
+    if (q_y_p05 >= 0.f)
+        q_y_p05 *= in2[id.xy];
+    else
+        q_y_p05 *= in2[id.xy + uint2(0, 1)];
+    float q_y_0 = 0.5f * (q_y_m05 + q_y_p05);
+    // Calculate h_(i,j+0.5) and h_(i,j-0.5) using upwinding
+    float h_y_p05 = 0.f;
+    if (in1[id.xy] >= 0.f)
+        h_y_p05 = in2[id.xy];
+    else
+        h_y_p05 = in2[id.xy + uint2(0, 1)];
+
+    // Compute dux_dt and duy_dt
+    // X DIRECTION
+    float gravity = 9.8066f;
+    float dux_dt = - (1/cellSize) * ((q_x_0/h_x_p05) * (in0[id.xy] - in0[id.xy - uint2(1, 0)]) + (q_y_m05/h_x_p05) * (in0[id.xy] - in0[id.xy - uint2(0, 1)]) + gravity * (in3[id.xy + uint2(1, 0)] - in3[id.xy]));
+    out0[id.xy] = LimitVelocity(in0[id.xy] + timeStep * dux_dt);  // Enforcing CFL condition
+    // Y DIRECTION
+    float duy_dt = - (1/cellSize) * ((q_y_0/h_y_p05) * (in1[id.xy] - in1[id.xy - uint2(0, 1)]) + (q_x_m05/h_y_p05) * (in1[id.xy] - in1[id.xy - uint2(1, 0)]) + gravity * (in3[id.xy + uint2(0, 1)] - in3[id.xy]));
+    out1[id.xy] = LimitVelocity(in1[id.xy] + timeStep * duy_dt);  // Enforcing CFL condition
+
+
+    if (ubarNew_x[idx(x,y)] >= 0.f || x == GRIDSIZE-1)
+        qbar_x[idx(x,y)] = ubarNew_x[idx(x,y)] * hbar[idx(x,y)];
+    else
+        qbar_x[idx(x,y)] = ubarNew_x[idx(x,y)] * hbar[idx(x+1,y)];
+    if (ubarNew_y[idx(x,y)] >= 0.f || y == GRIDSIZE-1)
+        qbar_y[idx(x,y)] = ubarNew_y[idx(x,y)] * hbar[idx(x,y)];
+    else
+        qbar_y[idx(x,y)] = ubarNew_y[idx(x,y)] * hbar[idx(x,y+1)];
+}
 
 
 /////////// Transport ///////////

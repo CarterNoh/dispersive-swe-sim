@@ -385,6 +385,7 @@ void Sim::DecompositionStep(bool SWEonly)
 	// 	{gpu_qbar_x.srv, gpu_qbar_y.srv, gpu_qtilde_x.srv, gpu_qtilde_y.srv}, 
 	// 	{gpu_qbar_x.uav, gpu_qbar_y.uav, gpu_qtilde_x.uav, gpu_qtilde_y.uav}, 
 	// 	group, group);	
+	// gpu->DownloadFromGPU(gpu_H.tex, H, GRIDSIZE);
 	// gpu->DownloadFromGPU(gpu_hbar.tex, hbar, GRIDSIZE);
 	// gpu->DownloadFromGPU(gpu_qbar_x.tex, qbar_x, GRIDSIZE);
 	// gpu->DownloadFromGPU(gpu_qbar_y.tex, qbar_y, GRIDSIZE);
@@ -459,125 +460,148 @@ void Sim::SWEStep()
 {
 	// SWE bulk simulation using [Stelling03]
 
+	// // qbar to ubar using hbar from LAST timestep
+	// for (int y = 0; y < GRIDSIZE; y++)
+	// {
+	// 	for (int x = 0; x < GRIDSIZE; x++)
+	// 	{
+	// 		ubar_x[idx(x,y)] = qbar_x[idx(x,y)];
+	// 		ubar_y[idx(x,y)] = qbar_y[idx(x,y)];
+
+	// 		// First-Order Up-Winding
+	// 		// SOMEDAY: Try interpolating h or using higher-order upwinding for better accuracy?
+	// 		// Technically u = q / H, not h?? Different derivations differ here
+	// 		if (ubar_x[idx(x,y)] >= 0.f || x == GRIDSIZE-1)
+	// 			ubar_x[idx(x,y)] /= std::max(MIN_WATER_HEIGHT, hbarOld[idx(x,y)]);
+	// 		else
+	// 			ubar_x[idx(x,y)] /= std::max(MIN_WATER_HEIGHT, hbarOld[idx(x+1,y)]);
+	// 		if (ubar_y[idx(x,y)] >= 0.f || y == GRIDSIZE-1)
+	// 			ubar_y[idx(x,y)] /= std::max(MIN_WATER_HEIGHT, hbarOld[idx(x,y)]);
+	// 		else
+	// 			ubar_y[idx(x,y)] /= std::max(MIN_WATER_HEIGHT, hbarOld[idx(x,y+1)]);
+
+	// 		// Enforcing CFL condition for later surface waves advection
+	// 		ubar_x[idx(x,y)] = LimitVelocity(ubar_x[idx(x,y)]);  
+	// 		ubar_y[idx(x,y)] = LimitVelocity(ubar_y[idx(x,y)]);  
+	// 	}
+	// }
+
 	// qbar to ubar using hbar from LAST timestep
-	for (int y = 0; y < GRIDSIZE; y++)
-	{
-		for (int x = 0; x < GRIDSIZE; x++)
-		{
-			ubar_x[idx(x,y)] = qbar_x[idx(x,y)];
-			ubar_y[idx(x,y)] = qbar_y[idx(x,y)];
+	// gpu->UploadToGPU(gpu_H.tex, H, GRIDSIZE);
+	gpu->UploadToGPU(gpu_hbar.tex, hbar, GRIDSIZE);
+	gpu->UploadToGPU(gpu_qbar_x.tex, qbar_x, GRIDSIZE);
+	gpu->UploadToGPU(gpu_qbar_y.tex, qbar_y, GRIDSIZE);
+	gpu->UploadToGPU(gpu_hbarOld.tex, hbarOld, GRIDSIZE);
+	gpu->Dispatch(shader_Ubar, 
+		{gpu_qbar_x.srv, gpu_qbar_y.srv, gpu_hbarOld.srv,}, 
+		{gpu_ubar_x.uav, gpu_ubar_y.uav}, 
+		group, group);	
+	gpu->DownloadFromGPU(gpu_ubar_x.tex, ubar_x, GRIDSIZE);
+	gpu->DownloadFromGPU(gpu_ubar_y.tex, ubar_y, GRIDSIZE);
 
-			// First-Order Up-Winding
-			// SOMEDAY: Try interpolating h or using higher-order upwinding for better accuracy?
-			// Technically u = q / H, not h?? Different derivations differ here
-			if (ubar_x[idx(x,y)] >= 0.f || x == GRIDSIZE-1)
-				ubar_x[idx(x,y)] /= std::max(MIN_WATER_HEIGHT, hbarOld[idx(x,y)]);
-			else
-				ubar_x[idx(x,y)] /= std::max(MIN_WATER_HEIGHT, hbarOld[idx(x+1,y)]);
-			if (ubar_y[idx(x,y)] >= 0.f || y == GRIDSIZE-1)
-				ubar_y[idx(x,y)] /= std::max(MIN_WATER_HEIGHT, hbarOld[idx(x,y)]);
-			else
-				ubar_y[idx(x,y)] /= std::max(MIN_WATER_HEIGHT, hbarOld[idx(x,y+1)]);
+	gpu->Dispatch(shader_SWE,
+		{gpu_ubar_x.srv, gpu_ubar_y.srv, gpu_hbar.srv, gpu_H.srv}, 
+		{gpu_ubarNew_x.uav, gpu_ubarNew_y.uav}, 
+		group, group);
+	gpu->Dispatch(shader_Boundaries, 
+		{gpu_ubarNew_x.srv, gpu_ubarNew_y.srv}, 
+		{gpu_ubarNew_x.uav, gpu_ubarNew_y.uav}, 
+		group, group);
+	gpu->DownloadFromGPU(gpu_ubarNew_x.tex, ubarNew_x, GRIDSIZE);
+	gpu->DownloadFromGPU(gpu_ubarNew_y.tex, ubarNew_y, GRIDSIZE);
 
-			// Enforcing CFL condition for later surface waves advection
-			ubar_x[idx(x,y)] = LimitVelocity(ubar_x[idx(x,y)]);  
-			ubar_y[idx(x,y)] = LimitVelocity(ubar_y[idx(x,y)]);  
-		}
-	}
-	hbarOld = hbar;   // store current hbar for next timestep
+	// // Compute time derivative of u_bar and integrate to get new u_bar
+	// for (int y = 1; y < GRIDSIZE-1; y++)
+	// {
+	// 	for (int x = 1; x < GRIDSIZE-1; x++)
+	// 	{
+	// 		// Compute intermediate values needed for du/dt calculations
+	// 		// Need: q_x/y_ij, q_x_i-0.5_j, q_y_i_j-0.5, 
+	// 		// 	     h_i+0.5_j, h_i_j+0.5, h_ij=hbar[idx(x,y)], h_i+1_j=hbar[idx(x+1,y)], h_i_j+1=hbar[idx(x,y+1)],
+	// 		//       u_x_i+0.5_j=ubar_x[idx(x,y)], u_x_i-0.5_j=ubar_x[idx(x-1,y)], 
+	// 		//       u_y_i_j+0.5=ubar_y[idx(x,y)], u_y_i_j-0.5=ubar_y[idx(x,y-1)], 
+	// 		//       u_x_i+0.5_j-1=ubar_x[idx(x,y-1)], u_y_i-1_j+0.5=ubar_y[idx(x-1,y)]
+	// 		// Note: The 1D implementation uses far more intermeidate values that the paper, and I don't know why. 
+	// 		// The commented sections below are the conversion of their 1D code with all its complexity, and the 
+	// 		// uncommented sections are my simplified version that tries to stay more true to the paper. We'll see 
+	// 		// if it causes stability/accuracy issues.
 
-	// Compute time derivative of u_bar and integrate to get new u_bar
-	for (int y = 1; y < GRIDSIZE-1; y++)
-	{
-		for (int x = 1; x < GRIDSIZE-1; x++)
-		{
-			// Compute intermediate values needed for du/dt calculations
-			// Need: q_x/y_ij, q_x_i-0.5_j, q_y_i_j-0.5, 
-			// 	     h_i+0.5_j, h_i_j+0.5, h_ij=hbar[idx(x,y)], h_i+1_j=hbar[idx(x+1,y)], h_i_j+1=hbar[idx(x,y+1)],
-			//       u_x_i+0.5_j=ubar_x[idx(x,y)], u_x_i-0.5_j=ubar_x[idx(x-1,y)], 
-			//       u_y_i_j+0.5=ubar_y[idx(x,y)], u_y_i_j-0.5=ubar_y[idx(x,y-1)], 
-			//       u_x_i+0.5_j-1=ubar_x[idx(x,y-1)], u_y_i-1_j+0.5=ubar_y[idx(x-1,y)]
-			// Note: The 1D implementation uses far more intermeidate values that the paper, and I don't know why. 
-			// The commented sections below are the conversion of their 1D code with all its complexity, and the 
-			// uncommented sections are my simplified version that tries to stay more true to the paper. We'll see 
-			// if it causes stability/accuracy issues.
+	// 		////// X DIRECTION //////
+	// 		// Use upwinding to evaluate q_(i-0.5,j), q_(i+0.5,j), q_(i+1.5,j) 
+	// 		// for x direction to get q_x_(i,j), q_x_(i+1,j)
+	// 		float q_x_m05 = ubar_x[idx(x-1,y)];
+	// 		if (q_x_m05 >= 0.f)
+	// 			q_x_m05 *= hbar[idx(x-1,y)];
+	// 		else
+	// 			q_x_m05 *= hbar[idx(x,y)];
+	// 		float q_x_p05 = ubar_x[idx(x,y)];  
+	// 		if (q_x_p05 >= 0.f)
+	// 			q_x_p05 *= hbar[idx(x,y)];
+	// 		else
+	// 			q_x_p05 *= hbar[idx(x+1,y)];
+	// 		float q_x_0 = 0.5f * (q_x_m05 + q_x_p05);
+	// 		// float q_x_p15 = ubar_x[idx(x+1,y)];  //q_(i+1.5,j) = hfr at position x
+	// 		// if (q_x_p15 >= 0.f)
+	// 		// 	q_x_p15 *= hbar[idx(x+1,y)];
+	// 		// else
+	// 		// 	q_x_p15 *= hbar[std::min(idx(x+1,y) + 1, GRIDSIZE*GRIDSIZE-1)];
+	// 		// float q_x_p1 = 0.5f * (q_x_p05 + q_x_p15);
+	// 		// Calculate corresponding vaules for u_x_(i,j) using upwinding
+	// 		// (why do we use upwinding here instead of averaging like q?)
+	// 		// float u_star_x_0 = 0.f;
+	// 		// if (q_x_0 >= 0.f)
+	// 		// 	u_star_x_0 = ubar_x[idx(x-1,y)];
+	// 		// else
+	// 		// 	u_star_x_0 = ubar_x[idx(x,y)];
+	// 		// float u_star_x_p1 = 0.f;
+	// 		// if (q_x_p1 > 0.f)
+	// 		// 	u_star_x_p1 = ubar_x[idx(x,y)];
+	// 		// else
+	// 		// 	u_star_x_p1 = ubar_x[idx(x+1,y)];
 
-			////// X DIRECTION //////
-			// Use upwinding to evaluate q_(i-0.5,j), q_(i+0.5,j), q_(i+1.5,j) 
-			// for x direction to get q_x_(i,j), q_x_(i+1,j)
-			float q_x_m05 = ubar_x[idx(x-1,y)];
-			if (q_x_m05 >= 0.f)
-				q_x_m05 *= hbar[idx(x-1,y)];
-			else
-				q_x_m05 *= hbar[idx(x,y)];
-			float q_x_p05 = ubar_x[idx(x,y)];  
-			if (q_x_p05 >= 0.f)
-				q_x_p05 *= hbar[idx(x,y)];
-			else
-				q_x_p05 *= hbar[idx(x+1,y)];
-			float q_x_0 = 0.5f * (q_x_m05 + q_x_p05);
-			// float q_x_p15 = ubar_x[idx(x+1,y)];  //q_(i+1.5,j) = hfr at position x
-			// if (q_x_p15 >= 0.f)
-			// 	q_x_p15 *= hbar[idx(x+1,y)];
-			// else
-			// 	q_x_p15 *= hbar[std::min(idx(x+1,y) + 1, GRIDSIZE*GRIDSIZE-1)];
-			// float q_x_p1 = 0.5f * (q_x_p05 + q_x_p15);
-			// Calculate corresponding vaules for u_x_(i,j) using upwinding
-			// (why do we use upwinding here instead of averaging like q?)
-			// float u_star_x_0 = 0.f;
-			// if (q_x_0 >= 0.f)
-			// 	u_star_x_0 = ubar_x[idx(x-1,y)];
-			// else
-			// 	u_star_x_0 = ubar_x[idx(x,y)];
-			// float u_star_x_p1 = 0.f;
-			// if (q_x_p1 > 0.f)
-			// 	u_star_x_p1 = ubar_x[idx(x,y)];
-			// else
-			// 	u_star_x_p1 = ubar_x[idx(x+1,y)];
-
-			// Calculate h_(i+0.5,j) and h_(i-0.5,j) using upwinding
-			// float h_avg_x_p05 = (hbar[idx(x,y)] + hbar[idx(x+1,y)]) / 2.f; // averaging, for some reason the old paper used this
-			float h_x_p05 = 0.f;
-			if (ubar_x[idx(x,y)] >= 0.f)
-				h_x_p05 = hbar[idx(x,y)];
-			else
-				h_x_p05 = hbar[idx(x+1,y)];
+	// 		// Calculate h_(i+0.5,j) and h_(i-0.5,j) using upwinding
+	// 		// float h_avg_x_p05 = (hbar[idx(x,y)] + hbar[idx(x+1,y)]) / 2.f; // averaging, for some reason the old paper used this
+	// 		float h_x_p05 = 0.f;
+	// 		if (ubar_x[idx(x,y)] >= 0.f)
+	// 			h_x_p05 = hbar[idx(x,y)];
+	// 		else
+	// 			h_x_p05 = hbar[idx(x+1,y)];
 
 
-			/////// Y DIRECTION //////
-			// Use upwinding to evaluate q_(i,j-0.5), q_(i,j+0.5), q_(i,j+1.5) 
-			// for y direction to get q_y_(i,j), q_y_(i,j+1)
-			float q_y_m05 = ubar_y[idx(x,y-1)];
-			if (q_y_m05 >= 0.f)
-				q_y_m05 *= hbar[idx(x,y-1)];
-			else
-				q_y_m05 *= hbar[idx(x,y)];
-			float q_y_p05 = ubar_y[idx(x,y)];  
-			if (q_y_p05 >= 0.f)
-				q_y_p05 *= hbar[idx(x,y)];
-			else
-				q_y_p05 *= hbar[idx(x,y+1)];
-			float q_y_0 = 0.5f * (q_y_m05 + q_y_p05);
+	// 		/////// Y DIRECTION //////
+	// 		// Use upwinding to evaluate q_(i,j-0.5), q_(i,j+0.5), q_(i,j+1.5) 
+	// 		// for y direction to get q_y_(i,j), q_y_(i,j+1)
+	// 		float q_y_m05 = ubar_y[idx(x,y-1)];
+	// 		if (q_y_m05 >= 0.f)
+	// 			q_y_m05 *= hbar[idx(x,y-1)];
+	// 		else
+	// 			q_y_m05 *= hbar[idx(x,y)];
+	// 		float q_y_p05 = ubar_y[idx(x,y)];  
+	// 		if (q_y_p05 >= 0.f)
+	// 			q_y_p05 *= hbar[idx(x,y)];
+	// 		else
+	// 			q_y_p05 *= hbar[idx(x,y+1)];
+	// 		float q_y_0 = 0.5f * (q_y_m05 + q_y_p05);
 
-			// Calculate h_(i,j+0.5) and h_(i,j-0.5) using upwinding
-			float h_y_p05 = 0.f;
-			if (ubar_y[idx(x,y)] >= 0.f)
-				h_y_p05 = hbar[idx(x,y)];
-			else
-				h_y_p05 = hbar[idx(x,y+1)];
+	// 		// Calculate h_(i,j+0.5) and h_(i,j-0.5) using upwinding
+	// 		float h_y_p05 = 0.f;
+	// 		if (ubar_y[idx(x,y)] >= 0.f)
+	// 			h_y_p05 = hbar[idx(x,y)];
+	// 		else
+	// 			h_y_p05 = hbar[idx(x,y+1)];
 
 
-			// Compute dux_dt and duy_dt
-			// X DIRECTION
-			float dux_dt = - (1/CELLSIZE) * ((q_x_0/h_x_p05) * (ubar_x[idx(x,y)] - ubar_x[idx(x-1,y)]) + (q_y_m05/h_x_p05) * (ubar_x[idx(x,y)] - ubar_x[idx(x,y-1)]) + GRAVITY * (H[idx(x+1,y)] - H[idx(x,y)]));
-			ubarNew_x[idx(x,y)] = LimitVelocity(ubar_x[idx(x,y)] + TIMESTEP * dux_dt);  // Enforcing CFL condition
-			// Y DIRECTION
-			float duy_dt = - (1/CELLSIZE) * ((q_y_0/h_y_p05) * (ubar_y[idx(x,y)] - ubar_y[idx(x,y-1)]) + (q_x_m05/h_y_p05) * (ubar_y[idx(x,y)] - ubar_y[idx(x-1,y)]) + GRAVITY * (H[idx(x,y+1)] - H[idx(x,y)]));
-			ubarNew_y[idx(x,y)] = LimitVelocity(ubar_y[idx(x,y)] + TIMESTEP * duy_dt);  // Enforcing CFL condition
-		}
-	}
-	ApplyBoundaries(ubarNew_x, BOUNDARY_TYPE);
-	ApplyBoundaries(ubarNew_y, BOUNDARY_TYPE);
+	// 		// Compute dux_dt and duy_dt
+	// 		// X DIRECTION
+	// 		float dux_dt = - (1/CELLSIZE) * ((q_x_0/h_x_p05) * (ubar_x[idx(x,y)] - ubar_x[idx(x-1,y)]) + (q_y_m05/h_x_p05) * (ubar_x[idx(x,y)] - ubar_x[idx(x,y-1)]) + GRAVITY * (H[idx(x+1,y)] - H[idx(x,y)]));
+	// 		ubarNew_x[idx(x,y)] = LimitVelocity(ubar_x[idx(x,y)] + TIMESTEP * dux_dt);  // Enforcing CFL condition
+	// 		// Y DIRECTION
+	// 		float duy_dt = - (1/CELLSIZE) * ((q_y_0/h_y_p05) * (ubar_y[idx(x,y)] - ubar_y[idx(x,y-1)]) + (q_x_m05/h_y_p05) * (ubar_y[idx(x,y)] - ubar_y[idx(x-1,y)]) + GRAVITY * (H[idx(x,y+1)] - H[idx(x,y)]));
+	// 		ubarNew_y[idx(x,y)] = LimitVelocity(ubar_y[idx(x,y)] + TIMESTEP * duy_dt);  // Enforcing CFL condition
+	// 	}
+	// }
+	// ApplyBoundaries(ubarNew_x, BOUNDARY_TYPE);
+	// ApplyBoundaries(ubarNew_y, BOUNDARY_TYPE);
 
 	// transfer back to flow rate using upwinding on *most recent* hbar
 	for (int y = 0; y < GRIDSIZE; y++)
@@ -594,6 +618,8 @@ void Sim::SWEStep()
 				qbar_y[idx(x,y)] = ubarNew_y[idx(x,y)] * hbar[idx(x,y+1)];
 		}
 	}
+
+	hbarOld = hbar;   // store current hbar for next timestep
 }
 
 void Sim::TransportStep()
