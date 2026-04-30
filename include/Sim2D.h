@@ -24,6 +24,8 @@ public:
 	static constexpr float TIMESTEP = 1.f / 30.f;
 	static constexpr float TERRAIN_HEIGHT = -10.f; // base height of terrain features (meters)
 	static constexpr float TERRAIN_SCALE = 15.f; // scale of terrain features (meters)
+	static constexpr int TERRAIN_TYPE = 0; // 0 = flat, 1 = ramp, 2 = bumps, 3 = basins, 4 = beach
+	static constexpr int WATER_TYPE = 1; // 0 = localized splash, 1 = step/dam break, 2 = basin flood
 	static constexpr int BOUNDARY_TYPE = 0; // 0 = wall, 1 = free, 2 = zero
 	static constexpr float WATER_LEVEL = 10.f; 
 	static constexpr float MIN_WATER_HEIGHT = 0.01f;  // minimum water height for stability
@@ -114,22 +116,23 @@ public:
 						*shader_QAdvect, *shader_HAdvect, 
 						// *shader_CombineQ, 
 						*shader_IntegrateH;
-	ID3D11ComputeShader** shaders[11] = {
+	ID3D11ComputeShader** compute_shaders[11] = {
 		&shader_Boundaries, &shader_InitDecomp, &shader_CalcDiff, &shader_Diffusion, &shader_Decompose, 
 		&shader_Ubar, &shader_SWE, &shader_UpdateTilde, &shader_QAdvect, &shader_HAdvect, 
 		// &shader_CombineQ, 
 		&shader_IntegrateH
 	};
-	char* names[11] = {"ApplyBoundaries", "InitDecomp", "CalcDiffusionCoeffs", "DiffusionStep", "DecomposeFields", 
+	char* compute_names[11] = {"ApplyBoundaries", "InitDecomp", "CalcDiffusionCoeffs", "DiffusionStep", "DecomposeFields", 
 					   "CalcUbar", "CalcSWE", "UpdateTilde", "CalcQAdvect", "CalcHAdvect", //"CombineQ", 
 					   "IntegrateH"};
-	SimConstants constants = {GRIDSIZE, CELLSIZE, TIMESTEP, BOUNDARY_TYPE, MIN_WATER_HEIGHT,
-							  DIFFUSION_ITERATIONS, DELTA_T, DIFFUSION_PENALTY, CFL_CONDITION, GAMMA_TRANSPORT, 0.f, 0.f};
+	SimConstants compute_constants = {GRIDSIZE, CELLSIZE, TIMESTEP, BOUNDARY_TYPE, MIN_WATER_HEIGHT,
+							  DIFFUSION_ITERATIONS, DELTA_T, DIFFUSION_PENALTY, CFL_CONDITION, GAMMA_TRANSPORT, {0.f, 0.f}};
 	int group = GRIDSIZE / 16; // number of thread groups to dispatch for compute shaders, assuming 16x16 threads per group
-	
+	RenderConstants render_constants = {DirectX::XMMatrixIdentity(), (float)GRIDSIZE, CELLSIZE, {0.f, 0.f}};
+
 	// Functions
 	Sim();	// default constructor
-	Sim(int terrainType, int waterType, float waterLevel);	// constructor with parameters for terrain and water initialization
+	Sim(HWND hwnd);	// constructor with handle for rendering
 	int Release(void);
 	void SimStep(bool SWEonly);	// ticks the simulation by one timestep using the following substeps:
 	void SetTerrain(int type);

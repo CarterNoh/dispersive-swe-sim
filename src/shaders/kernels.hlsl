@@ -17,8 +17,7 @@ cbuffer Constants : register(b0) {
     float gammaTransport;
 
     // Padding for 16-byte alignment 
-    float buffer1; 
-    float buffer2; 
+    float buffer[2];  
 };
 
 // Texture Registers
@@ -157,10 +156,10 @@ void ApplyBoundaries(uint3 id : SV_DispatchThreadID){
 
     // Apply boundary condition
     // if (boundaryType == 0) { // wall (copy neighbor)
-    out0[id.xy] = in0[src];
-    out1[id.xy] = in1[src];
-    out2[id.xy] = in2[src];
-    out3[id.xy] = in3[src];
+    out0[id.xy] = out0[src];
+    out1[id.xy] = out1[src];
+    out2[id.xy] = out2[src];
+    out3[id.xy] = out3[src];
     // }
     // else if (boundaryType == 1) {// free (linear interpolation)
     //     uint2 dir = uint2(
@@ -536,12 +535,3 @@ void IntegrateH(uint3 id : SV_DispatchThreadID) {
     out1[curr] = q_x - in2[curr]; // qbar + qtilde, removing qAdvect
     out2[curr] = q_y - in5[curr];
 }
-
-// [numthreads(16, 16, 1)]
-// void IntegrateH(uint3 id : SV_DispatchThreadID) {
-//     // Inputs: in0 = h, in1 = q_x, in2 = q_y
-//     // Outputs: out0 = h
-//     if (id.x < 1 || id.x >= (uint)(gridSize - 1) || id.y < 1 || id.y >= (uint)(gridSize - 1)) return;
-
-    
-// }
