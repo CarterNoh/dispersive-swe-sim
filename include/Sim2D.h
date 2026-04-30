@@ -109,12 +109,20 @@ public:
 		&gpu_qtildePast_x, &gpu_qtildePast_y, &gpu_qAdvect_x, &gpu_qAdvect_y,
 		&gpu_hPast, &gpu_hbarOld, &gpu_htildeOld
 	};
-    ID3D11ComputeShader *shader_Boundaries, *shader_InitDecomp, *shader_CalcDiff, *shader_Diffusion, *shader_Decompose, 
-						*shader_StopFlow, *shader_Ubar, *shader_SWE;
-	ID3D11ComputeShader** shaders[8] = {&shader_Boundaries, &shader_InitDecomp, &shader_CalcDiff, &shader_Diffusion, 
-										&shader_Decompose, &shader_StopFlow, &shader_Ubar, &shader_SWE};
-	char* names[8] = {"ApplyBoundaries", "InitDecomp", "CalcDiffusionCoeffs", "DiffusionStep", "DecomposeFields", 
-					   "StopFlow", "Ubar", "SWE"};
+    ID3D11ComputeShader *shader_Boundaries, *shader_InitDecomp, *shader_CalcDiff, *shader_Diffusion, 
+						*shader_Decompose, *shader_Ubar, *shader_SWE, *shader_UpdateTilde, 
+						*shader_QAdvect, *shader_HAdvect, 
+						// *shader_CombineQ, 
+						*shader_IntegrateH;
+	ID3D11ComputeShader** shaders[11] = {
+		&shader_Boundaries, &shader_InitDecomp, &shader_CalcDiff, &shader_Diffusion, &shader_Decompose, 
+		&shader_Ubar, &shader_SWE, &shader_UpdateTilde, &shader_QAdvect, &shader_HAdvect, 
+		// &shader_CombineQ, 
+		&shader_IntegrateH
+	};
+	char* names[11] = {"ApplyBoundaries", "InitDecomp", "CalcDiffusionCoeffs", "DiffusionStep", "DecomposeFields", 
+					   "CalcUbar", "CalcSWE", "UpdateTilde", "CalcQAdvect", "CalcHAdvect", //"CombineQ", 
+					   "IntegrateH"};
 	SimConstants constants = {GRIDSIZE, CELLSIZE, TIMESTEP, BOUNDARY_TYPE, MIN_WATER_HEIGHT,
 							  DIFFUSION_ITERATIONS, DELTA_T, DIFFUSION_PENALTY, CFL_CONDITION, GAMMA_TRANSPORT, 0.f, 0.f};
 	int group = GRIDSIZE / 16; // number of thread groups to dispatch for compute shaders, assuming 16x16 threads per group
