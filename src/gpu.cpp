@@ -48,10 +48,6 @@ bool GPU::Init() {
 bool GPU::Init(HWND hwnd) {
     // Create a headless D3D11 device
     UINT createDeviceFlags = 0;
-#ifdef _DEBUG
-    createDeviceFlags |= D3D11_CREATE_DEVICE_DEBUG;
-#endif
-
     DXGI_SWAP_CHAIN_DESC sd = {};
     sd.BufferCount = 1;
     sd.BufferDesc.Width = 800;  // Window Width
@@ -72,11 +68,6 @@ bool GPU::Init(HWND hwnd) {
     swapChain->GetBuffer(0, __uuidof(ID3D11Texture2D), (void**)&backBuffer);
     device->CreateRenderTargetView(backBuffer, nullptr, &renderTargetView);
     backBuffer->Release();
-
-    // HRESULT hr = D3D11CreateDevice(nullptr, D3D_DRIVER_TYPE_HARDWARE, nullptr, createDeviceFlags,
-    //                                nullptr, 0, D3D11_SDK_VERSION, &device, &featureLevel, &context);
-    // if (FAILED(hr)) return false;
-
 
     // Create the Depth/Stencil Buffer
     D3D11_TEXTURE2D_DESC descDepth = {};
@@ -100,7 +91,6 @@ bool GPU::Init(HWND hwnd) {
     device->CreateRasterizerState(&rsDesc, &rasterState);
     // Bind it to the pipeline
     context->RSSetState(rasterState);
-
 
     // Create the Sim Constant Buffer
     if (sizeof(SimConstants) % 16 != 0) {
@@ -355,6 +345,7 @@ void GPU::Dispatch(ID3D11ComputeShader* shader,
 bool GPU::CreateGridMesh(int gridSize) {
     // 1. Generate the Vertices (Same as before)
     std::vector<float> vertices;
+    vertices.reserve(gridSize * gridSize * 2);
     for (int y = 0; y < gridSize; ++y) {
         for (int x = 0; x < gridSize; ++x) {
             vertices.push_back((float)x);
@@ -373,6 +364,7 @@ bool GPU::CreateGridMesh(int gridSize) {
 
     // 2. Generate the Indices (The "Map" of Triangles)
     std::vector<unsigned int> indices;
+    indices.reserve(gridSize * gridSize * 6);
     // We loop to gridSize - 1 because we are building squares BETWEEN the points
     for (int y = 0; y < gridSize - 1; ++y) {
         for (int x = 0; x < gridSize - 1; ++x) {
@@ -439,5 +431,5 @@ void GPU::Render(ID3D11ShaderResourceView* heightSRV) { //, int gridVertexCount
     context->VSSetShaderResources(0, 1, &nullSRV);
 
     // Present the frame to the Window
-    swapChain->Present(1, 0); // 1 = VSync on
+    swapChain->Present(0, 0); // (1, 0) = VSync on
 }

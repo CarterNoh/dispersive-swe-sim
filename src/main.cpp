@@ -129,7 +129,6 @@ int RunWithRender() {
             TranslateMessage(&msg);
             DispatchMessage(&msg);
         }
-
         sim.SimStep(SWEonly);
         sim.gpu->Render(sim.gpu_H.srv); // , sim.GRIDSIZE * sim.GRIDSIZE
         tick++;
@@ -173,6 +172,7 @@ int RunHeadless() {
     std::chrono::duration<double, std::milli> totalElapsed = totalEnd - totalStart;
     std::cout << "Total Simulation Time for " << numTicks << " ticks: " << totalElapsed.count() << "ms" << std::endl;
     std::cout << "Average Speed: " << ((totalElapsed.count() / 1000 / numTicks)) << " sec/tick" << std::endl;
+    std::cout << "FPS: " << (1000.0 / (totalElapsed.count() / numTicks)) << " frames/sec" << std::endl;
 
     return 0;
 }

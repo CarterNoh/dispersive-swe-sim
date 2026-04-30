@@ -155,28 +155,28 @@ void ApplyBoundaries(uint3 id : SV_DispatchThreadID){
         src = uint2(x, gridSize-2);
 
     // Apply boundary condition
-    // if (boundaryType == 0) { // wall (copy neighbor)
-    out0[id.xy] = out0[src];
-    out1[id.xy] = out1[src];
-    out2[id.xy] = out2[src];
-    out3[id.xy] = out3[src];
-    // }
-    // else if (boundaryType == 1) {// free (linear interpolation)
-    //     uint2 dir = uint2(
-    //         (left ? 1 : right ? -1 : 0),
-    //         (bottom ? 1 : top ? -1 : 0)
-    //     );
-    //     out0[id.xy] = 2.0f * in0[src] - in0[src + dir];
-    //     out1[id.xy] = 2.0f * in1[src] - in1[src + dir];
-    //     out2[id.xy] = 2.0f * in2[src] - in2[src + dir];
-    //     out3[id.xy] = 2.0f * in3[src] - in3[src + dir];
-    // }
-    // else if (boundaryType == 2) { // zero (absorbing)
-    //     out0[id.xy] = 0.f;
-    //     out1[id.xy] = 0.f;
-    //     out2[id.xy] = 0.f;
-    //     out3[id.xy] = 0.f;
-    // }
+    if (boundaryType == 0) { // wall (copy neighbor)
+        out0[id.xy] = out0[src];
+        out1[id.xy] = out1[src];
+        out2[id.xy] = out2[src];
+        out3[id.xy] = out3[src];
+    }
+    else if (boundaryType == 1) {// free (linear interpolation)
+        uint2 dir = uint2(
+            (left ? 1 : right ? -1 : 0),
+            (bottom ? 1 : top ? -1 : 0)
+        );
+        out0[id.xy] = 2.0f * out0[src] - out0[src + dir];
+        out1[id.xy] = 2.0f * out1[src] - out1[src + dir];
+        out2[id.xy] = 2.0f * out2[src] - out2[src + dir];
+        out3[id.xy] = 2.0f * out3[src] - out3[src + dir];
+    }
+    else if (boundaryType == 2) { // zero (absorbing)
+        out0[id.xy] = 0.f;
+        out1[id.xy] = 0.f;
+        out2[id.xy] = 0.f;
+        out3[id.xy] = 0.f;
+    }
 }
 
 /////////// Decomposition ///////////
@@ -515,10 +515,10 @@ void IntegrateH(uint3 id : SV_DispatchThreadID) {
     float q_y = in3[curr] + in4[curr] + in5[curr];
     float q_ym = in3[curr_my] + in4[curr_my] + in5[curr_my];
 
-    // q_x  = LimitFlowRate(q_x, in6[curr], in6[curr_px]);
-    // q_xm = LimitFlowRate(q_xm, in6[curr_mx], in6[curr]);
-    // q_y  = LimitFlowRate(q_y, in6[curr], in6[curr_py]);
-    // q_ym = LimitFlowRate(q_ym, in6[curr_my], in6[curr]);
+    q_x  = LimitFlowRate(q_x, in6[curr], in6[curr_px]);
+    q_xm = LimitFlowRate(q_xm, in6[curr_mx], in6[curr]);
+    q_y  = LimitFlowRate(q_y, in6[curr], in6[curr_py]);
+    q_ym = LimitFlowRate(q_ym, in6[curr_my], in6[curr]);
 
     // if ((StopFlowOnTerrainBoundary(in4, in5, id.xy, false)) || (id.x == 0) || (id.x == gridSize - 2))
     //     out0[id.xy] = 0.f;

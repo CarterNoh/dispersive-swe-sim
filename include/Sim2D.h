@@ -19,12 +19,12 @@ public:
 	int time;					// current simulation time in seconds
 
 	// Simulation parameters
-	static constexpr int GRIDSIZE = 256;	// grid size in one dimension (# cells)
+	static constexpr int GRIDSIZE = 512;	// grid size in one dimension (# cells)
 	static constexpr float CELLSIZE = 1.f;	// cell size in one dimension (meters/cell)
 	static constexpr float TIMESTEP = 1.f / 30.f;
 	static constexpr float TERRAIN_HEIGHT = -10.f; // base height of terrain features (meters)
 	static constexpr float TERRAIN_SCALE = 15.f; // scale of terrain features (meters)
-	static constexpr int TERRAIN_TYPE = 0; // 0 = flat, 1 = ramp, 2 = bumps, 3 = basins, 4 = beach
+	static constexpr int TERRAIN_TYPE = 1; // 0 = flat, 1 = ramp, 2 = bumps, 3 = basins, 4 = beach
 	static constexpr int WATER_TYPE = 1; // 0 = localized splash, 1 = step/dam break, 2 = basin flood
 	static constexpr int BOUNDARY_TYPE = 0; // 0 = wall, 1 = free, 2 = zero
 	static constexpr float WATER_LEVEL = 10.f; 
