@@ -170,12 +170,6 @@ void ApplyBoundaries(uint3 id : SV_DispatchThreadID){
         out2[id.xy] = 2.0f * out2[src] - out2[src + dir];
         out3[id.xy] = 2.0f * out3[src] - out3[src + dir];
     }
-    else if (boundaryType == 2) { // zero (absorbing)
-        out0[id.xy] = 0.f;
-        out1[id.xy] = 0.f;
-        out2[id.xy] = 0.f;
-        out3[id.xy] = 0.f;
-    }
 }
 
 /////////// Decomposition ///////////
@@ -473,38 +467,34 @@ void IntegrateH(uint3 id : SV_DispatchThreadID) {
     // Outputs: out0 = h, out1 = q_x, out2 = q_y
     if (id.x < 1 || id.x >= (uint)(gridSize - 1) || id.y < 1 || id.y >= (uint)(gridSize - 1)) return;
 
-    // NOTE: this makes edges a reflective boundary, revisit later
-
     uint2 curr = id.xy;
-    uint2 curr_mx = id.xy - uint2(1, 0);
-    uint2 curr_px = id.xy + uint2(1, 0);
-    uint2 curr_my = id.xy - uint2(0, 1);
-    uint2 curr_py = id.xy + uint2(0, 1);
+    uint2 curr_xm = id.xy - uint2(1, 0);
+    uint2 curr_xp = id.xy + uint2(1, 0);
+    uint2 curr_ym = id.xy - uint2(0, 1);
+    uint2 curr_yp = id.xy + uint2(0, 1);
 
     // q = qbar + qtilde + qAdvect
     float q_x = in0[curr] + in1[curr] + in2[curr];
-    float q_xm = in0[curr_mx] + in1[curr_mx] + in2[curr_mx];
     float q_y = in3[curr] + in4[curr] + in5[curr];
-    float q_ym = in3[curr_my] + in4[curr_my] + in5[curr_my];
+    float q_xm = in0[curr_xm] + in1[curr_xm] + in2[curr_xm];
+    float q_ym = in3[curr_ym] + in4[curr_ym] + in5[curr_ym];
 
-    q_x  = LimitFlowRate(q_x, in6[curr], in6[curr_px]);
-    q_xm = LimitFlowRate(q_xm, in6[curr_mx], in6[curr]);
-    q_y  = LimitFlowRate(q_y, in6[curr], in6[curr_py]);
-    q_ym = LimitFlowRate(q_ym, in6[curr_my], in6[curr]);
+    q_x  = LimitFlowRate(q_x, in6[curr], in6[curr_xp]);
+    q_y  = LimitFlowRate(q_y, in6[curr], in6[curr_yp]);
+    q_xm = LimitFlowRate(q_xm, in6[curr_xm], in6[curr]);
+    q_ym = LimitFlowRate(q_ym, in6[curr_ym], in6[curr]);
 
-    // if ((StopFlowOnTerrainBoundary(in4, in5, id.xy, false)) || (id.x == 0) || (id.x == gridSize - 2))
-    //     out0[id.xy] = 0.f;
-    // else
-    //     out0[id.xy] = LimitFlowRate(q_x, in4[id.xy], in4[id.xy + uint2(1, 0)]);
-    
-    // if ((StopFlowOnTerrainBoundary(in4, in5, id.xy, true)) || (id.y == 0) || (id.y == gridSize - 2))
-    //     out1[id.xy] = 0.f;
-    // else        
-    //     out1[id.xy] = LimitFlowRate(q_y, in4[id.xy], in4[id.xy + uint2(0, 1)]);
+    // if ((StopFlowOnTerrainBoundary(in6, in7, curr, false)) || (id.x == gridSize - 2))
+    //     q_x = 0.f;
+    // if ((StopFlowOnTerrainBoundary(in6, in7, curr, true )) || (id.y == gridSize - 2))
+    //     q_y = 0.f;
+    // if ((StopFlowOnTerrainBoundary(in6, in7, curr_xm, false)) || (id.x == gridSize - 2))
+    //     q_xm = 0.f;
+    // if ((StopFlowOnTerrainBoundary(in6, in7, curr_ym, true )) || (id.y == gridSize - 2))
+    //     q_ym = 0.f;
 
     float div_q = (q_x - q_xm + q_y - q_ym) / cellSize;
 	out0[curr] = max(0.f, in6[curr] - timeStep * div_q);
     out1[curr] = q_x;// - in2[curr]; // qbar + qtilde, removing qAdvect
     out2[curr] = q_y;// - in5[curr];
-    // out1[curr] = LimitFlowRate(q_x, in6[curr], in6[curr_px])
 }

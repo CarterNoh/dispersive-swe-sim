@@ -18,9 +18,10 @@ public:
 	static constexpr float TERRAIN_HEIGHT = -10.f; // base height of terrain features (meters)
 	static constexpr float TERRAIN_SCALE = 15.f; // scale of terrain features (meters)
 	static constexpr int TERRAIN_TYPE = 0; // 0 = flat, 1 = ramp, 2 = bumps, 3 = basins, 4 = beach
-	static constexpr int WATER_TYPE = 1; // 0 = localized splash, 1 = step/dam break, 2 = basin flood
-	static constexpr int BOUNDARY_TYPE = 0; // 0 = wall, 1 = free, 2 = zero
+	static constexpr int WATER_TYPE = 0; // 0 = localized splash, 1 = step/dam break, 2 = basin flood
 	static constexpr float WATER_LEVEL = 10.f; 
+	static constexpr int BOUNDARY_TYPE = 0; // 0 = wall, 1 = free
+	
 	static constexpr float MIN_WATER_HEIGHT = 0.01f;  // minimum water height for stability
 	
 	// Decomposition Parameters
@@ -33,7 +34,7 @@ public:
 	static constexpr float Depth[4] = { 1.f, 4.f, 16.f, 64.f };
 
 	// Transport Parameters
-	static constexpr float CFL_CONDITION = 0.5f;  // max allowed CFL condition for stability of SWE step, can be higher than overall CFL condition since diffusion and transport steps handle stability as well
+	static constexpr float CFL_CONDITION = 0.25f;  // max allowed CFL condition for stability of SWE step, can be higher than overall CFL condition since diffusion and transport steps handle stability as well
 	static constexpr float GAMMA_TRANSPORT = 0.25f; // blending factor for transport step, higher means more stable but also more damping of waves
 
 	// Simulation variables
@@ -60,8 +61,8 @@ public:
 	Sim(HWND hwnd);	// constructor with handle for rendering
 	int Release(void);
 	void SimStep();	// ticks the simulation by one timestep using the following substeps:
-	std::vector<float> SetTerrain(int type);
-	std::vector<float> SetWater(int type, float level, std::vector<float>& terrain);
+	std::vector<float> SetTerrain();
+	std::vector<float> SetWater(std::vector<float>& terrain);
 
 private:
 	// Functions

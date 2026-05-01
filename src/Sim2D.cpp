@@ -6,7 +6,7 @@
 // Init functions
 // ********************************************************************************************************************
 
-std::vector<float> Sim::SetTerrain(int type) {
+std::vector<float> Sim::SetTerrain() {
 	std::vector<float> terrain(GRIDSIZE * GRIDSIZE, 0.0f);
     for (int y = 0; y < GRIDSIZE; y++) {
         for (int x = 0; x < GRIDSIZE; x++) {
@@ -14,23 +14,23 @@ std::vector<float> Sim::SetTerrain(int type) {
             float yf = (float)y / (GRIDSIZE - 1);
             int i = idx(x,y);
 
-            if (type == 0) { // Flat
+            if (TERRAIN_TYPE == 0) { // Flat
                 terrain[i] = TERRAIN_HEIGHT; 
             }
-            else if (type == 1) { // Inclined Plane (Ramp)
+            else if (TERRAIN_TYPE == 1) { // Inclined Plane (Ramp)
                 terrain[i] = TERRAIN_HEIGHT + (xf * TERRAIN_SCALE);
             }
-            else if (type == 2) { // Bumpy / Natural (Sum of Sines)
+            else if (TERRAIN_TYPE == 2) { // Bumpy / Natural (Sum of Sines)
                 float noise = 0.5f * sin(10.f * xf) * cos(8.f * yf) + 
                               0.2f * sin(25.f * xf + 2.f * yf);
                 terrain[i] = TERRAIN_HEIGHT + (noise * TERRAIN_SCALE);
             }
-            else if (type == 3) { // Two Basins with Divider
+            else if (TERRAIN_TYPE == 3) { // Two Basins with Divider
                 // Create two dips with a ridge at xf = 0.5
                 float divider = (xf > 0.48f && xf < 0.52f) ? 5.0f : 0.0f;
                 terrain[i] = TERRAIN_HEIGHT + divider;
             }
-            else if (type == 4) { // Beach Scene
+            else if (TERRAIN_TYPE == 4) { // Beach Scene
                 // Simple slope with some noise for "sand dunes"
                 float slope = xf * 15.0f;
                 float dunes = 0.5f * sin(30.f * yf) * xf; 
@@ -41,36 +41,32 @@ std::vector<float> Sim::SetTerrain(int type) {
 	return terrain;
 }
 
-std::vector<float> Sim::SetWater(int type, float level, std::vector<float>& terrain) {
+std::vector<float> Sim::SetWater(std::vector<float>& terrain) {
     std::vector<float> h(GRIDSIZE * GRIDSIZE, 0.0f);
     for (int y = 0; y < GRIDSIZE; y++) {
         for (int x = 0; x < GRIDSIZE; x++) {
             float xf = (float)x / (GRIDSIZE - 1);
             float yf = (float)y / (GRIDSIZE - 1);
             int i = idx(x,y);
-
-            float waterSurface = level;
-
-            if (type == 0) { // Localized splash (Gaussian pill)
+            float waterSurface = WATER_LEVEL;
+            if (WATER_TYPE == 0) { // Localized splash (Gaussian pill)
                 float dist = sqrt(pow(xf - 0.5f, 2) + pow(yf - 0.5f, 2));
                 if (dist < 0.1f) 
 					waterSurface += 10.0f * cos(dist * PI * 5.0f);
             }
-            else if (type == 1) { // Step/Dam Break
+            else if (WATER_TYPE == 1) { // Step/Dam Break
                 if (xf < 0.3f) 
 					waterSurface += 10.0f;
             }
-            else if (type == 2) { // Basin Flood
+            else if (WATER_TYPE == 2) { // Basin Flood
                 // Fill only the left basin (xf < 0.5)
 				if (xf < 0.25f)
-                    waterSurface = std::max(level, terrain[idx(GRIDSIZE/2, y)] + 2.0f);
+                    waterSurface = std::max(WATER_LEVEL, terrain[idx(GRIDSIZE/2, y)] + 2.0f);
                 else if (xf < 0.5f) 
-					waterSurface = std::max(level, terrain[idx(GRIDSIZE/2, y)]);
+					waterSurface = std::max(WATER_LEVEL, terrain[idx(GRIDSIZE/2, y)]);
                 else 
 					waterSurface = terrain[i]; // Start dry
             }
-
-            // Standardize height as (Surface - Terrain)
             h[i] = std::max(0.0f, waterSurface - (float)terrain[i]);
         }
     }
@@ -95,8 +91,8 @@ Sim::Sim()
 		std::vector<float> temp(GRIDSIZE*GRIDSIZE, 0.0f);
 		gpu->UploadToGPU(fields[i]->tex, temp, GRIDSIZE);
 	}
-	std::vector<float> terrain_temp = SetTerrain(TERRAIN_TYPE);
-	std::vector<float> h_temp = SetWater(WATER_TYPE, WATER_LEVEL, terrain_temp);
+	std::vector<float> terrain_temp = SetTerrain();
+	std::vector<float> h_temp = SetWater(terrain_temp);
 	gpu->UploadToGPU(terrain.tex, terrain_temp, GRIDSIZE);
 	gpu->UploadToGPU(h.tex, h_temp, GRIDSIZE);
 	gpu->UploadToGPU(hbar.tex, h_temp, GRIDSIZE);
@@ -120,8 +116,8 @@ Sim::Sim(HWND hwnd = nullptr)
 		std::vector<float> temp(GRIDSIZE*GRIDSIZE, 0.0f);
 		gpu->UploadToGPU(fields[i]->tex, temp, GRIDSIZE);
 	}
-	std::vector<float> terrain_temp = SetTerrain(TERRAIN_TYPE);
-	std::vector<float> h_temp = SetWater(WATER_TYPE, WATER_LEVEL, terrain_temp);
+	std::vector<float> terrain_temp = SetTerrain();
+	std::vector<float> h_temp = SetWater(terrain_temp);
 	std::vector<float> H_temp(GRIDSIZE*GRIDSIZE, 0.0f);
 	for (int i = 0; i < GRIDSIZE*GRIDSIZE; i++) {
 		H_temp[i] = terrain_temp[i] + h_temp[i];
@@ -137,7 +133,6 @@ Sim::Sim(HWND hwnd = nullptr)
 	gpu->CompilePixelShader(L"shaders/render.hlsl", "PSMain");
 	gpu->CreateGridMesh(GRIDSIZE);
 	gpu->CreateGridVertexBuffer(GRIDSIZE);
-    gpu->UpdateConstants(constants);
 }
 
 int Sim::Release(void)
