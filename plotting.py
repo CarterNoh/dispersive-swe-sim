@@ -3,13 +3,12 @@ import matplotlib.pyplot as plt
 import os
 import glob
 import cv2
-import PIL
 
 # --- Configuration ---
-data_dir = "build/Debug/data"
+data_dir = "build/Release/data"
 frames_dir = "frames"
 output_video = os.path.join(frames_dir, "fluid_simulation.mp4")
-save_images = True  # Set to True to save individual frames as PNGs
+save_images = False  # Set to True to save individual frames as PNGs
 fps = 30
 
 # Get all CSV files and sort them numerically by the tick number

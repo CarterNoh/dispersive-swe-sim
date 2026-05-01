@@ -10,7 +10,6 @@ namespace fs = std::filesystem;
 
 // Parameters
 int numTicks = 1000; // Number of simulation steps to run
-bool SWEonly = false; // Whether to run only the SWE step or include the full simulation steps
 bool render = true; // Whether to render the simulation or just run it headless
 
 void SaveToCSV(const std::vector<float>& h, int size, int tick) {
@@ -129,8 +128,8 @@ int RunWithRender() {
             TranslateMessage(&msg);
             DispatchMessage(&msg);
         }
-        sim.SimStep(SWEonly);
-        sim.gpu->Render(sim.gpu_H.srv); // , sim.GRIDSIZE * sim.GRIDSIZE
+        sim.SimStep();
+        sim.gpu->Render(sim.H.srv);
         tick++;
         if (tick >= numTicks) running = false;
     }
@@ -154,15 +153,20 @@ int RunHeadless() {
     // Initialize the simulation
     Sim sim;
     int size = sim.GRIDSIZE;
-    SaveToCSV(sim.terrain, size, -1); // Save terrain data for reference
-    SaveToCSV(sim.h, size, 0); // Save initial water height data
+    std::vector<float> terrain(size * size);
+    std::vector<float> H(size * size);
+    sim.gpu->DownloadFromGPU(sim.terrain.tex, terrain, size);
+    sim.gpu->DownloadFromGPU(sim.H.tex, H, size);
+    SaveToCSV(terrain, size, -1); // Save terrain data for reference
+    SaveToCSV(H, size, 0); // Save initial water height data
 
     std::cout << "Starting simulation loop..." << std::endl;
     auto totalStart = std::chrono::high_resolution_clock::now();
     for (int tick = 1; tick < numTicks; ++tick) {
         auto start = std::chrono::high_resolution_clock::now();
-        sim.SimStep(SWEonly);
-        SaveToCSV(sim.h, size, tick);
+        sim.SimStep();
+        sim.gpu->DownloadFromGPU(sim.H.tex, H, size);
+        SaveToCSV(H, size, tick);
 
         auto sim_time = std::chrono::high_resolution_clock::now();
         std::chrono::duration<double, std::milli> elapsed = sim_time - start;

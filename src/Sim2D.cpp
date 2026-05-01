@@ -116,7 +116,8 @@ void Sim::ApplyBoundaries(std::vector<float>& field, int type)
 // Init functions
 // ********************************************************************************************************************
 
-void Sim::SetTerrain(int type) {
+std::vector<float> Sim::SetTerrain(int type) {
+	std::vector<float> terrain(GRIDSIZE * GRIDSIZE, 0.0f);
     for (int y = 0; y < GRIDSIZE; y++) {
         for (int x = 0; x < GRIDSIZE; x++) {
             float xf = (float)x / (GRIDSIZE - 1);
@@ -147,9 +148,11 @@ void Sim::SetTerrain(int type) {
             }
         }
     }
+	return terrain;
 }
 
-void Sim::SetWater(int type, float level) {
+std::vector<float> Sim::SetWater(int type, float level, std::vector<float>& terrain) {
+    std::vector<float> h(GRIDSIZE * GRIDSIZE, 0.0f);
     for (int y = 0; y < GRIDSIZE; y++) {
         for (int x = 0; x < GRIDSIZE; x++) {
             float xf = (float)x / (GRIDSIZE - 1);
@@ -179,73 +182,72 @@ void Sim::SetWater(int type, float level) {
 
             // Standardize height as (Surface - Terrain)
             h[i] = std::max(0.0f, waterSurface - (float)terrain[i]);
-            
-            // Sync all buffers to prevent NaN/jitter on first frame
-            hbar[i] = h[i];
-            hbarOld[i] = h[i];
-            q_x[i] = q_y[i] = qbar_x[i] = qbar_y[i] = 0.0f;
-            htilde[i] = 0.0f;
         }
     }
+	return h;
 }
 
 Sim::Sim()
 {
-	// Define the total number of cells
-    size_t totalCells = GRIDSIZE * GRIDSIZE;
-	time = 0.f;
-	// Allocate memory for all member vectors
-	for (int i=0; i < sizeof(fields) / sizeof(fields[0]); i++) {
-		// std::vector<float>& field = *fields[i];
-		fields[i]->resize(totalCells, 0.0);
-	}
-    // Initialize terrain and water
-	SetTerrain(TERRAIN_TYPE);
-	SetWater(WATER_TYPE, WATER_LEVEL);
-
-	// Set up GPU Shaders
+	// Init GPU
 	gpu = new GPU();
 	if (!gpu->Init()) std::cerr << "GPU INIT FAILED" << std::endl;
-	for (int i=0; i < sizeof(gpu_fields) / sizeof(gpu_fields[0]); i++) {
-		gpu->CreateGridTexture(gpu_fields[i], GRIDSIZE);
-		gpu->UploadToGPU(gpu_fields[i]->tex, *fields[i], GRIDSIZE);
+
+	// Set up GPU Shaders
+	for (int i=0; i < sizeof(shaders) / sizeof(shaders[0]); i++) {
+		gpu->CompileComputeShader(L"shaders/kernels.hlsl", names[i], shaders[i]);
 	}
-	for (int i=0; i < sizeof(compute_shaders) / sizeof(compute_shaders[0]); i++) {
-		gpu->CompileComputeShader(L"shaders/kernels.hlsl", compute_names[i], compute_shaders[i]);
+    gpu->UpdateConstants(constants);
+
+	// Create GPU Textures and Upload Initial Data
+	for (int i=0; i < sizeof(fields) / sizeof(fields[0]); i++) {
+		gpu->CreateGridTexture(fields[i], GRIDSIZE);
+		std::vector<float> temp(GRIDSIZE*GRIDSIZE, 0.0f);
+		gpu->UploadToGPU(fields[i]->tex, temp, GRIDSIZE);
 	}
-    gpu->UpdateConstants(compute_constants);
-	gpu->UploadToGPU(gpu_terrain.tex, terrain, GRIDSIZE);
+	std::vector<float> terrain_temp = SetTerrain(TERRAIN_TYPE);
+	std::vector<float> h_temp = SetWater(WATER_TYPE, WATER_LEVEL, terrain_temp);
+	gpu->UploadToGPU(terrain.tex, terrain_temp, GRIDSIZE);
+	gpu->UploadToGPU(h.tex, h_temp, GRIDSIZE);
+	gpu->UploadToGPU(hbar.tex, h_temp, GRIDSIZE);
+	gpu->UploadToGPU(hbarOld.tex, h_temp, GRIDSIZE);
 }
 
 Sim::Sim(HWND hwnd = nullptr)
 {
-	// Define the total number of cells
-    size_t totalCells = GRIDSIZE * GRIDSIZE;
-	time = 0.f;
-	// Allocate memory for all member vectors
-	for (int i=0; i < sizeof(fields) / sizeof(fields[0]); i++) {
-		fields[i]->resize(totalCells, 0.0);
-	}
-    // Initialize terrain and water
-	SetTerrain(TERRAIN_TYPE);
-	SetWater(WATER_TYPE, WATER_LEVEL);
-
-	// Set up GPU Shaders
 	gpu = new GPU();
 	if (!gpu->Init(hwnd)) std::cerr << "GPU INIT FAILED" << std::endl;
-	for (int i=0; i < sizeof(gpu_fields) / sizeof(gpu_fields[0]); i++) {
-		gpu->CreateGridTexture(gpu_fields[i], GRIDSIZE);
-		gpu->UploadToGPU(gpu_fields[i]->tex, *fields[i], GRIDSIZE);
+
+	// Set up GPU Shaders
+	for (int i=0; i < sizeof(shaders) / sizeof(shaders[0]); i++) {
+		gpu->CompileComputeShader(L"shaders/kernels.hlsl", names[i], shaders[i]);
 	}
-	for (int i=0; i < sizeof(compute_shaders) / sizeof(compute_shaders[0]); i++) {
-		gpu->CompileComputeShader(L"shaders/kernels.hlsl", compute_names[i], compute_shaders[i]);
+    gpu->UpdateConstants(constants);
+
+	// Create GPU Textures and Upload Initial Data
+	for (int i=0; i < sizeof(fields) / sizeof(fields[0]); i++) {
+		gpu->CreateGridTexture(fields[i], GRIDSIZE);
+		std::vector<float> temp(GRIDSIZE*GRIDSIZE, 0.0f);
+		gpu->UploadToGPU(fields[i]->tex, temp, GRIDSIZE);
 	}
+	std::vector<float> terrain_temp = SetTerrain(TERRAIN_TYPE);
+	std::vector<float> h_temp = SetWater(WATER_TYPE, WATER_LEVEL, terrain_temp);
+	std::vector<float> H_temp(GRIDSIZE*GRIDSIZE, 0.0f);
+	for (int i = 0; i < GRIDSIZE*GRIDSIZE; i++) {
+		H_temp[i] = terrain_temp[i] + h_temp[i];
+	}
+	gpu->UploadToGPU(terrain.tex, terrain_temp, GRIDSIZE);
+	gpu->UploadToGPU(h.tex, h_temp, GRIDSIZE);
+	gpu->UploadToGPU(H.tex, H_temp, GRIDSIZE);
+	gpu->UploadToGPU(hbar.tex, h_temp, GRIDSIZE);
+	gpu->UploadToGPU(hbarOld.tex, h_temp, GRIDSIZE);
+
+	// Set up rendering shaders and mesh
 	gpu->CompileVertexShader(L"shaders/render.hlsl", "VSMain");
 	gpu->CompilePixelShader(L"shaders/render.hlsl", "PSMain");
 	gpu->CreateGridMesh(GRIDSIZE);
 	gpu->CreateGridVertexBuffer(GRIDSIZE);
-    gpu->UpdateConstants(compute_constants);
-	gpu->UploadToGPU(gpu_terrain.tex, terrain, GRIDSIZE);
+    gpu->UpdateConstants(constants);
 }
 
 int Sim::Release(void)
@@ -258,76 +260,57 @@ int Sim::Release(void)
 // Simulation functions
 // ********************************************************************************************************************
 
-void Sim::SimStep(bool SWEonly)
+void Sim::SimStep()
 {
-	DecompositionStep(SWEonly);
-	// if (!SWEonly) {
+	DecompositionStep();
 	// eWaveStep();
 	// 	FFTStep();
-	// }
 	SWEStep();
 	TransportStep();
 	ComputeValues();
-	time += TIMESTEP;
+	// time += TIMESTEP;
 }
 
-void Sim::DecompositionStep(bool SWEonly)
+void Sim::DecompositionStep()
 {
 	/******* Bulk vs Surface Wave Decomposition ******/
-
-	if (SWEonly)
-	{
-		// If we're only doing SWE, then we skip the decomposition and just set the bulk values to be the total values (and surface values to 0)
-		for (int i = 0; i < GRIDSIZE*GRIDSIZE; i++)
-		{
-			hbar[i] = h[i];
-			qbar_x[i] = q_x[i];
-			qbar_y[i] = q_y[i];
-			htilde[i] = 0.f;
-			qtilde_x[i] = 0.f;
-			qtilde_y[i] = 0.f;
-		}
-		return;
-	}
-
 	// Initialize values for diffusion step
-    gpu->Dispatch(shader_InitDecomp, {gpu_h.srv, gpu_q_x.srv, gpu_q_y.srv, gpu_terrain.srv}, 
-		{gpu_H.uav, gpu_Q_x.uav, gpu_Q_y.uav}, group, group);
+    gpu->Dispatch(shader_InitDecomp, {h.srv, q_x.srv, q_y.srv, terrain.srv}, 
+		{H.uav, Q_x.uav, Q_y.uav}, group, group);
 
 	// Calculate diffusion coefficients
-    gpu->Dispatch(shader_CalcDiff, {gpu_H.srv}, 
-		{gpu_alpha_H.uav, gpu_alpha_Q_x.uav, gpu_alpha_Q_y.uav}, group, group);
+    gpu->Dispatch(shader_CalcDiff, {H.srv}, 
+		{alpha_H.uav, alpha_Q_x.uav, alpha_Q_y.uav}, group, group);
 	gpu->Dispatch(shader_Boundaries, {}, 
-		{gpu_alpha_H.uav, gpu_alpha_Q_x.uav, gpu_alpha_Q_y.uav}, group, group);
+		{alpha_H.uav, alpha_Q_x.uav, alpha_Q_y.uav}, group, group);
 	
 	// Run diffusion to low-pass filter H and Q
 	for (int j = 0; (j < DIFFUSION_ITERATIONS); j++)
 	{
 		// Swap H and HPast pointers for ping-ponging
-        std::swap(gpu_H, gpu_HPast); 
-        std::swap(gpu_Q_x, gpu_QPast_x);
-		std::swap(gpu_Q_y, gpu_QPast_y);
+        std::swap(H, HPast); 
+        std::swap(Q_x, QPast_x);
+		std::swap(Q_y, QPast_y);
 
 		// Diffusion step for H and Q
 		gpu->Dispatch(shader_Diffusion, 
-			{gpu_terrain.srv, gpu_HPast.srv, gpu_QPast_x.srv, gpu_QPast_y.srv, gpu_alpha_H.srv, gpu_alpha_Q_x.srv, gpu_alpha_Q_y.srv}, 
-			{gpu_H.uav, gpu_Q_x.uav, gpu_Q_y.uav}, group, group);
+			{terrain.srv, HPast.srv, QPast_x.srv, QPast_y.srv, alpha_H.srv, alpha_Q_x.srv, alpha_Q_y.srv}, 
+			{H.uav, Q_x.uav, Q_y.uav}, group, group);
 		gpu->Dispatch(shader_Boundaries, {}, 
-			{gpu_H.uav, gpu_Q_x.uav, gpu_Q_y.uav}, group, group);
+			{H.uav, Q_x.uav, Q_y.uav}, group, group);
 	}
 	// gpu->Dispatch(shader_Boundaries,	{}, 
-	// 	{gpu_H.uav, gpu_Q_x.uav, gpu_Q_y.uav}, group, group);
+	// 	{H.uav, Q_x.uav, Q_y.uav}, group, group);
 
 	// final conversion to individual solver quantities
 	gpu->Dispatch(shader_Decompose, 
-		{gpu_H.srv, gpu_Q_x.srv, gpu_Q_y.srv, gpu_h.srv, gpu_q_x.srv, gpu_q_y.srv, gpu_terrain.srv}, 
-		{gpu_hbar.uav, gpu_qbar_x.uav, gpu_qbar_y.uav, gpu_htilde.uav, gpu_qtilde_x.uav, gpu_qtilde_y.uav}, 
+		{H.srv, Q_x.srv, Q_y.srv, h.srv, q_x.srv, q_y.srv, terrain.srv}, 
+		{hbar.uav, qbar_x.uav, qbar_y.uav, htilde.uav, qtilde_x.uav, qtilde_y.uav}, 
 		group, group);
 	gpu->Dispatch(shader_Boundaries, {}, 
-		{gpu_hbar.uav, gpu_htilde.uav}, group, group);
+		{hbar.uav, htilde.uav}, group, group);
 	gpu->Dispatch(shader_Boundaries, {}, 
-		{gpu_qbar_x.uav, gpu_qbar_y.uav, gpu_qtilde_x.uav, gpu_qtilde_y.uav}, 
-		group, group);
+		{qbar_x.uav, qbar_y.uav, qtilde_x.uav, qtilde_y.uav}, group, group);
 }
 
 // void Sim::eWaveStep()
@@ -397,171 +380,60 @@ void Sim::SWEStep()
 
 	// qbar to ubar using hbar from LAST timestep	
 	gpu->Dispatch(shader_Ubar, 
-		{gpu_qbar_x.srv, gpu_qbar_y.srv, gpu_hbarOld.srv,}, 
-		{gpu_ubar_x.uav, gpu_ubar_y.uav}, 
+		{qbar_x.srv, qbar_y.srv, hbarOld.srv,}, 
+		{ubar_x.uav, ubar_y.uav}, 
 		group, group);
 	gpu->Dispatch(shader_Boundaries, {}, 
-		{gpu_ubar_x.uav, gpu_ubar_y.uav}, 
+		{ubar_x.uav, ubar_y.uav}, 
 		group, group);
 		
 	// Compute time derivative of u_bar and integrate to get new u_bar, then 
 	// transfer back to flow rate using upwinding on *most recent* hbar
 	gpu->Dispatch(shader_SWE,
-		{gpu_ubar_x.srv, gpu_ubar_y.srv, gpu_hbar.srv, gpu_H.srv}, 
-		{gpu_ubarNew_x.uav, gpu_ubarNew_y.uav, gpu_qbar_x.uav, gpu_qbar_y.uav}, 
+		{ubar_x.srv, ubar_y.srv, hbar.srv, H.srv}, 
+		{ubarNew_x.uav, ubarNew_y.uav, qbar_x.uav, qbar_y.uav}, 
 		group, group);
 	gpu->Dispatch(shader_Boundaries, {}, 
-		{gpu_ubarNew_x.uav, gpu_ubarNew_y.uav, gpu_qbar_x.uav, gpu_qbar_y.uav}, 
+		{ubarNew_x.uav, ubarNew_y.uav, qbar_x.uav, qbar_y.uav}, 
 		group, group);
 
 	// store current hbar for next timestep
-	std::swap(gpu_hbar, gpu_hbarOld);
+	std::swap(hbar, hbarOld);
 }
 
 void Sim::TransportStep()
 {
-	// Advect high-frequency wave height and flow rate through bulk velocity
+	/****** Advect high-frequency wave height and flow rate through bulk velocity ******/ 
 
 	// Adjust qtilde to account for advection by ubar, using cubic sampling to get better accuracy.
-	std::swap(gpu_qtilde_x, gpu_qtildePast_x);  // store current qtilde for sampling, we will update qtilde in place
-	std::swap(gpu_qtilde_y, gpu_qtildePast_y);
+	std::swap(qtilde_x, qtildePast_x);  // store current qtilde for sampling, we will update qtilde in place
+	std::swap(qtilde_y, qtildePast_y);
 	gpu->Dispatch(shader_UpdateTilde, 
-		{gpu_ubarNew_x.srv, gpu_ubar_x.srv, gpu_ubarNew_y.srv, gpu_ubar_y.srv, 
-			gpu_qtildePast_x.srv, gpu_qtildePast_y.srv, gpu_h.srv, gpu_htilde.srv},
-		{gpu_qtilde_x.uav, gpu_qtilde_y.uav, gpu_htilde.uav}, 
-		group, group);	
+		{ubarNew_x.srv, ubar_x.srv, ubarNew_y.srv, ubar_y.srv, 
+			qtildePast_x.srv, qtildePast_y.srv, h.srv, htilde.srv},
+		{qtilde_x.uav, qtilde_y.uav, htilde.uav}, group, group);	
 	gpu->Dispatch(shader_Boundaries, {}, 
-		{gpu_qtilde_x.uav, gpu_qtilde_y.uav, gpu_htilde.uav}, 
-		group, group);
+		{qtilde_x.uav, qtilde_y.uav, htilde.uav}, group, group);
 	
 	// Advection of h through ubar:
 	// Construct q_advect = ubar * htilde sampled at cell edges using cubic sampling
 	gpu->Dispatch(shader_QAdvect, 
-		{gpu_ubarNew_x.srv, gpu_ubarNew_y.srv, gpu_htilde.srv},
-		{gpu_qAdvect_x.uav, gpu_qAdvect_y.uav}, 
-		group, group);
+		{ubarNew_x.srv, ubarNew_y.srv, htilde.srv},
+		{qAdvect_x.uav, qAdvect_y.uav}, group, group);
 	// Use q_advect to update h using finite volume update: h_new = h_old + dt * (Del . (q + q_advect))
-	std::swap(gpu_h, gpu_hPast);
+	std::swap(h, hPast);
 	gpu->Dispatch(shader_HAdvect, 
-		{gpu_qAdvect_x.srv, gpu_qAdvect_y.srv, gpu_hPast.srv, gpu_terrain.srv},
-		{gpu_h.uav}, 
-		group, group);
-	gpu->Dispatch(shader_Boundaries, {}, {gpu_h.uav}, group, group);
+		{qAdvect_x.srv, qAdvect_y.srv, hPast.srv, terrain.srv}, 
+		{h.uav}, group, group);
+	gpu->Dispatch(shader_Boundaries, {}, {h.uav}, group, group);
 }
 	
 void Sim::ComputeValues()
 {
 	gpu->Dispatch(shader_IntegrateH, 
-		{gpu_qbar_x.srv, gpu_qtilde_x.srv, gpu_qAdvect_x.srv, gpu_qbar_y.srv, gpu_qtilde_y.srv, gpu_qAdvect_y.srv, 
-			gpu_hPast.srv, gpu_terrain.srv}, 
-		{gpu_h.uav, gpu_q_x.uav, gpu_q_y.uav}, 
-		group, group);
+		{qbar_x.srv, qtilde_x.srv, qAdvect_x.srv, qbar_y.srv, qtilde_y.srv, qAdvect_y.srv, 
+			hPast.srv, terrain.srv}, 
+		{h.uav, q_x.uav, q_y.uav}, group, group);
 	gpu->Dispatch(shader_Boundaries, {}, 
-		{gpu_h.uav, gpu_q_x.uav, gpu_q_y.uav}, 
-		group, group);
-	// gpu->DownloadFromGPU(gpu_h.tex, h, GRIDSIZE);
-
-
-
-	// gpu->DownloadFromGPU(gpu_h.tex, h, GRIDSIZE);
-	// gpu->DownloadFromGPU(gpu_qbar_x.tex, qbar_x, GRIDSIZE);
-	// gpu->DownloadFromGPU(gpu_qbar_y.tex, qbar_y, GRIDSIZE);
-	// gpu->DownloadFromGPU(gpu_qtilde_x.tex, qtilde_x, GRIDSIZE);
-	// gpu->DownloadFromGPU(gpu_qtilde_y.tex, qtilde_y, GRIDSIZE);
-	// gpu->DownloadFromGPU(gpu_qAdvect_x.tex, qAdvect_x, GRIDSIZE);
-	// gpu->DownloadFromGPU(gpu_qAdvect_y.tex, qAdvect_y, GRIDSIZE);
-
-	// // Recombine bulk and surface flow
-	// for (int i = 0; i < GRIDSIZE*GRIDSIZE; i++)
-	// {
-	// 	q_x[i] = qbar_x[i] + qtilde_x[i];
-	// 	q_y[i] = qbar_y[i] + qtilde_y[i];
-	// }
-	// for (int y = 0; y < GRIDSIZE-1; y++)
-	// {
-	// 	for (int x = 0; x < GRIDSIZE-1; x++)
-	// 	{
-	// 		q_x[idx(x,y)] = LimitFlowRate(q_x[idx(x,y)], h[idx(x,y)], h[idx(std::min(x+1,GRIDSIZE-1),y)]);
-	// 		q_y[idx(x,y)] = LimitFlowRate(q_y[idx(x,y)], h[idx(x,y)], h[idx(x,std::min(y+1,GRIDSIZE-1))]);
-	// 		if ( (StopFlowOnTerrainBoundary(x, y, h, terrain, false)) || (x == 0) || (x >= GRIDSIZE - 2) )
-	// 			q_x[idx(x,y)] = 0.f;
-	// 		if ( (StopFlowOnTerrainBoundary(x, y, h, terrain, true)) || (y == 0) || (y >= GRIDSIZE - 2) )
-	// 			q_y[idx(x,y)] = 0.f;
-	// 		// NOTE: making edges a reflective boundary, revisit later
-	// 	}
-	// }
-	// ApplyBoundaries(q_x, BOUNDARY_TYPE);
-	// ApplyBoundaries(q_y, BOUNDARY_TYPE);
-	
-	// // Height integration 
-	// for (int y = 1; y < GRIDSIZE; y++)
-	// {
-	// 	for (int x = 1; x < GRIDSIZE; x++)
-	// 	{
-	// 		float div_q = (q_x[idx(x,y)] - q_x[idx(x-1,y)] + q_y[idx(x,y)] - q_y[idx(x,y-1)]) / CELLSIZE;
-	// 		h[idx(x,y)] = std::max(0.f, h[idx(x,y)] - TIMESTEP * div_q);
-	// 	}
-	// }
-	// ApplyBoundaries(h, BOUNDARY_TYPE);
-
-	// for (int y = 1; y < GRIDSIZE-1; y++)
-	// {
-	// 	for (int x = 1; x < GRIDSIZE-1; x++)
-	// 	{
-
-	// 		float fq_x = qbar_x[idx(x,y)] + qtilde_x[idx(x,y)] + qAdvect_x[idx(x,y)];
-	// 		float fq_xm = qbar_x[idx(x-1,y)] + qtilde_x[idx(x-1,y)] + qAdvect_x[idx(x-1,y)];
-	// 		float fq_y = qbar_y[idx(x,y)] + qtilde_y[idx(x,y)] + qAdvect_y[idx(x,y)];
-	// 		float fq_ym = qbar_y[idx(x,y-1)] + qtilde_y[idx(x,y-1)] + qAdvect_y[idx(x,y-1)];
-
-	// 		fq_x  = LimitFlowRate(fq_x, h[idx(x,y)], h[idx(x+1,y)]);
-	// 		fq_xm = LimitFlowRate(fq_xm, h[idx(x-1,y)], h[idx(x,y)]);
-	// 		fq_y  = LimitFlowRate(fq_y, h[idx(x,y)], h[idx(x,y+1)]);
-	// 		fq_ym = LimitFlowRate(fq_ym, h[idx(x,y-1)], h[idx(x,y)]);
-
-	// 		// if ((StopFlowOnTerrainBoundary(in4, in5, id.xy, false)) || (id.x == 0) || (id.x == gridSize - 2))
-	// 		//     out0[id.xy] = 0.f;
-	// 		// else
-	// 		//     out0[id.xy] = LimitFlowRate(q_x, in4[id.xy], in4[id.xy + uint2(1, 0)]);
-			
-	// 		// if ((StopFlowOnTerrainBoundary(in4, in5, id.xy, true)) || (id.y == 0) || (id.y == gridSize - 2))
-	// 		//     out1[id.xy] = 0.f;
-	// 		// else        
-	// 		//     out1[id.xy] = LimitFlowRate(q_y, in4[id.xy], in4[id.xy + uint2(0, 1)]);
-
-	// 		float div_q = (fq_x - fq_xm + fq_y - fq_ym) / CELLSIZE;
-	// 		h[idx(x,y)] = std::max(0.f, h[idx(x,y)] - TIMESTEP * div_q);
-	// 		q_x[idx(x,y)] = fq_x;// - qAdvect_x[idx(x,y)]; // qbar + qtilde, removing qAdvect
-	// 		q_y[idx(x,y)] = fq_y;// - qAdvect_y[idx(x,y)];
-
-	// 		// q_x[idx(x,y)] = LimitFlowRate(q_x[idx(x,y)], h[idx(x,y)], h[idx(std::min(x+1,GRIDSIZE-1),y)]);
-	// 		// q_y[idx(x,y)] = LimitFlowRate(q_y[idx(x,y)], h[idx(x,y)], h[idx(x,std::min(y+1,GRIDSIZE-1))]);
-	// 		// if ( (StopFlowOnTerrainBoundary(x, y, h, terrain, false)) || (x == 0) || (x >= GRIDSIZE - 2) )
-	// 		// 	q_x[idx(x,y)] = 0.f;
-	// 		// if ( (StopFlowOnTerrainBoundary(x, y, h, terrain, true)) || (y == 0) || (y >= GRIDSIZE - 2) )
-	// 		// 	q_y[idx(x,y)] = 0.f;
-	// 		// NOTE: making edges a reflective boundary, revisit later
-	// 	}
-	// }
-	// ApplyBoundaries(h, BOUNDARY_TYPE);	
-	// ApplyBoundaries(q_x, BOUNDARY_TYPE);
-	// ApplyBoundaries(q_y, BOUNDARY_TYPE);
-
-
-	// // stability measure to not drag too much water from a cell in a single timestep (important for extreme initial conditions)
-	// for (int y = 0; y < GRIDSIZE - 1; y++)
-	// {
-	// 	for (int x = 0; x < GRIDSIZE - 1; x++)
-	// 	{
-	// 		q_x[idx(x,y)] = LimitFlowRate(q_x[idx(x,y)], h[idx(x,y)], h[idx(x+1,y)]);
-	// 		q_y[idx(x,y)] = LimitFlowRate(q_y[idx(x,y)], h[idx(x,y)], h[idx(x,y+1)]);
-	// 	}
-	// }
-	// ApplyBoundaries(q_x, BOUNDARY_TYPE);
-	// ApplyBoundaries(q_y, BOUNDARY_TYPE);
-
-	// gpu->UploadToGPU(gpu_h.tex, h, GRIDSIZE);
-	// gpu->UploadToGPU(gpu_q_x.tex, q_x, GRIDSIZE);
-	// gpu->UploadToGPU(gpu_q_y.tex, q_y, GRIDSIZE);
-
+		{h.uav, q_x.uav, q_y.uav}, group, group);
 }

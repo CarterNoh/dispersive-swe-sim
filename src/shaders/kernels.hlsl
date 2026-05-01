@@ -444,11 +444,13 @@ void UpdateTilde(uint3 id : SV_DispatchThreadID) {
         out0[id.xy] = 0.f;
     else
         out0[id.xy] = SampleCubicClamped(in4, id.x + step_x, id.xy, false) * exp(-div_ubar * timeStep);
+        // out0[id.xy] = LimitFlowRate(out0[id.xy], in6[id.xy], in6[id.xy + uint2(1, 0)]); 
     if (((ubar_y_avg >= 0.f) && (in6[id.xy] < minWaterHeight)) ||
         ((ubar_y_avg < 0.f) && (in6[id.xy + uint2(0, 1)] < minWaterHeight)))
         out1[id.xy] = 0.f;
     else
         out1[id.xy] = SampleCubicClamped(in5, id.y + step_y, id.xy, true) * exp(-div_ubar * timeStep);
+        // out1[id.xy] = LimitFlowRate(out1[id.xy], in6[id.xy], in6[id.xy + uint2(0, 1)]); 
 
     // Update htilde using ubar divergence
     div_ubar_x = (in0[id.xy] - in0[id.xy - uint2(1, 0)]) / cellSize;
@@ -534,4 +536,5 @@ void IntegrateH(uint3 id : SV_DispatchThreadID) {
 	out0[curr] = max(0.f, in6[curr] - timeStep * div_q);
     out1[curr] = q_x - in2[curr]; // qbar + qtilde, removing qAdvect
     out2[curr] = q_y - in5[curr];
+    // out1[curr] = LimitFlowRate(q_x, in6[curr], in6[curr_px])
 }
