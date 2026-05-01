@@ -466,30 +466,6 @@ void CalcQAdvect(uint3 id : SV_DispatchThreadID) {
     out1[id.xy] = in1[id.xy] * SampleCubicClamped(in2, id.y + step_y, id.xy, true);  
 }
 
-// [numthreads(16, 16, 1)]
-// void CalcHAdvect(uint3 id : SV_DispatchThreadID) {
-//     // Inputs: in0 = qAdvect_x, in1 = qAdvect_y, in2 = hPast, in3 = terrain
-//     // Outputs: out0 = h
-//     if (id.x < 1 || id.x >= (uint)(gridSize - 1) || id.y < 1 || id.y >= (uint)(gridSize - 1)) return;
-
-//     float q_x_l = LimitFlowRate(in0[id.xy - uint2(1, 0)], in2[id.xy - uint2(1, 0)], in2[id.xy]);
-//     float q_x_r = LimitFlowRate(in0[id.xy], in2[id.xy], in2[id.xy + uint2(1, 0)]);
-//     float q_y_l = LimitFlowRate(in1[id.xy - uint2(0, 1)], in2[id.xy - uint2(0, 1)], in2[id.xy]);
-//     float q_y_r = LimitFlowRate(in1[id.xy], in2[id.xy], in2[id.xy + uint2(0, 1)]);
-//     if ( ((in2[id.xy - uint2(1, 0)] == 0.f) && (in2[id.xy] == 0.f)) || (StopFlowOnTerrainBoundary(in2, in3, id.xy-uint2(1, 0), false)) )
-//         q_x_l = 0.f;
-//     if ( ((in2[id.xy] == 0.f) && (in2[id.xy + uint2(1, 0)] == 0.f)) || (StopFlowOnTerrainBoundary(in2, in3, id.xy, false)) )
-//         q_x_r = 0.f;
-//     if ( ((in2[id.xy - uint2(0, 1)] == 0.f) && (in2[id.xy] == 0.f)) || (StopFlowOnTerrainBoundary(in2, in3, id.xy-uint2(0, 1), true)) )
-//         q_y_l = 0.f;
-//     if ( ((in2[id.xy] == 0.f) && (in2[id.xy + uint2(0, 1)] == 0.f)) || (StopFlowOnTerrainBoundary(in2, in3, id.xy, true)) )
-//         q_y_r = 0.f;
-
-//     // update h using htilde advected through ubar
-//     float div_q = (q_x_r - q_x_l + q_y_r - q_y_l) / cellSize;
-//     out0[id.xy] = max(0.f, in2[id.xy] - timeStep * div_q);
-// }
-
 [numthreads(16, 16, 1)]
 void IntegrateH(uint3 id : SV_DispatchThreadID) {
     // Inputs: in0 = qbar_x, in1 = qtilde_x, in2 = qAdvect_x, 

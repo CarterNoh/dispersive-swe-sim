@@ -158,7 +158,6 @@ void Sim::SimStep()
 	SWEStep();
 	TransportStep();
 	ComputeValues();
-	// time += TIMESTEP;
 }
 
 void Sim::DecompositionStep()
@@ -214,7 +213,6 @@ void Sim::DecompositionStep()
 // 	}
 // 	fftc1d(htildehat);   //https://www.alglib.net/download.php#cpp
 // 	fftc1d(qtildehat);
-	
 // 	for (int x = 0; x < GRIDSIZE; x++)
 // 	{
 // 		// physical k from grid position
@@ -260,6 +258,10 @@ void Sim::DecompositionStep()
 // 			s = (Depth[depth2] - waterDepth) / (Depth[depth2] - Depth[depth1]);
 // 		qtilde[x] = s * qtildehat_depth[depth1][x].x + (1.f - s) * qtildehat_depth[depth2][x].x;
 // 	}
+// }
+
+// // void Sim::FFTStep()
+// {
 // }
 
 void Sim::SWEStep()
