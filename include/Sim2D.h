@@ -52,23 +52,8 @@ public:
 		&hPast, &hbarOld, &htildeOld
 	};
 
-	// GPU Stuff
 	GPU* gpu;
-    ID3D11ComputeShader *shader_Boundaries, *shader_InitDecomp, *shader_CalcDiff, *shader_Diffusion, 
-						*shader_Decompose, *shader_Ubar, *shader_SWE, *shader_UpdateTilde, 
-						*shader_QAdvect, *shader_HAdvect, *shader_IntegrateH;
-	ID3D11ComputeShader** shaders[11] = {
-		&shader_Boundaries, &shader_InitDecomp, &shader_CalcDiff, &shader_Diffusion, &shader_Decompose, 
-		&shader_Ubar, &shader_SWE, &shader_UpdateTilde, &shader_QAdvect, &shader_HAdvect, 
-		// &shader_CombineQ, 
-		&shader_IntegrateH
-	};
-	char* names[11] = {"ApplyBoundaries", "InitDecomp", "CalcDiffusionCoeffs", "DiffusionStep", "DecomposeFields", 
-					   "CalcUbar", "CalcSWE", "UpdateTilde", "CalcQAdvect", "CalcHAdvect", "IntegrateH"};
-	SimConstants constants = {GRIDSIZE, CELLSIZE, TIMESTEP, BOUNDARY_TYPE, MIN_WATER_HEIGHT,
-							  DIFFUSION_ITERATIONS, DELTA_T, DIFFUSION_PENALTY, CFL_CONDITION, GAMMA_TRANSPORT, {0.f, 0.f}};
-	int group = GRIDSIZE / 16; // number of thread groups to dispatch for compute shaders, assuming 16x16 threads per group
-	RenderConstants render_constants = {DirectX::XMMatrixIdentity(), (float)GRIDSIZE, CELLSIZE, {0.f, 0.f}};
+    
 
 	// Functions
 	Sim();	// default constructor
@@ -89,15 +74,21 @@ private:
 
 	// Helper functions
 	inline int idx(int x, int y) const {return y * GRIDSIZE + x;}
-	inline float LimitFlowRate(float flow_rate_in, float waterDepth_left, float waterDepth_right);
-	inline float LimitVelocity(float velocity_in);
-	bool StopFlowOnTerrainBoundary(int x, int y, std::vector<float>& h, std::vector<float>& terrain, bool isYDirection);
-	void ExtractLocal(std::vector<float>& target, std::vector<float>& dataField, int index, bool isYDirection);
-	float SampleCubicClamped(float samplePos, std::vector<float>& dataField);
-	void HandleWallBoundary(std::vector<float>& field);
-	void HandleFreeBoundary(std::vector<float>& field);
-	void HandleZeroBoundary(std::vector<float>& field);
-	void ApplyBoundaries(std::vector<float>& field, int type);
+
+	// GPU Compute Shaders
+	ID3D11ComputeShader *ApplyBoundaries, *InitDecomp, *CalcDiffusionCoeffs, *DiffusionStep, *DecomposeFields, 
+						*CalcUbar, *CalcSWE, *UpdateTilde, *CalcQAdvect, *IntegrateH;
+	ID3D11ComputeShader** shaders[10] = {
+						&ApplyBoundaries, &InitDecomp, &CalcDiffusionCoeffs, &DiffusionStep, &DecomposeFields, 
+						&CalcUbar, &CalcSWE, &UpdateTilde, &CalcQAdvect, &IntegrateH
+	};
+	char* names[10] = {"ApplyBoundaries", "InitDecomp", "CalcDiffusionCoeffs", "DiffusionStep", "DecomposeFields", 
+					   "CalcUbar", "CalcSWE", "UpdateTilde", "CalcQAdvect", "IntegrateH"};
+	SimConstants constants = {GRIDSIZE, CELLSIZE, TIMESTEP, BOUNDARY_TYPE, MIN_WATER_HEIGHT,
+							  DIFFUSION_ITERATIONS, DELTA_T, DIFFUSION_PENALTY, CFL_CONDITION, GAMMA_TRANSPORT, {0.f, 0.f}};
+	int group = GRIDSIZE / 16; // number of thread groups to dispatch for compute shaders, assuming 16x16 threads per group
+	RenderConstants render_constants = {DirectX::XMMatrixIdentity(), (float)GRIDSIZE, CELLSIZE, {0.f, 0.f}};
+
 
 
 

@@ -122,7 +122,6 @@ float SampleCubicClamped(Texture2D<float> dataField, float samplePos, uint2 curr
 
 //////////////////// COMPUTE SHADERS /////////////////////////
 
-
 // Apply Boundary Conditions
 [numthreads(16, 16, 1)]
 void ApplyBoundaries(uint3 id : SV_DispatchThreadID){
@@ -181,7 +180,6 @@ void ApplyBoundaries(uint3 id : SV_DispatchThreadID){
 
 /////////// Decomposition ///////////
 
-// Decomposition: Initialize 
 [numthreads(16, 16, 1)]
 void InitDecomp(uint3 id : SV_DispatchThreadID) {
     // Inputs: in0 = h, in1 = q_x, in2 = q_y, in3 = terrain
@@ -191,7 +189,6 @@ void InitDecomp(uint3 id : SV_DispatchThreadID) {
     out2[id.xy] = in2[id.xy];
 }
 
-// Decomposition: Calculate Diffusion Coefficients 
 [numthreads(16, 16, 1)]
 void CalcDiffusionCoeffs(uint3 id : SV_DispatchThreadID) {
     // Inputs: in0 = H
@@ -233,7 +230,6 @@ void CalcDiffusionCoeffs(uint3 id : SV_DispatchThreadID) {
     out2[curr] = min(max_alpha, avg_H_y * avg_H_y / denom) * exp(penalty);
 }
 
-// Decomposition: Diffusion Iteration
 [numthreads(16, 16, 1)]
 void DiffusionStep(uint3 id : SV_DispatchThreadID) {
     // Inputs: in0 = terrain, in1 = HPast, in2 = QPast_x, in3 = QPast_y, 
@@ -247,7 +243,6 @@ void DiffusionStep(uint3 id : SV_DispatchThreadID) {
     out2[id.xy] = in3[id.xy] + deltaT * CalcGradient(in3, in6, id.xy);
 }
 
-// Decomposition: Decompose Fields
 [numthreads(16, 16, 1)]
 void DecomposeFields(uint3 id : SV_DispatchThreadID) {
     // Inputs: in0 = H, in1 = Q_x, in2 = Q_y
@@ -279,7 +274,6 @@ void DecomposeFields(uint3 id : SV_DispatchThreadID) {
     out4[id.xy] = qtilde_x;
     out5[id.xy] = qtilde_y;
 }
-
 
 /////////// eWave ///////////
 
@@ -472,29 +466,29 @@ void CalcQAdvect(uint3 id : SV_DispatchThreadID) {
     out1[id.xy] = in1[id.xy] * SampleCubicClamped(in2, id.y + step_y, id.xy, true);  
 }
 
-[numthreads(16, 16, 1)]
-void CalcHAdvect(uint3 id : SV_DispatchThreadID) {
-    // Inputs: in0 = qAdvect_x, in1 = qAdvect_y, in2 = hPast, in3 = terrain
-    // Outputs: out0 = h
-    if (id.x < 1 || id.x >= (uint)(gridSize - 1) || id.y < 1 || id.y >= (uint)(gridSize - 1)) return;
+// [numthreads(16, 16, 1)]
+// void CalcHAdvect(uint3 id : SV_DispatchThreadID) {
+//     // Inputs: in0 = qAdvect_x, in1 = qAdvect_y, in2 = hPast, in3 = terrain
+//     // Outputs: out0 = h
+//     if (id.x < 1 || id.x >= (uint)(gridSize - 1) || id.y < 1 || id.y >= (uint)(gridSize - 1)) return;
 
-    float q_x_l = LimitFlowRate(in0[id.xy - uint2(1, 0)], in2[id.xy - uint2(1, 0)], in2[id.xy]);
-    float q_x_r = LimitFlowRate(in0[id.xy], in2[id.xy], in2[id.xy + uint2(1, 0)]);
-    float q_y_l = LimitFlowRate(in1[id.xy - uint2(0, 1)], in2[id.xy - uint2(0, 1)], in2[id.xy]);
-    float q_y_r = LimitFlowRate(in1[id.xy], in2[id.xy], in2[id.xy + uint2(0, 1)]);
-    if ( ((in2[id.xy - uint2(1, 0)] == 0.f) && (in2[id.xy] == 0.f)) || (StopFlowOnTerrainBoundary(in2, in3, id.xy-uint2(1, 0), false)) )
-        q_x_l = 0.f;
-    if ( ((in2[id.xy] == 0.f) && (in2[id.xy + uint2(1, 0)] == 0.f)) || (StopFlowOnTerrainBoundary(in2, in3, id.xy, false)) )
-        q_x_r = 0.f;
-    if ( ((in2[id.xy - uint2(0, 1)] == 0.f) && (in2[id.xy] == 0.f)) || (StopFlowOnTerrainBoundary(in2, in3, id.xy-uint2(0, 1), true)) )
-        q_y_l = 0.f;
-    if ( ((in2[id.xy] == 0.f) && (in2[id.xy + uint2(0, 1)] == 0.f)) || (StopFlowOnTerrainBoundary(in2, in3, id.xy, true)) )
-        q_y_r = 0.f;
+//     float q_x_l = LimitFlowRate(in0[id.xy - uint2(1, 0)], in2[id.xy - uint2(1, 0)], in2[id.xy]);
+//     float q_x_r = LimitFlowRate(in0[id.xy], in2[id.xy], in2[id.xy + uint2(1, 0)]);
+//     float q_y_l = LimitFlowRate(in1[id.xy - uint2(0, 1)], in2[id.xy - uint2(0, 1)], in2[id.xy]);
+//     float q_y_r = LimitFlowRate(in1[id.xy], in2[id.xy], in2[id.xy + uint2(0, 1)]);
+//     if ( ((in2[id.xy - uint2(1, 0)] == 0.f) && (in2[id.xy] == 0.f)) || (StopFlowOnTerrainBoundary(in2, in3, id.xy-uint2(1, 0), false)) )
+//         q_x_l = 0.f;
+//     if ( ((in2[id.xy] == 0.f) && (in2[id.xy + uint2(1, 0)] == 0.f)) || (StopFlowOnTerrainBoundary(in2, in3, id.xy, false)) )
+//         q_x_r = 0.f;
+//     if ( ((in2[id.xy - uint2(0, 1)] == 0.f) && (in2[id.xy] == 0.f)) || (StopFlowOnTerrainBoundary(in2, in3, id.xy-uint2(0, 1), true)) )
+//         q_y_l = 0.f;
+//     if ( ((in2[id.xy] == 0.f) && (in2[id.xy + uint2(0, 1)] == 0.f)) || (StopFlowOnTerrainBoundary(in2, in3, id.xy, true)) )
+//         q_y_r = 0.f;
 
-    // update h using htilde advected through ubar
-    float div_q = (q_x_r - q_x_l + q_y_r - q_y_l) / cellSize;
-    out0[id.xy] = max(0.f, in2[id.xy] - timeStep * div_q);
-}
+//     // update h using htilde advected through ubar
+//     float div_q = (q_x_r - q_x_l + q_y_r - q_y_l) / cellSize;
+//     out0[id.xy] = max(0.f, in2[id.xy] - timeStep * div_q);
+// }
 
 [numthreads(16, 16, 1)]
 void IntegrateH(uint3 id : SV_DispatchThreadID) {
@@ -534,7 +528,7 @@ void IntegrateH(uint3 id : SV_DispatchThreadID) {
 
     float div_q = (q_x - q_xm + q_y - q_ym) / cellSize;
 	out0[curr] = max(0.f, in6[curr] - timeStep * div_q);
-    out1[curr] = q_x - in2[curr]; // qbar + qtilde, removing qAdvect
-    out2[curr] = q_y - in5[curr];
+    out1[curr] = q_x;// - in2[curr]; // qbar + qtilde, removing qAdvect
+    out2[curr] = q_y;// - in5[curr];
     // out1[curr] = LimitFlowRate(q_x, in6[curr], in6[curr_px])
 }

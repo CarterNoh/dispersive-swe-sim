@@ -210,17 +210,6 @@ void GPU::ClearUAV(ID3D11UnorderedAccessView* uav, float clearValue) {
     context->ClearUnorderedAccessViewFloat(uav, clearColor);
 }
 
-void GPU::Flush() {
-    D3D11_QUERY_DESC queryDesc = {};
-    queryDesc.Query = D3D11_QUERY_EVENT;
-    ID3D11Query* query = nullptr;
-    device->CreateQuery(&queryDesc, &query);
-    context->End(query);
-    BOOL done = FALSE;
-    while (context->GetData(query, &done, sizeof(BOOL), 0) == S_FALSE || !done) {}
-    query->Release();
-}
-
 bool GPU::CreateGridVertexBuffer(int gridSize) {
     std::vector<float> vertices;
     // Generate a flat grid of X, Y coordinates
@@ -259,7 +248,7 @@ bool GPU::CompileComputeShader(const std::wstring& file, const std::string& entr
     return true;
 }
 
-bool GPU::CompileVertexShader(const std::wstring& file, const std::string& entryPoint) {
+bool GPU::CompileVertexShader (const std::wstring& file, const std::string& entryPoint) {
     ID3DBlob* shaderBlob = nullptr;
     ID3DBlob* errorBlob = nullptr;
 
@@ -280,7 +269,7 @@ bool GPU::CompileVertexShader(const std::wstring& file, const std::string& entry
     return true;
 }
 
-bool GPU::CompilePixelShader(const std::wstring& file, const std::string& entryPoint) {
+bool GPU::CompilePixelShader  (const std::wstring& file, const std::string& entryPoint) {
     ID3DBlob* shaderBlob = nullptr;
     ID3DBlob* errorBlob = nullptr;
 

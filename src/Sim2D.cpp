@@ -2,116 +2,6 @@
 #include <windows.h>
 #include "Sim2D.h"
 
-/*
-Note: Every loop through the grid only covers interior cells and a separate loop covers boundaries. This was done 
-to increase simulation speed, but added a lot of complexity. I'm not positive that all the boundary checks are 
-right, and one thing to do eventually would be compare the speed of the sim with and without parts to see where 
-it matters. It would cut down on complexity and total length of code to do it all in the loop oinstead of separate 
-boundary handling. 
-*/
-
-// ********************************************************************************************************************
-// Helper functions
-// ********************************************************************************************************************
-
-inline float Sim::LimitFlowRate(float flow_rate_in, float waterDepth_left, float waterDepth_right)
-{
-	if (flow_rate_in >= 0.f)
-		return std::min(flow_rate_in, CFL_CONDITION * waterDepth_left * CELLSIZE / TIMESTEP);  // 0.25 since other neighbor might take from this source cell as well
-	else
-		return std::max(flow_rate_in, -CFL_CONDITION * waterDepth_right * CELLSIZE / TIMESTEP);
-}
-
-inline float Sim::LimitVelocity(float velocity_in)
-{
-	if (velocity_in >= 0.f)
-		return std::min(velocity_in, CFL_CONDITION * CELLSIZE / TIMESTEP);   // 0.25 since other neighbors might take from this source cell as well
-	else
-		return std::max(velocity_in, -CFL_CONDITION * CELLSIZE / TIMESTEP);
-}
-
-bool Sim::StopFlowOnTerrainBoundary(int x, int y, std::vector<float>& h, std::vector<float>& terrain, bool isYDirection = false)
-{
-	// test if the terrain boundary stops any flow across x+0.5
-	// Key: 1 = stop in x, 2 = stop in y, 3 = stop in both, 0 = no stop
-	bool result_x = 0;
-	bool result_y = 0;
-
-	// Test x boundary
-	if (!isYDirection)
-	{
-		if ((h[idx(x,y)] <= MIN_WATER_HEIGHT) && (terrain[idx(x,y)] >= terrain[idx(x+1,y)] + h[idx(x+1,y)])) // positive q_x
-			return true;
-		if ((h[idx(x+1,y)] <= MIN_WATER_HEIGHT) && (terrain[idx(x+1,y)] > terrain[idx(x,y)] + h[idx(x,y)])) // negative q_x
-			return true;
-		return false;
-	}
-	else
-	{
-		if ((h[idx(x,y)] <= MIN_WATER_HEIGHT) && (terrain[idx(x,y)] >= terrain[idx(x,y+1)] + h[idx(x,y+1)])) // positive q_y
-			return true;
-		if ((h[idx(x,y+1)] <= MIN_WATER_HEIGHT) && (terrain[idx(x,y+1)] > terrain[idx(x,y)] + h[idx(x,y)])) // negative q_y
-			return true;
-		return false;
-	}
-}
-
-
-
-// Boundary Condition Functions
-void Sim::HandleWallBoundary(std::vector<float>& field) 
-{
-	// Handle Top and Bottom Edges (Horizontal)
-	for (int i = 0; i < GRIDSIZE; ++i) {
-		field[idx(i, 0)] = field[idx(i, 1)]; // Bottom Edge
-		field[idx(i, GRIDSIZE-1)] = field[idx(i, GRIDSIZE-2)]; // Top Edge
-		field[idx(0, i)] = field[idx(1, i)]; // Left Edge
-		field[idx(GRIDSIZE-1, i)] = field[idx(GRIDSIZE-2, i)]; // Right Edge
-	}
-	// Corners
-	field[idx(0, 0)] = field[idx(1, 1)]; // Bottom Left Corner
-	field[idx(0, GRIDSIZE-1)] = field[idx(1, GRIDSIZE-2)]; // Top Left Corner
-	field[idx(GRIDSIZE-1, 0)] = field[idx(GRIDSIZE-2, 1)]; // Bottom Right Corner
-	field[idx(GRIDSIZE-1, GRIDSIZE-1)] = field[idx(GRIDSIZE-2, GRIDSIZE-2)]; // Top Right Corner
-}
-
-void Sim::HandleFreeBoundary(std::vector<float>& field)
-{
-	// Free boundary: extrapolate values from interior to boundaries using linear extrapolation
-	for (int i = 0; i < GRIDSIZE; ++i) {
-		field[idx(i, 0)] = 2.f * field[idx(i, 1)] - field[idx(i, 2)]; // Top Edge
-		field[idx(i, GRIDSIZE-1)] = 2.f * field[idx(i, GRIDSIZE-2)] - field[idx(i, GRIDSIZE-3)]; // Bottom Edge
-		field[idx(0, i)] = 2.f * field[idx(1, i)] - field[idx(2, i)]; // Left Edge
-		field[idx(GRIDSIZE-1, i)] = 2.f * field[idx(GRIDSIZE-2, i)] - field[idx(GRIDSIZE-3, i)]; // Right Edge
-	}
-	// Corners
-	field[idx(0, 0)] = 2.f * field[idx(1, 1)] - field[idx(2, 2)]; // Bottom Left Corner
-	field[idx(0, GRIDSIZE-1)] = 2.f * field[idx(1, GRIDSIZE-2)] - field[idx(2, GRIDSIZE-3)]; // Top Left Corner
-	field[idx(GRIDSIZE-1, 0)] = 2.f * field[idx(GRIDSIZE-2, 1)] - field[idx(GRIDSIZE-3, 2)]; // Bottom Right Corner
-	field[idx(GRIDSIZE-1, GRIDSIZE-1)] = 2.f * field[idx(GRIDSIZE-2, GRIDSIZE-2)] - field[idx(GRIDSIZE-3, GRIDSIZE-3)]; // Top Right Corner
-}
-
-void Sim::HandleZeroBoundary(std::vector<float>& field)
-{
-	for (int i = 0; i < GRIDSIZE; ++i) {
-		field[idx(i, 0)] = WATER_LEVEL; // Top Edge
-		field[idx(i, GRIDSIZE - 1)] = WATER_LEVEL; // Bottom Edge
-		field[idx(0, i)] = WATER_LEVEL; // Left Edge
-		field[idx(GRIDSIZE - 1, i)] = WATER_LEVEL; // Right Edge
-	}
-}
-
-void Sim::ApplyBoundaries(std::vector<float>& field, int type)
-{
-	if (type == 0)
-		Sim::HandleWallBoundary(field);
-	else if (type == 1)
-		Sim::HandleFreeBoundary(field);
-	else if (type == 2)
-		Sim::HandleZeroBoundary(field);
-}
-
-
 // ********************************************************************************************************************
 // Init functions
 // ********************************************************************************************************************
@@ -122,7 +12,7 @@ std::vector<float> Sim::SetTerrain(int type) {
         for (int x = 0; x < GRIDSIZE; x++) {
             float xf = (float)x / (GRIDSIZE - 1);
             float yf = (float)y / (GRIDSIZE - 1);
-            int i = idx(x, y);
+            int i = idx(x,y);
 
             if (type == 0) { // Flat
                 terrain[i] = TERRAIN_HEIGHT; 
@@ -157,7 +47,7 @@ std::vector<float> Sim::SetWater(int type, float level, std::vector<float>& terr
         for (int x = 0; x < GRIDSIZE; x++) {
             float xf = (float)x / (GRIDSIZE - 1);
             float yf = (float)y / (GRIDSIZE - 1);
-            int i = idx(x, y);
+            int i = idx(x,y);
 
             float waterSurface = level;
 
@@ -275,13 +165,13 @@ void Sim::DecompositionStep()
 {
 	/******* Bulk vs Surface Wave Decomposition ******/
 	// Initialize values for diffusion step
-    gpu->Dispatch(shader_InitDecomp, {h.srv, q_x.srv, q_y.srv, terrain.srv}, 
+    gpu->Dispatch(InitDecomp, {h.srv, q_x.srv, q_y.srv, terrain.srv}, 
 		{H.uav, Q_x.uav, Q_y.uav}, group, group);
 
 	// Calculate diffusion coefficients
-    gpu->Dispatch(shader_CalcDiff, {H.srv}, 
+    gpu->Dispatch(CalcDiffusionCoeffs, {H.srv}, 
 		{alpha_H.uav, alpha_Q_x.uav, alpha_Q_y.uav}, group, group);
-	gpu->Dispatch(shader_Boundaries, {}, 
+	gpu->Dispatch(ApplyBoundaries, {}, 
 		{alpha_H.uav, alpha_Q_x.uav, alpha_Q_y.uav}, group, group);
 	
 	// Run diffusion to low-pass filter H and Q
@@ -293,23 +183,21 @@ void Sim::DecompositionStep()
 		std::swap(Q_y, QPast_y);
 
 		// Diffusion step for H and Q
-		gpu->Dispatch(shader_Diffusion, 
+		gpu->Dispatch(DiffusionStep, 
 			{terrain.srv, HPast.srv, QPast_x.srv, QPast_y.srv, alpha_H.srv, alpha_Q_x.srv, alpha_Q_y.srv}, 
 			{H.uav, Q_x.uav, Q_y.uav}, group, group);
-		gpu->Dispatch(shader_Boundaries, {}, 
+		gpu->Dispatch(ApplyBoundaries, {}, 
 			{H.uav, Q_x.uav, Q_y.uav}, group, group);
 	}
-	// gpu->Dispatch(shader_Boundaries,	{}, 
-	// 	{H.uav, Q_x.uav, Q_y.uav}, group, group);
 
 	// final conversion to individual solver quantities
-	gpu->Dispatch(shader_Decompose, 
+	gpu->Dispatch(DecomposeFields, 
 		{H.srv, Q_x.srv, Q_y.srv, h.srv, q_x.srv, q_y.srv, terrain.srv}, 
 		{hbar.uav, qbar_x.uav, qbar_y.uav, htilde.uav, qtilde_x.uav, qtilde_y.uav}, 
 		group, group);
-	gpu->Dispatch(shader_Boundaries, {}, 
+	gpu->Dispatch(ApplyBoundaries, {}, 
 		{hbar.uav, htilde.uav}, group, group);
-	gpu->Dispatch(shader_Boundaries, {}, 
+	gpu->Dispatch(ApplyBoundaries, {}, 
 		{qbar_x.uav, qbar_y.uav, qtilde_x.uav, qtilde_y.uav}, group, group);
 }
 
@@ -379,21 +267,21 @@ void Sim::SWEStep()
 	// SWE bulk simulation using [Stelling03]
 
 	// qbar to ubar using hbar from LAST timestep	
-	gpu->Dispatch(shader_Ubar, 
+	gpu->Dispatch(CalcUbar, 
 		{qbar_x.srv, qbar_y.srv, hbarOld.srv,}, 
 		{ubar_x.uav, ubar_y.uav}, 
 		group, group);
-	gpu->Dispatch(shader_Boundaries, {}, 
+	gpu->Dispatch(ApplyBoundaries, {}, 
 		{ubar_x.uav, ubar_y.uav}, 
 		group, group);
 		
 	// Compute time derivative of u_bar and integrate to get new u_bar, then 
 	// transfer back to flow rate using upwinding on *most recent* hbar
-	gpu->Dispatch(shader_SWE,
+	gpu->Dispatch(CalcSWE,
 		{ubar_x.srv, ubar_y.srv, hbar.srv, H.srv}, 
 		{ubarNew_x.uav, ubarNew_y.uav, qbar_x.uav, qbar_y.uav}, 
 		group, group);
-	gpu->Dispatch(shader_Boundaries, {}, 
+	gpu->Dispatch(ApplyBoundaries, {}, 
 		{ubarNew_x.uav, ubarNew_y.uav, qbar_x.uav, qbar_y.uav}, 
 		group, group);
 
@@ -408,32 +296,32 @@ void Sim::TransportStep()
 	// Adjust qtilde to account for advection by ubar, using cubic sampling to get better accuracy.
 	std::swap(qtilde_x, qtildePast_x);  // store current qtilde for sampling, we will update qtilde in place
 	std::swap(qtilde_y, qtildePast_y);
-	gpu->Dispatch(shader_UpdateTilde, 
+	gpu->Dispatch(UpdateTilde, 
 		{ubarNew_x.srv, ubar_x.srv, ubarNew_y.srv, ubar_y.srv, 
 			qtildePast_x.srv, qtildePast_y.srv, h.srv, htilde.srv},
 		{qtilde_x.uav, qtilde_y.uav, htilde.uav}, group, group);	
-	gpu->Dispatch(shader_Boundaries, {}, 
+	gpu->Dispatch(ApplyBoundaries, {}, 
 		{qtilde_x.uav, qtilde_y.uav, htilde.uav}, group, group);
 	
 	// Advection of h through ubar:
 	// Construct q_advect = ubar * htilde sampled at cell edges using cubic sampling
-	gpu->Dispatch(shader_QAdvect, 
+	gpu->Dispatch(CalcQAdvect, 
 		{ubarNew_x.srv, ubarNew_y.srv, htilde.srv},
 		{qAdvect_x.uav, qAdvect_y.uav}, group, group);
 	// Use q_advect to update h using finite volume update: h_new = h_old + dt * (Del . (q + q_advect))
 	std::swap(h, hPast);
-	gpu->Dispatch(shader_HAdvect, 
-		{qAdvect_x.srv, qAdvect_y.srv, hPast.srv, terrain.srv}, 
-		{h.uav}, group, group);
-	gpu->Dispatch(shader_Boundaries, {}, {h.uav}, group, group);
+	// gpu->Dispatch(CalcHAdvect, 
+	// 	{qAdvect_x.srv, qAdvect_y.srv, hPast.srv, terrain.srv}, 
+	// 	{h.uav}, group, group);
+	// gpu->Dispatch(ApplyBoundaries, {}, {h.uav}, group, group);
 }
 	
 void Sim::ComputeValues()
 {
-	gpu->Dispatch(shader_IntegrateH, 
+	gpu->Dispatch(IntegrateH, 
 		{qbar_x.srv, qtilde_x.srv, qAdvect_x.srv, qbar_y.srv, qtilde_y.srv, qAdvect_y.srv, 
 			hPast.srv, terrain.srv}, 
 		{h.uav, q_x.uav, q_y.uav}, group, group);
-	gpu->Dispatch(shader_Boundaries, {}, 
+	gpu->Dispatch(ApplyBoundaries, {}, 
 		{h.uav, q_x.uav, q_y.uav}, group, group);
 }

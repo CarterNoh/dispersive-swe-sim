@@ -49,11 +49,9 @@ public:
     
     // Memory Management
     bool CreateGridTexture(GPUField* field, int size);
-    
     bool UploadToGPU(ID3D11Texture2D* tex, const std::vector<float>& data, int size);
     bool DownloadFromGPU(ID3D11Texture2D* tex, std::vector<float>& data, int size);
     void ClearUAV(ID3D11UnorderedAccessView* uav, float clearValue);
-    void Flush();
     bool CreateGridVertexBuffer(int gridSize);
 
     // Shader Management
@@ -68,7 +66,6 @@ public:
                   const std::vector<ID3D11ShaderResourceView*>& srvs, 
                   const std::vector<ID3D11UnorderedAccessView*>& uavs, 
                   int groupsX, int groupsY);
-
     bool CreateGridMesh(int gridSize);
     void Render(ID3D11ShaderResourceView* heightSRV); // , int gridVertexCount
 
