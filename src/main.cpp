@@ -6,6 +6,12 @@
 #include <filesystem>
 #include <windows.h>
 #include "Sim2D.h"
+
+extern "C" {
+    __declspec(dllexport) DWORD NvOptimusEnablement = 1;      // For NVIDIA GPUs
+    __declspec(dllexport) int AmddxGpuControlSelect = 1;      // For AMD GPUs
+}
+
 namespace fs = std::filesystem;
 
 // Parameters
