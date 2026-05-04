@@ -277,7 +277,64 @@ void DecomposeFields(uint3 id : SV_DispatchThreadID) {
 
 /////////// eWave ///////////
 
-
+// void Sim::eWaveStep()
+// {
+// 	// surface velocity update using eWave
+// 	for (int x = 0; x < GRIDSIZE; x++)
+// 	{
+// 		htildehat[x].x = 0.5f * (htilde[x] + htildeOld[x]);
+// 		htildeOld[x] = htilde[x];
+// 		htildehat[x].y = 0.;
+// 		qtildehat[x].x = qtilde[x];
+// 		qtildehat[x].y = 0.;
+// 	}
+// 	fftc1d(htildehat);   //https://www.alglib.net/download.php#cpp
+// 	fftc1d(qtildehat);
+// 	for (int x = 0; x < GRIDSIZE; x++)
+// 	{
+// 		// physical k from grid position
+// 		double kx = GRIDSIZE / 2. - abs(GRIDSIZE / 2. - x);  // this gives [0,..,m_gridSizeX / 2.f-1, m_gridSizeX / 2.f, .. 1]
+// 		double k = 2. * PI * fabs(kx) / GRIDSIZE / CELLSIZE;
+// 		double kNonZero = std::max(0.01, k);
+// 		double kS = k;  // signed k
+// 		if (x > (double)(GRIDSIZE) / 2.f)
+// 			kS = -k;
+// 		// Fourier gradient: multiply by -i k
+// 		double real = htildehat[x].x;
+// 		double imag = htildehat[x].y;
+// 		htildehat[x].x = -kS * imag;
+// 		htildehat[x].y = kS * real;
+// 		// phase shift to translate function to cell boundaries
+// 		real = htildehat[x].x;
+// 		imag = htildehat[x].y;
+// 		double beta = 0.5 * CELLSIZE * kS;
+// 		htildehat[x].x = cos(beta) * real - sin(beta) * imag;
+// 		htildehat[x].y = sin(beta) * real + cos(beta) * imag;
+// 		for (int depth = 0; depth < DEPTH_NUM; depth++)
+// 		{
+// 			double k2 = std::max(0.0001, 2. * kx / GRIDSIZE);  //k2 = 0..1
+// 			double omega = sqrtf(GRAVITY * k * tanhf(k * Depth[depth]));
+// 			omega *= 1.f / sqrt(2.0 / (k2 * PI) * sin(k2 * PI / 2.0));  // grid dispersion correction
+// 			qtildehat_depth[depth][x].x = qtildehat[x].x * cos(omega * TIMESTEP) - omega / (kNonZero * kNonZero) * htildehat[x].x * sin(omega * TIMESTEP);
+// 			qtildehat_depth[depth][x].y = qtildehat[x].y * cos(omega * TIMESTEP) - omega / (kNonZero * kNonZero) * htildehat[x].y * sin(omega * TIMESTEP);
+// 		}
+// 	}
+// 	for (int depth = 0; depth < DEPTH_NUM; depth++)
+// 		fftc1dinv(qtildehat_depth[depth]); // Back transform
+// 	// interpolate surface velocity from the two closest water depth solutions
+// 	for (int x = 0; x < GRIDSIZE; x++)
+// 	{
+// 		float waterDepth = std::max(hbar[x], hbar[x_plus]);
+// 		int depth1 = 0;
+// 		for (int depth = 0; depth < DEPTH_NUM; depth++)
+// 			if (waterDepth >= Depth[depth])
+// 				depth1 = depth;
+// 		int depth2 = std::min(DEPTH_NUM - 1, depth1 + 1);
+// 		float s = 0.f;
+// 		if (depth1 != depth2)
+// 			s = (Depth[depth2] - waterDepth) / (Depth[depth2] - Depth[depth1]);
+// 		qtilde[x] = s * qtildehat_depth[depth1][x].x + (1.f - s) * qtildehat_depth[depth2][x].x;
+// 	}
 
 
 /////////// SWE ///////////

@@ -43,7 +43,7 @@ public:
 			 hbar, qbar_x, qbar_y, htilde, qtilde_x, qtilde_y,
 			 ubar_x, ubar_y, ubarNew_x, ubarNew_y,
 			 qtildePast_x, qtildePast_y, qAdvect_x, qAdvect_y, 
-			 hPast, hbarOld, htildeOld;
+			 hPast, hbarOld, htildeOld, hHat, qHat_x, qHat_y;
 	GPUField* fields[30] = {
 		&terrain, &H, &Q_x, &Q_y, &h, &q_x, &q_y,
 		&HPast, &QPast_x, &QPast_y, &alpha_H, &alpha_Q_x, &alpha_Q_y,
@@ -52,9 +52,9 @@ public:
 		&qtildePast_x, &qtildePast_y, &qAdvect_x, &qAdvect_y,
 		&hPast, &hbarOld, &htildeOld
 	};
+	GPUField* fields_complex[3] = {&hHat, &qHat_x, &qHat_y};
 
 	GPU* gpu;
-    
 
 	// Functions
 	Sim();	// default constructor
@@ -67,7 +67,7 @@ public:
 private:
 	// Functions
 	void DecompositionStep();	// bulk vs surface decomposition
-	// void eWaveStep();		// surface wave simulation step
+	void eWaveStep();		// surface wave simulation step
 	// void FFTStep();
 	void SWEStep();				// SWE bulk simulation step
 	void TransportStep();		// transport of bulk and surface quantities
@@ -87,7 +87,6 @@ private:
 					   "CalcUbar", "CalcSWE", "UpdateTilde", "CalcQAdvect", "IntegrateH"};
 	SimConstants constants = {GRIDSIZE, CELLSIZE, TIMESTEP, BOUNDARY_TYPE, MIN_WATER_HEIGHT,
 							  DIFFUSION_ITERATIONS, DELTA_T, DIFFUSION_PENALTY, CFL_CONDITION, GAMMA_TRANSPORT, {0.f, 0.f}};
-	int group = GRIDSIZE / 16; // number of thread groups to dispatch for compute shaders, assuming 16x16 threads per group
 	RenderConstants render_constants = {DirectX::XMMatrixIdentity(), (float)GRIDSIZE, CELLSIZE, {0.f, 0.f}};
 
 

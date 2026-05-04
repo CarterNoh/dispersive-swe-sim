@@ -1,63 +1,29 @@
-// fft.hlsl
 // Butterfly FFT compute shader for 2-D fluid surface simulation.
-//
-// CORRESPONDENCE:
-//   Every function and index expression here has a line-for-line equivalent
-//   in fft_gpu_cpu_emu.cpp.  Search for "HLSL:" comments in that file to
-//   find the matching CPU code.
-//
-// DISPATCH GUIDE (from C++/D3D12):
-//   // 1-D row pass (process all rows)
-//   cb.N       = width;
-//   cb.Inverse = 0;
-//   context->Dispatch(1, height, 1);        // one group per row
-//
-//   // 1-D column pass (process all columns)
-//   cb.N       = height;
-//   context->Dispatch(1, width, 1);         // one group per column
-//
-// REQUIREMENTS:
-//   - N (cb.N) must be a power of two, <= THREADS_PER_GROUP.
-//   - The input/output UAV must be bound as RWBuffer<float2> or
-//     RWStructuredBuffer<float2> with width*height elements in row-major order.
 
-// ---------------------------------------------------------------------------
-// Compile-time constants — keep in sync with fft_gpu_cpu_emu.cpp
-// ---------------------------------------------------------------------------
-
-#define FFT_MAX_N 512   // Maximum transform size handled per thread group.
+#ifndef FFT_SIZE
+#define FFT_SIZE 512 
+#endif
 #define FFT_PI 3.14159265358979323846f
 
-// ---------------------------------------------------------------------------
-// Constant buffer
-// ---------------------------------------------------------------------------
-
-cbuffer FFTConstants : register(b0)
-{
-    uint  cb_N;           // Transform size (power of two, <= THREADS_PER_GROUP)
-    uint  cb_Inverse;     // 0 = forward DFT, 1 = inverse DFT
-    uint  cb_Stride;      // Element stride between samples.
-                          // Row pass:    1  (contiguous)
-                          // Column pass: total_width  (row-major column stride)
+// Constant Buffer
+cbuffer FFTConstants : register(b1) {
+    uint cb_N;          // Transform size (gridsize) (must be power of 2)
+    uint cb_Inverse;    // 0 = forward DFT, 1 = inverse DFT
+    uint cb_Stride;     // Element stride between samples.
+                        // Row pass:    1  (contiguous)
+                        // Column pass: total_width  (row-major column stride)
+    uint cb_Bits;       // log2(cb_N)     
 };
 
-// ---------------------------------------------------------------------------
-// Buffers
-// ---------------------------------------------------------------------------
+// Texture Registers
+Texture2D<float>    in0  : register(t0);
+RWTexture2D<float2> fft  : register(u0);  // In-place read/write
+RWTexture2D<float>  out0 : register(u1);
 
-Texture2D<float> g_InputTexture : register(t0);
-RWTexture2D<float2> g_FFTBuffer : register(u0);  // In-place read/write
-RWTexture2D<float> g_OutputTexture : register(u1);
-
-// ---------------------------------------------------------------------------
 // Groupshared memory
-// ---------------------------------------------------------------------------
+groupshared float2 gs_Data[FFT_SIZE];
 
-groupshared float2 gs_Data[FFT_MAX_N];
-
-// ---------------------------------------------------------------------------
-// Helper functions — identical signatures to fft_gpu_cpu_emu.cpp
-// ---------------------------------------------------------------------------
+//////////////////// HELPER FUNCTIONS /////////////////////////
 
 float2 complex_mul(float2 a, float2 b) {
     return float2(a.x * b.x - a.y * b.y,
@@ -72,15 +38,15 @@ float2 complex_sub(float2 a, float2 b) {
     return float2(a.x - b.x, a.y - b.y);
 }
 
-// Twiddle factor W_N^k = e^{-2πi k/N}  (forward); conjugated for inverse.
 float2 twiddle_factor(uint k, uint N, bool inverse) {
+    // Twiddle factor W_N^k = e^{-2πi k/N}  (forward); conjugated for inverse.
     float angle = -2.0f * FFT_PI * (float)k / (float)N;
     if (inverse) angle = -angle;
     return float2(cos(angle), sin(angle));
 }
 
-// Bit-reversal of the lower `bits` bits of x.
 uint bit_reverse(uint x, uint bits) {
+    // Bit-reversal of the lower `bits` bits of x.
     uint result = 0;
     for (uint i = 0; i < bits; ++i)
     {
@@ -90,105 +56,87 @@ uint bit_reverse(uint x, uint bits) {
     return result;
 }
 
-// Integer log2 for power-of-two values.
-uint log2_pot(uint n) {
-    uint k = 0;
-    while ((1u << k) < n) ++k;
-    return k;
-}
-
 // ---------------------------------------------------------------------------
 // Kernel entry point
 // ---------------------------------------------------------------------------
 // One thread group handles one row (row pass) or one column (column pass).
 // Each thread handles one element of the N-point transform.
 //
-// Threads with tid >= cb_N are idle (padding to THREADS_PER_GROUP).
+// Threads with tid >= cb_N are idle (padding to FFT_MAX_N).
 
-[numthreads(THREADS_PER_GROUP, 1, 1)]
+[numthreads(FFT_SIZE, 1, 1)]
 void FFTKernel_1D(
-    uint3 GI  : SV_GroupThreadID,   // tid = GI.x  ∈ [0, THREADS_PER_GROUP)
+    uint3 GI  : SV_GroupThreadID,   // tid = GI.x  ∈ [0, FFT_MAX_N)
     uint3 GID : SV_GroupID          // GID.y = row or column index
 ) {
     const uint tid = GI.x;
 
-    // Threads beyond the transform size do nothing.
-    if (tid >= cb_N) return;
-
     // -------------------------------------------------------------------------
     // PHASE 1 — Load with bit-reversal permutation into groupshared memory
     // -------------------------------------------------------------------------
-    // CPU equiv: fft_gpu_cpu_emu.cpp  PHASE 1 block
-
-    const uint bits        = log2_pot(cb_N);
-    const uint rev         = bit_reverse(tid, bits);
 
     // Global element coordinate: row pass uses (tid, row), column pass uses (column, tid).
-    uint2 coord = (cb_Stride == 1)
-        ? uint2(tid, GID.y)
-        : uint2(GID.y, tid);
-
-    gs_Data[rev] = g_FFTBuffer[coord];
-
+    // Wrap the work in an if-statement, but let idle threads pass through
+    // if (tid < cb_N) {
+        const uint rev = bit_reverse(tid, cb_Bits);
+        uint2 coord    = (cb_Stride == 1) ? uint2(tid, GID.y) : uint2(GID.y, tid);
+        gs_Data[rev] = fft[coord];
+    // }
     GroupMemoryBarrierWithGroupSync();
 
     // -------------------------------------------------------------------------
     // PHASE 2 — Butterfly passes
     // -------------------------------------------------------------------------
-    // CPU equiv: fft_gpu_cpu_emu.cpp  PHASE 2 block
 
-    const bool inverse     = (cb_Inverse != 0);
-    const uint numPasses   = bits;
-
-    for (uint pass = 0; pass < numPasses; ++pass)
-    {
-        const uint span      = 1u << pass;
+    for (uint passNum = 0; passNum < cb_Bits; ++passNum) {
+        const uint span      = 1u << passNum;
         const uint groupSize = span << 1;
-
-        // Only the lower N/2 threads participate in each pass.
-        if (tid < cb_N / 2)
-        {
+        // Declare variables outside the scope so we can write them later
+        float2 newEven, newOdd;
+        uint evenIdx, oddIdx;
+        if (tid < cb_N / 2) {
             const uint k       = tid % span;
-            const uint evenIdx = (tid / span) * groupSize + k;
-            const uint oddIdx  = evenIdx + span;
-
-            float2 tw   = twiddle_factor(k, groupSize, inverse);
+            evenIdx            = (tid / span) * groupSize + k;
+            oddIdx             = evenIdx + span;
+            float2 tw   = twiddle_factor(k, groupSize, cb_Inverse);
             float2 even = gs_Data[evenIdx];
             float2 odd  = complex_mul(tw, gs_Data[oddIdx]);
-
-            // Sync before write to avoid race with threads reading the same slots.
-            GroupMemoryBarrierWithGroupSync();
-
-            gs_Data[evenIdx] = complex_add(even, odd);
-            gs_Data[oddIdx]  = complex_sub(even, odd);
+            newEven = complex_add(even, odd);
+            newOdd  = complex_sub(even, odd);
         }
-
+        // All threads sync before we overwrite the old data
+        GroupMemoryBarrierWithGroupSync();
+        if (tid < cb_N / 2) {
+            // Now it is safe to write
+            gs_Data[evenIdx] = newEven;
+            gs_Data[oddIdx]  = newOdd;
+        }
+        // All threads sync before the next pass loop begins
         GroupMemoryBarrierWithGroupSync();
     }
 
     // -------------------------------------------------------------------------
     // PHASE 3 — Normalize (inverse only) and write back to global memory
     // -------------------------------------------------------------------------
-    // CPU equiv: fft_gpu_cpu_emu.cpp  PHASE 3 block
 
-    float scale = inverse ? (1.0f / (float)cb_N) : 1.0f;
+    float scale = cb_Inverse ? (1.0f / (float)cb_N) : 1.0f;
 
     float2 result;
     result.x = gs_Data[tid].x * scale;
     result.y = gs_Data[tid].y * scale;
-
-    g_FFTBuffer[coord] = result;
+    fft[coord] = result;
 }
 
-[numthreads(16,16,1)]
-void TextureToFFTBuffer(uint3 DTID : SV_DispatchThreadID) {
-    if (DTID.x >= cb_N || DTID.y >= cb_N) return;
-    float value = g_InputTexture.Load(int3(DTID.xy, 0));
-    g_FFTBuffer[uint2(DTID.xy)] = float2(value, 0.0f);
+Texture2D<float>    RealIn     : register(t0);
+RWTexture2D<float2> ComplexOut : register(u0);
+[numthreads(16, 16, 1)]
+void RealToComplex(uint3 id : SV_DispatchThreadID) {
+    ComplexOut[id.xy] = float2(RealIn[id.xy], 0.0f);
 }
 
-[numthreads(16,16,1)]
-void FFTBufferToTexture(uint3 DTID : SV_DispatchThreadID) {
-    if (DTID.x >= cb_N || DTID.y >= cb_N) return;
-    g_OutputTexture[uint2(DTID.xy)] = g_FFTBuffer[uint2(DTID.xy)].x;
+Texture2D<float2>   ComplexIn :  register(t0);
+RWTexture2D<float>  RealOut   :  register(u0);
+[numthreads(16, 16, 1)]
+void ComplexToReal(uint3 id : SV_DispatchThreadID) {
+    RealOut[id.xy] = ComplexIn[id.xy].x;
 }
