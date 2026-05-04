@@ -1,4 +1,4 @@
-// fft_gpu.hlsl
+// fft.hlsl
 // Butterfly FFT compute shader for 2-D fluid surface simulation.
 //
 // CORRESPONDENCE:
@@ -25,7 +25,7 @@
 // Compile-time constants — keep in sync with fft_gpu_cpu_emu.cpp
 // ---------------------------------------------------------------------------
 
-#define THREADS_PER_GROUP 512   // Must match [numthreads] below.
+#define FFT_MAX_N 512   // Maximum transform size handled per thread group.
 #define FFT_PI 3.14159265358979323846f
 
 // ---------------------------------------------------------------------------
@@ -36,10 +36,6 @@ cbuffer FFTConstants : register(b0)
 {
     uint  cb_N;           // Transform size (power of two, <= THREADS_PER_GROUP)
     uint  cb_Inverse;     // 0 = forward DFT, 1 = inverse DFT
-    uint  cb_RowOffset;   // Base element index for the current row/column group.
-                          // Row pass:    cb_RowOffset = groupID.y * cb_N
-                          // Column pass: cb_RowOffset = groupID.y (column index)
-                          //              stride        = total_width (set via separate constant)
     uint  cb_Stride;      // Element stride between samples.
                           // Row pass:    1  (contiguous)
                           // Column pass: total_width  (row-major column stride)
@@ -49,45 +45,42 @@ cbuffer FFTConstants : register(b0)
 // Buffers
 // ---------------------------------------------------------------------------
 
-RWStructuredBuffer<float2> g_Data : register(u0);  // In-place read/write
+Texture2D<float> g_InputTexture : register(t0);
+RWTexture2D<float2> g_FFTBuffer : register(u0);  // In-place read/write
+RWTexture2D<float> g_OutputTexture : register(u1);
 
 // ---------------------------------------------------------------------------
 // Groupshared memory
 // ---------------------------------------------------------------------------
 
-groupshared float2 gs_Data[THREADS_PER_GROUP];
+groupshared float2 gs_Data[FFT_MAX_N];
 
 // ---------------------------------------------------------------------------
 // Helper functions — identical signatures to fft_gpu_cpu_emu.cpp
 // ---------------------------------------------------------------------------
 
-float2 complex_mul(float2 a, float2 b)
-{
+float2 complex_mul(float2 a, float2 b) {
     return float2(a.x * b.x - a.y * b.y,
                   a.x * b.y + a.y * b.x);
 }
 
-float2 complex_add(float2 a, float2 b)
-{
+float2 complex_add(float2 a, float2 b) {
     return float2(a.x + b.x, a.y + b.y);
 }
 
-float2 complex_sub(float2 a, float2 b)
-{
+float2 complex_sub(float2 a, float2 b) {
     return float2(a.x - b.x, a.y - b.y);
 }
 
 // Twiddle factor W_N^k = e^{-2πi k/N}  (forward); conjugated for inverse.
-float2 twiddle_factor(uint k, uint N, bool inverse)
-{
+float2 twiddle_factor(uint k, uint N, bool inverse) {
     float angle = -2.0f * FFT_PI * (float)k / (float)N;
     if (inverse) angle = -angle;
     return float2(cos(angle), sin(angle));
 }
 
 // Bit-reversal of the lower `bits` bits of x.
-uint bit_reverse(uint x, uint bits)
-{
+uint bit_reverse(uint x, uint bits) {
     uint result = 0;
     for (uint i = 0; i < bits; ++i)
     {
@@ -98,8 +91,7 @@ uint bit_reverse(uint x, uint bits)
 }
 
 // Integer log2 for power-of-two values.
-uint log2_pot(uint n)
-{
+uint log2_pot(uint n) {
     uint k = 0;
     while ((1u << k) < n) ++k;
     return k;
@@ -117,8 +109,7 @@ uint log2_pot(uint n)
 void FFTKernel_1D(
     uint3 GI  : SV_GroupThreadID,   // tid = GI.x  ∈ [0, THREADS_PER_GROUP)
     uint3 GID : SV_GroupID          // GID.y = row or column index
-)
-{
+) {
     const uint tid = GI.x;
 
     // Threads beyond the transform size do nothing.
@@ -132,10 +123,12 @@ void FFTKernel_1D(
     const uint bits        = log2_pot(cb_N);
     const uint rev         = bit_reverse(tid, bits);
 
-    // Global element index: row pass uses stride=1, column pass uses stride=total_width.
-    const uint globalIdx   = cb_RowOffset + tid * cb_Stride;
+    // Global element coordinate: row pass uses (tid, row), column pass uses (column, tid).
+    uint2 coord = (cb_Stride == 1)
+        ? uint2(tid, GID.y)
+        : uint2(GID.y, tid);
 
-    gs_Data[rev] = g_Data[globalIdx];
+    gs_Data[rev] = g_FFTBuffer[coord];
 
     GroupMemoryBarrierWithGroupSync();
 
@@ -184,5 +177,18 @@ void FFTKernel_1D(
     result.x = gs_Data[tid].x * scale;
     result.y = gs_Data[tid].y * scale;
 
-    g_Data[globalIdx] = result;
+    g_FFTBuffer[coord] = result;
+}
+
+[numthreads(16,16,1)]
+void TextureToFFTBuffer(uint3 DTID : SV_DispatchThreadID) {
+    if (DTID.x >= cb_N || DTID.y >= cb_N) return;
+    float value = g_InputTexture.Load(int3(DTID.xy, 0));
+    g_FFTBuffer[uint2(DTID.xy)] = float2(value, 0.0f);
+}
+
+[numthreads(16,16,1)]
+void FFTBufferToTexture(uint3 DTID : SV_DispatchThreadID) {
+    if (DTID.x >= cb_N || DTID.y >= cb_N) return;
+    g_OutputTexture[uint2(DTID.xy)] = g_FFTBuffer[uint2(DTID.xy)].x;
 }
