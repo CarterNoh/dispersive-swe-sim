@@ -36,10 +36,14 @@ add_hlsl_shader(src/fft/fft_gpu.hlsl FFTKernel_1D FFT_SHADER_CSO)
 add_executable(Simulator 
     src/main.cpp 
     src/Sim2D.cpp
-    src/fft/fft_gpu_cpu_emu.cpp
-    src/fft/fft_gpu_wrapper.cpp
-    ${FFT_SHADER_CSO}
+    src/gpu.cpp
 )
 
-# Link DirectX 12
-target_link_libraries(Simulator d3d12 dxgi d3dcompiler)
+# Link DirectX 11 and the Shader Compiler
+target_link_libraries(Simulator d3d11 d3dcompiler)
+
+# Copy HLSL files to the output directory automatically
+add_custom_command(TARGET Simulator POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/shaders"
+    "$<TARGET_FILE_DIR:Simulator>/shaders")
