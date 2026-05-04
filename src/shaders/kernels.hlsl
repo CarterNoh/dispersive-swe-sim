@@ -185,7 +185,7 @@ void InitDecomp(uint3 id : SV_DispatchThreadID) {
 
 [numthreads(16, 16, 1)]
 void CalcDiffusionCoeffs(uint3 id : SV_DispatchThreadID) {
-    // Inputs: in0 = H
+    // Inputs: in0 = H, in1 = terrain
     // Outputs: out0 = alpha_H, out1 = alpha_Q_x, out2 = alpha_Q_y
     if (id.x < 1 || id.x >= (uint)(gridSize - 1) || id.y < 1 || id.y >= (uint)(gridSize - 1)) return;
 
@@ -210,16 +210,22 @@ void CalcDiffusionCoeffs(uint3 id : SV_DispatchThreadID) {
     uint2 curr = id.xy;
     uint2 right = curr + uint2(1, 0);
     uint2 up = curr + uint2(0, 1);
+
+    // float max_ground = max(in1[curr], in1[right], in1[up]);
+    // float min_water = min(in0[curr], in0[right], in0[up]);
     float max_alpha = (cellSize * cellSize) / (4.0f * deltaT);
     float denom = 2.0f * deltaT * diffusionIterations;
     // Alpha_H
     float grad_x = (in0[right] - in0[curr]) / cellSize;
     float grad_y = (in0[up] - in0[curr]) / cellSize;
     float penalty = -diffusionPenalty * (grad_x * grad_x + grad_y * grad_y);
-    out0[curr] = min(max_alpha, in0[curr] * in0[curr] / denom) * exp(penalty);
+    // out0[curr] = max(0.f, min(max_alpha, in0[curr] * in0[curr] / denom) * exp(penalty));
     // Alpha_Q
     float avg_H_x = 0.5f * (in0[curr] + in0[right]);
     float avg_H_y = 0.5f * (in0[curr] + in0[up]);
+    // out1[curr] = max(0.f, min(max_alpha, avg_H_x * avg_H_x / denom) * exp(penalty));
+    // out2[curr] = max(0.f, min(max_alpha, avg_H_y * avg_H_y / denom) * exp(penalty));
+    out0[curr] = min(max_alpha, in0[curr] * in0[curr] / denom) * exp(penalty);
     out1[curr] = min(max_alpha, avg_H_x * avg_H_x / denom) * exp(penalty);
     out2[curr] = min(max_alpha, avg_H_y * avg_H_y / denom) * exp(penalty);
 }
@@ -306,6 +312,11 @@ void CalcSWE(uint3 id : SV_DispatchThreadID) {
     // Outputs: out0 = ubarNew_x, out1 = ubarNew_y, out2 = qbar_x, out3 = qbar_y
     if (id.x < 1 || id.x >= (uint)(gridSize - 1) || id.y < 1 || id.y >= (uint)(gridSize - 1)) return;
 
+    uint2 curr = id.xy;
+    uint2 right = curr + uint2(1,0);
+    uint2 left = curr - uint2(1,0);
+    uint2 down = curr - uint2(0,1);
+    uint2 up = curr + uint2(0,1);
     // Compute intermediate values needed for du/dt calculations
     // Need: q_x/y_ij, q_x_i-0.5_j, q_y_i_j-0.5, 
     // 	     h_i+0.5_j, h_i_j+0.5, h_ij=hbar[x,y], h_i+1_j=hbar[x+1,y], h_i_j+1=hbar[x,y+1],
@@ -320,83 +331,111 @@ void CalcSWE(uint3 id : SV_DispatchThreadID) {
     ////// X DIRECTION //////
     // Use upwinding to evaluate q_(i-0.5,j), q_(i+0.5,j), q_(i+1.5,j) 
     // for x direction to get q_x_(i,j), q_x_(i+1,j)
-    float q_x_m05 = in0[id.xy - uint2(1, 0)];
+    float q_x_m05 = in0[left];
     if (q_x_m05 >= 0.f)
-        q_x_m05 *= in2[id.xy - uint2(1, 0)];
+        q_x_m05 *= in2[left];
     else
-        q_x_m05 *= in2[id.xy];
-    float q_x_p05 = in0[id.xy];  
+        q_x_m05 *= in2[curr];
+    float q_x_p05 = in0[curr];  
     if (q_x_p05 >= 0.f)
-        q_x_p05 *= in2[id.xy];
+        q_x_p05 *= in2[curr];
     else
-        q_x_p05 *= in2[id.xy + uint2(1, 0)];
+        q_x_p05 *= in2[right];
     float q_x_0 = 0.5f * (q_x_m05 + q_x_p05);
-    // float q_x_p15 = ubar_x[idx(x+1,y)];  //q_(i+1.5,j) = hfr at position x
+    
+    // Calculate h_(i+0.5,j) and h_(i-0.5,j) using upwinding
+    float h_x_p05 = 0.f;
+    if (in0[curr] >= 0.f)
+        h_x_p05 = in2[curr];
+    else
+        h_x_p05 = in2[right];
+    
+
+    // float h_x_p05 = (in2[curr] + in2[right]) / 2.f; // averaging, for some reason the old paper used this
+    // float q_x_p15 = in0[right];  //q_(i+1.5,j) = hfr at position x
     // if (q_x_p15 >= 0.f)
-    // 	q_x_p15 *= hbar[idx(x+1,y)];
+    // 	q_x_p15 *= in2[right];
     // else
-    // 	q_x_p15 *= hbar[std::min(idx(x+1,y) + 1, GRIDSIZE*GRIDSIZE-1)];
+    // 	q_x_p15 *= in2[uint2(min(id.x + 2, gridSize-1), id.y)];
     // float q_x_p1 = 0.5f * (q_x_p05 + q_x_p15);
-    // Calculate corresponding vaules for u_x_(i,j) using upwinding
-    // (why do we use upwinding here instead of averaging like q?)
+    // // Calculate corresponding values for u_x_(i,j) using upwinding
+    // // (why do we use upwinding here instead of averaging like q?)
     // float u_star_x_0 = 0.f;
     // if (q_x_0 >= 0.f)
-    // 	u_star_x_0 = ubar_x[idx(x-1,y)];
+    // 	u_star_x_0 = in0[left];
     // else
-    // 	u_star_x_0 = ubar_x[idx(x,y)];
+    // 	u_star_x_0 = in0[curr];
     // float u_star_x_p1 = 0.f;
     // if (q_x_p1 > 0.f)
-    // 	u_star_x_p1 = ubar_x[idx(x,y)];
+    // 	u_star_x_p1 = in0[curr];
     // else
-    // 	u_star_x_p1 = ubar_x[idx(x+1,y)];
-    // Calculate h_(i+0.5,j) and h_(i-0.5,j) using upwinding
-    // float h_avg_x_p05 = (hbar[idx(x,y)] + hbar[idx(x+1,y)]) / 2.f; // averaging, for some reason the old paper used this
-    float h_x_p05 = 0.f;
-    if (in0[id.xy] >= 0.f)
-        h_x_p05 = in2[id.xy];
-    else
-        h_x_p05 = in2[id.xy + uint2(1, 0)];
+    // 	u_star_x_p1 = in0[right];
+    
 
     /////// Y DIRECTION //////
     // Use upwinding to evaluate q_(i,j-0.5), q_(i,j+0.5), q_(i,j+1.5) 
     // for y direction to get q_y_(i,j), q_y_(i,j+1)
-    float q_y_m05 = in1[id.xy - uint2(0, 1)];
+    float q_y_m05 = in1[down];
     if (q_y_m05 >= 0.f)
-        q_y_m05 *= in2[id.xy - uint2(0, 1)];
+        q_y_m05 *= in2[down];
     else
-        q_y_m05 *= in2[id.xy];
-    float q_y_p05 = in1[id.xy];  
+        q_y_m05 *= in2[curr];
+    float q_y_p05 = in1[curr];  
     if (q_y_p05 >= 0.f)
-        q_y_p05 *= in2[id.xy];
+        q_y_p05 *= in2[curr];
     else
-        q_y_p05 *= in2[id.xy + uint2(0, 1)];
+        q_y_p05 *= in2[up];
     float q_y_0 = 0.5f * (q_y_m05 + q_y_p05);
+
     // Calculate h_(i,j+0.5) and h_(i,j-0.5) using upwinding
     float h_y_p05 = 0.f;
-    if (in1[id.xy] >= 0.f)
-        h_y_p05 = in2[id.xy];
+    if (in1[curr] >= 0.f)
+        h_y_p05 = in2[curr];
     else
-        h_y_p05 = in2[id.xy + uint2(0, 1)];
+        h_y_p05 = in2[up];
+
+    // float h_y_p05 = (in2[curr] + in2[right]) / 2.f; // averaging, for some reason the old paper used this
+    // float q_y_p15 = in1[up];  //q_(i+1.5,j) = hfr at position x
+    // if (q_y_p15 >= 0.f)
+    // 	q_y_p15 *= in2[up];
+    // else
+    // 	q_y_p15 *= in2[uint2(id.x, min(id.y + 2, gridSize-1))];
+    // float q_y_p1 = 0.5f * (q_y_p05 + q_y_p15);
+    // // Calculate corresponding values for u_x_(i,j) using upwinding
+    // // (why do we use upwinding here instead of averaging like q?)
+    // float u_star_y_0 = 0.f;
+    // if (q_y_0 >= 0.f)
+    // 	u_star_y_0 = in0[down];
+    // else
+    // 	u_star_y_0 = in0[curr];
+    // float u_star_y_p1 = 0.f;
+    // if (q_y_p1 > 0.f)
+    // 	u_star_y_p1 = in0[curr];
+    // else
+    // 	u_star_y_p1 = in0[up];
+
 
     // Compute dux_dt and duy_dt
     float gravity = 9.8066f;
-    // X DIRECTION
-    float dux_dt = - (1/cellSize) * ((q_x_0/h_x_p05) * (in0[id.xy] - in0[id.xy - uint2(1, 0)]) + (q_y_m05/h_x_p05) * (in0[id.xy] - in0[id.xy - uint2(0, 1)]) + gravity * (in3[id.xy + uint2(1, 0)] - in3[id.xy]));
-    float ubarNew_x = LimitVelocity(in0[id.xy] + timeStep * dux_dt);  // Enforcing CFL condition
-    // Y DIRECTION
-    float duy_dt = - (1/cellSize) * ((q_y_0/h_y_p05) * (in1[id.xy] - in1[id.xy - uint2(0, 1)]) + (q_x_m05/h_y_p05) * (in1[id.xy] - in1[id.xy - uint2(1, 0)]) + gravity * (in3[id.xy + uint2(0, 1)] - in3[id.xy]));
-    float ubarNew_y = LimitVelocity(in1[id.xy] + timeStep * duy_dt);  // Enforcing CFL condition
+    float dux_dt = - (1/cellSize) * ((q_x_0/h_x_p05) * (in0[curr] - in0[left]) + (q_y_m05/h_x_p05) * (in0[curr] - in0[down]));
+    float duy_dt = - (1/cellSize) * ((q_y_0/h_y_p05) * (in1[curr] - in1[down]) + (q_x_m05/h_y_p05) * (in1[curr] - in1[left]));
+    // float dux_dt = - (1/(cellSize*h_x_p05)) * ((q_x_p1 * u_star_x_p1 - q_x_0 * u_star_x_0) - in0[curr] * (q_x_p1 - q_x_0));
+    // float duy_dt = - (1/(cellSize*h_y_p05)) * ((q_y_p1 * u_star_y_p1 - q_y_0 * u_star_y_0) - in1[curr] * (q_y_p1 - q_y_0));
+    dux_dt -= (1/cellSize) * gravity * (in3[right] - in3[curr]);
+    duy_dt -= (1/cellSize) * gravity * (in3[up] - in3[curr]);
+    float ubarNew_x = LimitVelocity(in0[curr] + timeStep * dux_dt);  // Enforcing CFL condition
+    float ubarNew_y = LimitVelocity(in1[curr] + timeStep * duy_dt);  // Enforcing CFL condition
     
-    out0[id.xy] = ubarNew_x;
-    out1[id.xy] = ubarNew_y;
+    out0[curr] = ubarNew_x;
+    out1[curr] = ubarNew_y;
     if (ubarNew_x >= 0.f || id.x == gridSize-1)
-        out2[id.xy] = ubarNew_x * in2[id.xy];
+        out2[curr] = ubarNew_x * in2[curr];
     else
-        out2[id.xy] = ubarNew_x * in2[id.xy + uint2(1, 0)];
+        out2[curr] = ubarNew_x * in2[right];
     if (ubarNew_y >= 0.f || id.y == gridSize-1)
-        out3[id.xy] = ubarNew_y * in2[id.xy];
+        out3[curr] = ubarNew_y * in2[curr];
     else
-        out3[id.xy] = ubarNew_y * in2[id.xy + uint2(0, 1)];
+        out3[curr] = ubarNew_y * in2[up];
 }
 
 

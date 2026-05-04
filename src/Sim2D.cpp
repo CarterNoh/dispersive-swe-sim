@@ -163,7 +163,7 @@ void Sim::DecompositionStep()
 		{H.uav, Q_x.uav, Q_y.uav}, group, group);
 
 	// Calculate diffusion coefficients
-    gpu->Dispatch(CalcDiffusionCoeffs, {H.srv}, 
+    gpu->Dispatch(CalcDiffusionCoeffs, {H.srv, terrain.srv}, 
 		{alpha_H.uav, alpha_Q_x.uav, alpha_Q_y.uav}, group, group);
 	gpu->Dispatch(ApplyBoundaries, {}, 
 		{alpha_H.uav, alpha_Q_x.uav, alpha_Q_y.uav}, group, group);
