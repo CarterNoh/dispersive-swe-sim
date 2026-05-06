@@ -91,11 +91,10 @@ void Sim::Init(GPU* gpu) {
 		std::vector<float> temp(GRIDSIZE * GRIDSIZE * 2, 0.0f);
 		gpu->UploadToGPU(fields_complex[i]->tex, temp, GRIDSIZE, true);
 	}
-	for (int i = 0; i < 4; i++) {
-		bool complex = (i < 2) ? true : false;
-		gpu->CreateGridTexture(q_arrays[i], GRIDSIZE, complex, DEPTH_NUM);
+	for (int i = 0; i < 2; i++) {
+		gpu->CreateGridTexture(q_arrays[i], GRIDSIZE, true, DEPTH_NUM);
 		std::vector<float> temp(GRIDSIZE * GRIDSIZE * DEPTH_NUM * 2, 0.0f);
-		gpu->UploadToGPU(q_arrays[i]->tex, temp, GRIDSIZE, complex, DEPTH_NUM);
+		gpu->UploadToGPU(q_arrays[i]->tex, temp, GRIDSIZE, true, DEPTH_NUM);
 	}
 	std::vector<float> terrain_temp = SetTerrain();
 	std::vector<float> h_temp = SetWater(terrain_temp);
@@ -145,7 +144,7 @@ void Sim::SimStep()
 {
 	DecompositionStep();
 	eWaveStep();
-	// 	FFTStep();
+	// FFTStep();
 	SWEStep();
 	TransportStep();
 	ComputeValues();
@@ -162,7 +161,7 @@ void Sim::DecompositionStep() {
     gpu->Dispatch(CalcDiffusionCoeffs, 
 		{H.srv, terrain.srv}, 
 		{alpha_H.uav, alpha_Q_x.uav, alpha_Q_y.uav});
-	gpu->Dispatch(ApplyBoundaries, {}, 
+	gpu->Dispatch(ApplyBoundaries, {},
 		{alpha_H.uav, alpha_Q_x.uav, alpha_Q_y.uav});
 	
 	// Run diffusion to low-pass filter H and Q
@@ -185,34 +184,36 @@ void Sim::DecompositionStep() {
 		{H.srv, Q_x.srv, Q_y.srv, h.srv, q_x.srv, q_y.srv, terrain.srv}, 
 		{hbar.uav, qbar_x.uav, qbar_y.uav, htilde.uav, qtilde_x.uav, qtilde_y.uav});
 	gpu->Dispatch(ApplyBoundaries, {}, 
-		{hbar.uav, htilde.uav});
+		{hbar.uav, qbar_x.uav, qbar_y.uav});
 	gpu->Dispatch(ApplyBoundaries, {}, 
-		{qbar_x.uav, qbar_y.uav, qtilde_x.uav, qtilde_y.uav});
+		{htilde.uav, qtilde_x.uav, qtilde_y.uav});
+
+	gpu->Dispatch(InitDecomp, 
+		{h.srv, q_x.srv, q_y.srv, terrain.srv}, 
+		{H.uav, Q_x.uav, Q_y.uav});
 }
 
 void Sim::eWaveStep() {
 	// Copy variables to fourier domain & perform FFT
 	gpu->Dispatch(TransferToFFT, 
 		{htilde.srv, qtilde_x.srv, qtilde_y.srv}, 
-		{htildeOld.uav, hHat.uav, qHat_x.uav, qHat_x.uav});
+		{htildeOld.uav, hHat.uav, qHat_x.uav, qHat_y.uav});
 	gpu->ExecuteFFT(hHat.uav, GRIDSIZE, false);
 	gpu->ExecuteFFT(qHat_x.uav, GRIDSIZE, false);
 	gpu->ExecuteFFT(qHat_y.uav, GRIDSIZE, false);
 
 	// Compute eWave
-	gpu->Dispatch(CalcHHat, {},
-		{hHat.uav, wavenum.uav});
+	gpu->Dispatch(CalcHHat, {hHat.srv},
+		{wavenum.uav, dhHat_dx.uav, dhHat_dy.uav});
 	gpu->Dispatch(CalcQHat, 
-		{wavenum.srv, hHat.srv, qHat_x.srv, qHat_y.srv},
-		{qHat_x_array.uav, qHat_y_array.uav});
+		{wavenum.srv, dhHat_dx.srv, dhHat_dy.srv, qHat_x.srv, qHat_y.srv},
+		{qHat_x_array.uav, qHat_y_array.uav}, DEPTH_NUM);
 
 	// Inverse FFT fourier variables
 	gpu->ExecuteFFT(qHat_x_array.uav, GRIDSIZE, true, DEPTH_NUM);
-	gpu->ExecuteFFT(qHat_y_array.uav, GRIDSIZE, true);
-	// gpu->Dispatch(CopyFromFFT, 
-	// 	{qHat_x_array.srv, qHat_y_array.srv}, 
-	// 	{qtilde_x_array.uav, qtilde_y_array.uav});
+	gpu->ExecuteFFT(qHat_y_array.uav, GRIDSIZE, true, DEPTH_NUM);
 
+	// Interpolate between depths to get qtilde
 	gpu->Dispatch(InterpQ,
 		{hbar.srv, qHat_x_array.srv, qHat_y_array.srv},
 		{qtilde_x.uav, qtilde_y.uav});
@@ -250,7 +251,7 @@ void Sim::TransportStep() {
 	std::swap(qtilde_y, qtildePast_y);
 	gpu->Dispatch(UpdateTilde, 
 		{ubarNew_x.srv, ubar_x.srv, ubarNew_y.srv, ubar_y.srv, 
-			qtildePast_x.srv, qtildePast_y.srv, h.srv, htilde.srv},
+			qtildePast_x.srv, qtildePast_y.srv, h.srv},
 		{qtilde_x.uav, qtilde_y.uav, htilde.uav});	
 	gpu->Dispatch(ApplyBoundaries, {}, 
 		{qtilde_x.uav, qtilde_y.uav, htilde.uav});
@@ -260,7 +261,7 @@ void Sim::TransportStep() {
 	gpu->Dispatch(CalcQAdvect, 
 		{ubarNew_x.srv, ubarNew_y.srv, htilde.srv},
 		{qAdvect_x.uav, qAdvect_y.uav});
-	// Use q_advect to update h using finite volume update: h_new = h_old + dt * (Del . (q + q_advect))
+
 	std::swap(h, hPast);
 }
 	
@@ -272,7 +273,7 @@ void Sim::ComputeValues() {
 	gpu->Dispatch(ApplyBoundaries, {}, 
 		{h.uav, q_x.uav, q_y.uav});
 
-	gpu->Dispatch(InitDecomp, 
-		{h.srv, q_x.srv, q_y.srv, terrain.srv}, 
-		{H.uav, Q_x.uav, Q_y.uav});
+	// gpu->Dispatch(InitDecomp, 
+	// 	{h.srv, q_x.srv, q_y.srv, terrain.srv}, 
+	// 	{H.uav, Q_x.uav, Q_y.uav});
 }

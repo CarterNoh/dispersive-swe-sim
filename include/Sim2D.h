@@ -43,17 +43,18 @@ public:
 			 hbar, qbar_x, qbar_y, htilde, qtilde_x, qtilde_y,
 			 ubar_x, ubar_y, ubarNew_x, ubarNew_y,
 			 qtildePast_x, qtildePast_y, qAdvect_x, qAdvect_y, 
-			 hPast, hbarOld, htildeOld, hHat, qHat_x, qHat_y, wavenum,
+			 hPast, hbarOld, htildeOld, 
+			 hHat, qHat_x, qHat_y, wavenum, dhHat_dx, dhHat_dy,
 			 qHat_x_array, qHat_y_array, qtilde_x_array, qtilde_y_array;
-	GPUField* fields[31] = {
+	GPUField* fields[30] = {
 		&terrain, &H, &Q_x, &Q_y, &h, &q_x, &q_y,
 		&HPast, &QPast_x, &QPast_y, &alpha_H, &alpha_Q_x, &alpha_Q_y,
 		&hbar, &qbar_x, &qbar_y, &htilde, &qtilde_x, &qtilde_y,
 		&ubar_x, &ubar_y, &ubarNew_x, &ubarNew_y,
 		&qtildePast_x, &qtildePast_y, &qAdvect_x, &qAdvect_y,
-		&hPast, &hbarOld, &htildeOld, &wavenum};
-	GPUField* fields_complex[3] = {&hHat, &qHat_x, &qHat_y};
-	GPUField* q_arrays[4] = {&qHat_x_array, &qHat_y_array, &qtilde_x_array, &qtilde_y_array};
+		&hPast, &hbarOld, &htildeOld};
+	GPUField* fields_complex[6] = {&hHat, &qHat_x, &qHat_y, &dhHat_dx, &dhHat_dy, &wavenum};
+	GPUField* q_arrays[2] = {&qHat_x_array, &qHat_y_array};
 
 	GPU* gpu;
 
@@ -81,14 +82,14 @@ private:
 	// GPU Compute Shaders
 	ID3D11ComputeShader *ApplyBoundaries, *InitDecomp, *CalcDiffusionCoeffs, *DiffusionStep, *DecomposeFields, 
 						*CalcUbar, *CalcSWE, *UpdateTilde, *CalcQAdvect, *IntegrateH, 
-						*TransferToFFT, *CalcHHat, *CalcQHat, *CopyFromFFT, *InterpQ;
-	ID3D11ComputeShader** shaders[15] = {
+						*TransferToFFT, *CalcHHat, *CalcQHat, *InterpQ;
+	ID3D11ComputeShader** shaders[14] = {
 						&ApplyBoundaries, &InitDecomp, &CalcDiffusionCoeffs, &DiffusionStep, &DecomposeFields, 
 						&CalcUbar, &CalcSWE, &UpdateTilde, &CalcQAdvect, &IntegrateH, 
-						&TransferToFFT, &CalcHHat, &CalcQHat, &CopyFromFFT, &InterpQ};
+						&TransferToFFT, &CalcHHat, &CalcQHat, &InterpQ};
 	char* names[15] = {"ApplyBoundaries", "InitDecomp", "CalcDiffusionCoeffs", "DiffusionStep", "DecomposeFields", 
 					   "CalcUbar", "CalcSWE", "UpdateTilde", "CalcQAdvect", "IntegrateH", 
-					   "TransferToFFT", "CalcHHat", "CalcQHat", "CopyFromFFT", "InterpQ"};
+					   "TransferToFFT", "CalcHHat", "CalcQHat", "InterpQ"};
 	SimConstants constants = {GRIDSIZE, CELLSIZE, TIMESTEP, BOUNDARY_TYPE, MIN_WATER_HEIGHT,// Sim Params
 							  DIFFUSION_ITERATIONS, DELTA_T, DIFFUSION_PENALTY, 			// Diffusion Params
 							  CFL_CONDITION, GAMMA_TRANSPORT, 								// SWE Params

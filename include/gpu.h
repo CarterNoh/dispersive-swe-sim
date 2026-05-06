@@ -30,10 +30,10 @@ struct SimConstants {
 };
 
 struct FFTConstants {
-    uint32_t N;         // Transform size (gridsize) (must be power of two)
-    uint32_t Bits;      // log2(N)  
-    uint32_t Inverse;   // 0 = forward DFT, 1 = inverse DFT
-    uint32_t Row;       // Row = 1. Col = 0
+    int N;         // Transform size (gridsize) (must be power of two)
+    int Bits;      // log2(N)  
+    int Inverse;   // 0 = forward DFT, 1 = inverse DFT
+    int Row;       // Row = 1. Col = 0
 };
 
 struct RenderConstants {
@@ -62,7 +62,6 @@ public:
     bool CreateGridTexture(GPUField* field, int size, bool isComplex = false, int arraySize = 1);
     bool UploadToGPU(ID3D11Texture2D* tex, const std::vector<float>& data, int gridSize, bool isComplex = false, int arraySize = 1);
     bool DownloadFromGPU(ID3D11Texture2D* tex, std::vector<float>& data, int size);
-    // void ClearUAV(ID3D11UnorderedAccessView* uav, float clearValue);
     bool CompileComputeShader(const std::wstring& file, const std::string& entryPoint, ID3D11ComputeShader** shader);
     void Dispatch(ID3D11ComputeShader* shader, 
                   const std::vector<ID3D11ShaderResourceView*>& srvs, 
@@ -72,8 +71,6 @@ public:
     // FFT
     void UpdateFFTConstants(const FFTConstants& constants);
     bool CompileFFTShaders(int size);
-    bool UploadToFFT(ID3D11ShaderResourceView* texSRV, ID3D11UnorderedAccessView* fftUAV);
-    bool DownloadFromFFT(ID3D11ShaderResourceView* fftSRV, ID3D11UnorderedAccessView* texUAV);
     void ExecuteFFT(ID3D11UnorderedAccessView* fftBufferUAV, int size, bool inverse, int numLayers = 1);
 
     // Rendering 
@@ -98,8 +95,6 @@ private:
     ID3D11Buffer* fftConstantBuffer = nullptr;
     ID3D11ComputeShader* fftShader = nullptr;
     ID3D11ComputeShader* fftArrayShader = nullptr;
-    ID3D11ComputeShader* fftUploadShader = nullptr;
-    ID3D11ComputeShader* fftDownloadShader = nullptr;
 
     // Rendering
     IDXGISwapChain* swapChain = nullptr;

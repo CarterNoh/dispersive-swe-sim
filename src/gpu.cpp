@@ -10,8 +10,7 @@ GPU::~GPU() {
     if (constantBuffer) constantBuffer->Release();
     if (fftConstantBuffer) fftConstantBuffer->Release();
     if (fftShader) fftShader->Release();
-    if (fftUploadShader) fftUploadShader->Release();
-    if (fftDownloadShader) fftDownloadShader->Release();
+    if (fftArrayShader) fftArrayShader->Release();
     if (vertexShader) vertexShader->Release();
     if (pixelShader) pixelShader->Release();
     if (context) context->Release();
@@ -310,11 +309,6 @@ bool GPU::DownloadFromGPU(ID3D11Texture2D* tex, std::vector<float>& data, int si
     return false;
 }
 
-// void GPU::ClearUAV(ID3D11UnorderedAccessView* uav, float clearValue) {
-//     float clearColor[4] = { clearValue, clearValue, clearValue, clearValue };
-//     context->ClearUnorderedAccessViewFloat(uav, clearColor);
-// }
-
 bool GPU::CompileComputeShader(const std::wstring& file, const std::string& entryPoint, ID3D11ComputeShader** shader) {
     ID3DBlob* shaderBlob = nullptr;
     ID3DBlob* errorBlob = nullptr;
@@ -393,48 +387,6 @@ bool GPU::CompileFFTShaders(int size) {
     device->CreateComputeShader(shaderBlob->GetBufferPointer(), shaderBlob->GetBufferSize(), nullptr, &fftArrayShader);
     shaderBlob->Release();
 
-    if (!CompileComputeShader(L"shaders/fft.hlsl", "RealToComplex", &fftUploadShader))
-        return false;
-    if (!CompileComputeShader(L"shaders/fft.hlsl", "ComplexToReal", &fftDownloadShader))
-        return false;
-    return true;
-}
-
-bool GPU::UploadToFFT(ID3D11ShaderResourceView* texSRV, ID3D11UnorderedAccessView* fftUAV) {
-    // Bind the RealToComplex Shader
-    context->CSSetShader(fftUploadShader, nullptr, 0);
-
-    // Bind the Real Data (Input/SRV) and Complex Data (Output/UAV)
-    context->CSSetShaderResources(0, 1, &texSRV);
-    context->CSSetUnorderedAccessViews(0, 1, &fftUAV, nullptr);
-
-    // Dispatch (Assuming 16x16 thread groups)
-    context->Dispatch(group, group, 1);
-
-    // Clean up bindings to prevent read/write hazards
-    ID3D11ShaderResourceView* nullSRV = nullptr;
-    ID3D11UnorderedAccessView* nullUAV = nullptr;
-    context->CSSetShaderResources(0, 1, &nullSRV);
-    context->CSSetUnorderedAccessViews(0, 1, &nullUAV, nullptr);
-    return true;
-}
-
-bool GPU::DownloadFromFFT(ID3D11ShaderResourceView* fftSRV, ID3D11UnorderedAccessView* texUAV) {
-    // Bind the ComplexToReal Shader
-    context->CSSetShader(fftDownloadShader, nullptr, 0);
-
-    // Bind the Complex Data (Input/SRV) and Real Data (Output/UAV)
-    context->CSSetShaderResources(0, 1, &fftSRV);
-    context->CSSetUnorderedAccessViews(0, 1, &texUAV, nullptr);
-
-    // Dispatch
-    context->Dispatch(group, group, 1);
-
-    // Clean up bindings
-    ID3D11ShaderResourceView* nullSRV = nullptr;
-    ID3D11UnorderedAccessView* nullUAV = nullptr;
-    context->CSSetShaderResources(0, 1, &nullSRV);
-    context->CSSetUnorderedAccessViews(0, 1, &nullUAV, nullptr);
     return true;
 }
 
@@ -448,7 +400,7 @@ void GPU::ExecuteFFT(ID3D11UnorderedAccessView* fftBufferUAV, int size, bool inv
 
     FFTConstants constants = {};
     constants.N = size;
-    constants.Inverse = inverse ? true : false;
+    constants.Inverse = inverse ? 1 : 0;
     unsigned int bits = 0; // integer Log2
     int temp = size;
     while (temp >>= 1) ++bits;
@@ -457,12 +409,12 @@ void GPU::ExecuteFFT(ID3D11UnorderedAccessView* fftBufferUAV, int size, bool inv
     // Row pass
     constants.Row = true;
     UpdateFFTConstants(constants);
-    context->Dispatch(1, size, 1); // One group per row
+    context->Dispatch(1, size, numLayers); // One group per row
 
     // Column pass
     constants.Row = false;
     UpdateFFTConstants(constants);
-    context->Dispatch(1, size, 1); // One group per column
+    context->Dispatch(1, size, numLayers); // One group per column
 
     // Unbind
     ID3D11UnorderedAccessView* nullUAV = nullptr;

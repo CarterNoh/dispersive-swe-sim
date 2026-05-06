@@ -7,10 +7,10 @@
 
 // Constant Buffer
 cbuffer FFTConstants : register(b1) {
-    uint cb_N;          // Transform size (gridsize) (must be power of 2)
-    uint cb_Bits;       // log2(cb_N) 
-    uint cb_Inverse;    // 0 = forward DFT, 1 = inverse DFT
-    uint cb_IsRow;     // Row = 1, Col = 0
+    int cb_N;          // Transform size (gridsize) (must be power of 2)
+    int cb_Bits;       // log2(cb_N) 
+    int cb_Inverse;    // 0 = forward DFT, 1 = inverse DFT
+    int cb_IsRow;     // Row = 1, Col = 0
 };
 
 // Texture Registers
@@ -123,20 +123,6 @@ void FFTKernel_1D(
     result.x = gs_Data[tid].x * scale;
     result.y = gs_Data[tid].y * scale;
     fft[coord] = result;
-}
-
-Texture2D<float>    RealIn     : register(t0);
-RWTexture2D<float2> ComplexOut : register(u0);
-[numthreads(16, 16, 1)]
-void RealToComplex(uint3 id : SV_DispatchThreadID) {
-    ComplexOut[id.xy] = float2(RealIn[id.xy], 0.0f);
-}
-
-Texture2D<float2>   ComplexIn :  register(t0);
-RWTexture2D<float>  RealOut   :  register(u0);
-[numthreads(16, 16, 1)]
-void ComplexToReal(uint3 id : SV_DispatchThreadID) {
-    RealOut[id.xy] = ComplexIn[id.xy].x;
 }
 
 
