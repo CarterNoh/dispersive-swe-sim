@@ -224,16 +224,14 @@ void GPU::UpdateConstants(const SimConstants& constants) {
     }
 }
 
-bool GPU::CreateGridTexture(GPUField* field, int size, bool isComplex) {
+bool GPU::CreateGridTexture(GPUField* field, int size, bool isComplex, int arraySize) {
     D3D11_TEXTURE2D_DESC desc = {};
     desc.Width = size;
     desc.Height = size;
     desc.MipLevels = 1;
-    desc.ArraySize = 1;
-    if (isComplex) 
-        desc.Format = DXGI_FORMAT_R32G32_FLOAT;
-    else
-        desc.Format = DXGI_FORMAT_R32_FLOAT;
+    desc.ArraySize = arraySize;
+    desc.Format = isComplex ? DXGI_FORMAT_R32G32_FLOAT : DXGI_FORMAT_R32_FLOAT;
+    desc.ArraySize = arraySize;
     desc.SampleDesc.Count = 1;
     desc.Usage = D3D11_USAGE_DEFAULT;
     desc.BindFlags = D3D11_BIND_UNORDERED_ACCESS | D3D11_BIND_SHADER_RESOURCE;
@@ -241,20 +239,48 @@ bool GPU::CreateGridTexture(GPUField* field, int size, bool isComplex) {
 
     D3D11_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
     srvDesc.Format = desc.Format;
-    srvDesc.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
-    srvDesc.Texture2D.MipLevels = 1;
+    if (arraySize > 1) {
+        srvDesc.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2DARRAY;
+        srvDesc.Texture2DArray.MipLevels = 1;
+        srvDesc.Texture2DArray.FirstArraySlice = 0;
+        srvDesc.Texture2DArray.ArraySize = arraySize;
+    } else {
+        srvDesc.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
+        srvDesc.Texture2D.MipLevels = 1;
+    }
     if (FAILED(device->CreateShaderResourceView(field->tex, &srvDesc, &field->srv))) return false;
     
     D3D11_UNORDERED_ACCESS_VIEW_DESC uavDesc = {};
     uavDesc.Format = desc.Format;
-    uavDesc.ViewDimension = D3D11_UAV_DIMENSION_TEXTURE2D;
+    if (arraySize > 1) {
+        uavDesc.ViewDimension = D3D11_UAV_DIMENSION_TEXTURE2DARRAY;
+        uavDesc.Texture2DArray.MipSlice = 0;
+        uavDesc.Texture2DArray.FirstArraySlice = 0;
+        uavDesc.Texture2DArray.ArraySize = arraySize;
+    } else {
+        uavDesc.ViewDimension = D3D11_UAV_DIMENSION_TEXTURE2D;
+        uavDesc.Texture2D.MipSlice = 0;
+    }
     if (FAILED(device->CreateUnorderedAccessView(field->tex, &uavDesc, &field->uav))) return false;
 
     return true;
 }
 
-bool GPU::UploadToGPU(ID3D11Texture2D* tex, const std::vector<float>& data, int size) {
-    context->UpdateSubresource(tex, 0, nullptr, data.data(), size * sizeof(float), 0);
+bool GPU::UploadToGPU(ID3D11Texture2D* tex, const std::vector<float>& data, int gridSize, bool isComplex, int arraySize) {
+    int floatsPerPixel = isComplex ? 2 : 1; // If complex, there are 2 floats per pixel.
+    int rowPitch = gridSize * sizeof(float) * floatsPerPixel; // byte size of a single row
+    int layerPitch = gridSize * rowPitch; // byte size of a single 2D layer
+
+    // Upload each layer one by one
+    for (int i = 0; i < arraySize; ++i) {
+        // Find the starting memory address for this specific layer in the flat vector
+        int floatOffset = i * (gridSize * gridSize * floatsPerPixel);
+        const float* pLayerData = data.data() + floatOffset;
+
+        // Upload to subresource 'i'
+        context->UpdateSubresource(tex, i, nullptr, pLayerData, rowPitch, layerPitch);
+    }
+    
     return true;
 }
 
@@ -306,11 +332,12 @@ bool GPU::CompileComputeShader(const std::wstring& file, const std::string& entr
 
 void GPU::Dispatch(ID3D11ComputeShader* shader, 
                    const std::vector<ID3D11ShaderResourceView*>& srvs, 
-                   const std::vector<ID3D11UnorderedAccessView*>& uavs) {
+                   const std::vector<ID3D11UnorderedAccessView*>& uavs, 
+                   int size) {
     context->CSSetShader(shader, nullptr, 0);
     context->CSSetShaderResources(0, srvs.size(), srvs.data());
     context->CSSetUnorderedAccessViews(0, uavs.size(), uavs.data(), nullptr);
-    context->Dispatch(group, group, 1);
+    context->Dispatch(group, group, size);
 
     // Unbind to prevent read/write hazards
     std::vector<ID3D11ShaderResourceView*> nullSRVs(srvs.size(), nullptr);
@@ -343,16 +370,27 @@ bool GPU::CompileFFTShaders(int size) {
 
     ID3DBlob* shaderBlob = nullptr;
     ID3DBlob* errorBlob = nullptr;
-    D3D_SHADER_MACRO macros[] = {
+    D3D_SHADER_MACRO singleMacros[] = {
         { "FFT_SIZE", std::to_string(size).c_str() },
-        { NULL, NULL }
-    };
-    HRESULT hr = D3DCompileFromFile(L"shaders/fft.hlsl", macros, nullptr, "FFTKernel_1D", "cs_5_0", 0, 0, &shaderBlob, &errorBlob);
+        { NULL, NULL }};
+    HRESULT hr = D3DCompileFromFile(L"shaders/fft.hlsl", singleMacros, nullptr, "FFTKernel_1D", "cs_5_0", 0, 0, &shaderBlob, &errorBlob);
     if (FAILED(hr)) {
         if (errorBlob) std::cerr << "Shader Error: " << (char*)errorBlob->GetBufferPointer() << std::endl;
         return false;
     }
     device->CreateComputeShader(shaderBlob->GetBufferPointer(), shaderBlob->GetBufferSize(), nullptr, &fftShader);
+    shaderBlob->Release();
+
+    D3D_SHADER_MACRO arrayMacros[] = {
+    { "FFT_SIZE", std::to_string(size).c_str() },
+    { "IS_ARRAY", "1" }, // IS_ARRAY IS defined!
+    { NULL, NULL }};
+    HRESULT hr1 = D3DCompileFromFile(L"shaders/fft.hlsl", arrayMacros, nullptr, "FFTKernel_1D", "cs_5_0", 0, 0, &shaderBlob, &errorBlob);
+    if (FAILED(hr1)) {
+        if (errorBlob) std::cerr << "Shader Error: " << (char*)errorBlob->GetBufferPointer() << std::endl;
+        return false;
+    }
+    device->CreateComputeShader(shaderBlob->GetBufferPointer(), shaderBlob->GetBufferSize(), nullptr, &fftArrayShader);
     shaderBlob->Release();
 
     if (!CompileComputeShader(L"shaders/fft.hlsl", "RealToComplex", &fftUploadShader))
@@ -400,26 +438,29 @@ bool GPU::DownloadFromFFT(ID3D11ShaderResourceView* fftSRV, ID3D11UnorderedAcces
     return true;
 }
 
-void GPU::ExecuteFFT(ID3D11UnorderedAccessView* fftBufferUAV, int size, bool inverse) {
+void GPU::ExecuteFFT(ID3D11UnorderedAccessView* fftBufferUAV, int size, bool inverse, int numLayers) {
     // Setup
-    context->CSSetShader(fftShader, nullptr, 0);
+    if (numLayers > 1)
+        context->CSSetShader(fftArrayShader, nullptr, 0);
+    else
+        context->CSSetShader(fftShader, nullptr, 0);
     context->CSSetUnorderedAccessViews(0, 1, &fftBufferUAV, nullptr);
+
     FFTConstants constants = {};
     constants.N = size;
-    // Safe Integer Log2
-    unsigned int bits = 0;
+    constants.Inverse = inverse ? true : false;
+    unsigned int bits = 0; // integer Log2
     int temp = size;
     while (temp >>= 1) ++bits;
     constants.Bits = bits;
 
     // Row pass
-    constants.Inverse = inverse ? 1 : 0;
-    constants.Stride = 1; // Contiguous for rows
+    constants.Row = true;
     UpdateFFTConstants(constants);
     context->Dispatch(1, size, 1); // One group per row
 
     // Column pass
-    constants.Stride = 0; // Column stride
+    constants.Row = false;
     UpdateFFTConstants(constants);
     context->Dispatch(1, size, 1); // One group per column
 

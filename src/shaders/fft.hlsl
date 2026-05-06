@@ -8,17 +8,17 @@
 // Constant Buffer
 cbuffer FFTConstants : register(b1) {
     uint cb_N;          // Transform size (gridsize) (must be power of 2)
+    uint cb_Bits;       // log2(cb_N) 
     uint cb_Inverse;    // 0 = forward DFT, 1 = inverse DFT
-    uint cb_Stride;     // Element stride between samples.
-                        // Row pass:    1  (contiguous)
-                        // Column pass: total_width  (row-major column stride)
-    uint cb_Bits;       // log2(cb_N)     
+    uint cb_IsRow;     // Row = 1, Col = 0
 };
 
 // Texture Registers
-Texture2D<float>    in0  : register(t0);
-RWTexture2D<float2> fft  : register(u0);  // In-place read/write
-RWTexture2D<float>  out0 : register(u1);
+#ifdef IS_ARRAY
+    RWTexture2DArray<float2> fft : register(u0);
+#else
+    RWTexture2D<float2> fft : register(u0);
+#endif
 
 // Groupshared memory
 groupshared float2 gs_Data[FFT_SIZE];
@@ -59,10 +59,6 @@ uint bit_reverse(uint x, uint bits) {
 // ---------------------------------------------------------------------------
 // Kernel entry point
 // ---------------------------------------------------------------------------
-// One thread group handles one row (row pass) or one column (column pass).
-// Each thread handles one element of the N-point transform.
-//
-// Threads with tid >= cb_N are idle (padding to FFT_MAX_N).
 
 [numthreads(FFT_SIZE, 1, 1)]
 void FFTKernel_1D(
@@ -76,10 +72,13 @@ void FFTKernel_1D(
     // -------------------------------------------------------------------------
 
     // Global element coordinate: row pass uses (tid, row), column pass uses (column, tid).
-    // Wrap the work in an if-statement, but let idle threads pass through
     // if (tid < cb_N) {
         const uint rev = bit_reverse(tid, cb_Bits);
-        uint2 coord    = (cb_Stride == 1) ? uint2(tid, GID.y) : uint2(GID.y, tid);
+        #ifdef IS_ARRAY
+            uint3 coord = (cb_IsRow == 1) ? uint3(tid, GID.y, GID.z) : uint3(GID.y, tid, GID.z);
+        #else
+            uint2 coord = (cb_IsRow == 1) ? uint2(tid, GID.y) : uint2(GID.y, tid);
+        #endif
         gs_Data[rev] = fft[coord];
     // }
     GroupMemoryBarrierWithGroupSync();
@@ -107,7 +106,6 @@ void FFTKernel_1D(
         // All threads sync before we overwrite the old data
         GroupMemoryBarrierWithGroupSync();
         if (tid < cb_N / 2) {
-            // Now it is safe to write
             gs_Data[evenIdx] = newEven;
             gs_Data[oddIdx]  = newOdd;
         }
@@ -140,3 +138,7 @@ RWTexture2D<float>  RealOut   :  register(u0);
 void ComplexToReal(uint3 id : SV_DispatchThreadID) {
     RealOut[id.xy] = ComplexIn[id.xy].x;
 }
+
+
+
+

@@ -14,7 +14,7 @@ public:
 	// Simulation parameters
 	static constexpr int GRIDSIZE = 512;	// grid size in one dimension (# cells)
 	static constexpr float CELLSIZE = 1.f;	// cell size in one dimension (meters/cell)
-	static constexpr float TIMESTEP = 1.f / 30.f;
+	static constexpr float TIMESTEP = 1.f / 60.f;
 	static constexpr float TERRAIN_HEIGHT = -10.f; // base height of terrain features (meters)
 	static constexpr float TERRAIN_SCALE = 15.f; // scale of terrain features (meters)
 	static constexpr int TERRAIN_TYPE = 0; // 0 = flat, 1 = ramp, 2 = bumps, 3 = basins, 4 = beach
@@ -30,8 +30,8 @@ public:
 	static constexpr float DIFFUSION_PENALTY = 0.01f; // penalty factor for diffusion, higher means more diffusion and more stability but also more damping of waves
 	
 	// eWave, SWE, & Transport Parameters
-	static constexpr int DEPTH_NUM = 4;		// number of discrete water depth solutions to compute for eWave dispersion correction
-	static constexpr float Depth[4] = { 1.f, 4.f, 16.f, 64.f };
+	static constexpr int DEPTH_NUM = 5;		// number of discrete water depth solutions to compute for eWave dispersion correction
+	static constexpr float Depth[5] = { 1.f, 2.f, 4.f, 16.f, 64.f };
 
 	// Transport Parameters
 	static constexpr float CFL_CONDITION = 0.25f;  // max allowed CFL condition for stability of SWE step, can be higher than overall CFL condition since diffusion and transport steps handle stability as well
@@ -43,16 +43,17 @@ public:
 			 hbar, qbar_x, qbar_y, htilde, qtilde_x, qtilde_y,
 			 ubar_x, ubar_y, ubarNew_x, ubarNew_y,
 			 qtildePast_x, qtildePast_y, qAdvect_x, qAdvect_y, 
-			 hPast, hbarOld, htildeOld, hHat, qHat_x, qHat_y;
-	GPUField* fields[30] = {
+			 hPast, hbarOld, htildeOld, hHat, qHat_x, qHat_y, wavenum,
+			 qHat_x_array, qHat_y_array, qtilde_x_array, qtilde_y_array;
+	GPUField* fields[31] = {
 		&terrain, &H, &Q_x, &Q_y, &h, &q_x, &q_y,
 		&HPast, &QPast_x, &QPast_y, &alpha_H, &alpha_Q_x, &alpha_Q_y,
 		&hbar, &qbar_x, &qbar_y, &htilde, &qtilde_x, &qtilde_y,
 		&ubar_x, &ubar_y, &ubarNew_x, &ubarNew_y,
 		&qtildePast_x, &qtildePast_y, &qAdvect_x, &qAdvect_y,
-		&hPast, &hbarOld, &htildeOld
-	};
+		&hPast, &hbarOld, &htildeOld, &wavenum};
 	GPUField* fields_complex[3] = {&hHat, &qHat_x, &qHat_y};
+	GPUField* q_arrays[4] = {&qHat_x_array, &qHat_y_array, &qtilde_x_array, &qtilde_y_array};
 
 	GPU* gpu;
 
@@ -65,6 +66,7 @@ public:
 	std::vector<float> SetWater(std::vector<float>& terrain);
 
 private:
+	void Init(GPU* gpu);
 	// Functions
 	void DecompositionStep();	// bulk vs surface decomposition
 	void eWaveStep();		// surface wave simulation step
@@ -78,19 +80,19 @@ private:
 
 	// GPU Compute Shaders
 	ID3D11ComputeShader *ApplyBoundaries, *InitDecomp, *CalcDiffusionCoeffs, *DiffusionStep, *DecomposeFields, 
-						*CalcUbar, *CalcSWE, *UpdateTilde, *CalcQAdvect, *IntegrateH;
-	ID3D11ComputeShader** shaders[10] = {
+						*CalcUbar, *CalcSWE, *UpdateTilde, *CalcQAdvect, *IntegrateH, 
+						*TransferToFFT, *CalcHHat, *CalcQHat, *CopyFromFFT, *InterpQ;
+	ID3D11ComputeShader** shaders[15] = {
 						&ApplyBoundaries, &InitDecomp, &CalcDiffusionCoeffs, &DiffusionStep, &DecomposeFields, 
-						&CalcUbar, &CalcSWE, &UpdateTilde, &CalcQAdvect, &IntegrateH
-	};
-	char* names[10] = {"ApplyBoundaries", "InitDecomp", "CalcDiffusionCoeffs", "DiffusionStep", "DecomposeFields", 
-					   "CalcUbar", "CalcSWE", "UpdateTilde", "CalcQAdvect", "IntegrateH"};
-	SimConstants constants = {GRIDSIZE, CELLSIZE, TIMESTEP, BOUNDARY_TYPE, MIN_WATER_HEIGHT,
-							  DIFFUSION_ITERATIONS, DELTA_T, DIFFUSION_PENALTY, CFL_CONDITION, GAMMA_TRANSPORT, {0.f, 0.f}};
+						&CalcUbar, &CalcSWE, &UpdateTilde, &CalcQAdvect, &IntegrateH, 
+						&TransferToFFT, &CalcHHat, &CalcQHat, &CopyFromFFT, &InterpQ};
+	char* names[15] = {"ApplyBoundaries", "InitDecomp", "CalcDiffusionCoeffs", "DiffusionStep", "DecomposeFields", 
+					   "CalcUbar", "CalcSWE", "UpdateTilde", "CalcQAdvect", "IntegrateH", 
+					   "TransferToFFT", "CalcHHat", "CalcQHat", "CopyFromFFT", "InterpQ"};
+	SimConstants constants = {GRIDSIZE, CELLSIZE, TIMESTEP, BOUNDARY_TYPE, MIN_WATER_HEIGHT,// Sim Params
+							  DIFFUSION_ITERATIONS, DELTA_T, DIFFUSION_PENALTY, 			// Diffusion Params
+							  CFL_CONDITION, GAMMA_TRANSPORT, 								// SWE Params
+							  Depth[5], DEPTH_NUM};											// eWave Params
 	RenderConstants render_constants = {DirectX::XMMatrixIdentity(), (float)GRIDSIZE, CELLSIZE, {0.f, 0.f}};
-
-
-
-
 
 };

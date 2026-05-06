@@ -16,9 +16,16 @@ cbuffer Constants : register(b0) {
     float cflCondition;
     float gammaTransport;
 
-    // Padding for 16-byte alignment 
-    float buffer[2];  
+    // eWave params
+    float depth[5];
+    float depthNum;
+
+    // // Padding for 16-byte alignment 
+    // float buffer;  
 };
+
+#define GRAVITY 9.80665
+#define PI 3.14159265358979323846f
 
 // Texture Registers
 Texture2D<float>   in0 : register(t0);
@@ -275,67 +282,6 @@ void DecomposeFields(uint3 id : SV_DispatchThreadID) {
     out5[id.xy] = qtilde_y;
 }
 
-/////////// eWave ///////////
-
-// void Sim::eWaveStep()
-// {
-// 	// surface velocity update using eWave
-// 	for (int x = 0; x < GRIDSIZE; x++)
-// 	{
-// 		htildehat[x].x = 0.5f * (htilde[x] + htildeOld[x]);
-// 		htildeOld[x] = htilde[x];
-// 		htildehat[x].y = 0.;
-// 		qtildehat[x].x = qtilde[x];
-// 		qtildehat[x].y = 0.;
-// 	}
-// 	fftc1d(htildehat);   //https://www.alglib.net/download.php#cpp
-// 	fftc1d(qtildehat);
-// 	for (int x = 0; x < GRIDSIZE; x++)
-// 	{
-// 		// physical k from grid position
-// 		double kx = GRIDSIZE / 2. - abs(GRIDSIZE / 2. - x);  // this gives [0,..,m_gridSizeX / 2.f-1, m_gridSizeX / 2.f, .. 1]
-// 		double k = 2. * PI * fabs(kx) / GRIDSIZE / CELLSIZE;
-// 		double kNonZero = std::max(0.01, k);
-// 		double kS = k;  // signed k
-// 		if (x > (double)(GRIDSIZE) / 2.f)
-// 			kS = -k;
-// 		// Fourier gradient: multiply by -i k
-// 		double real = htildehat[x].x;
-// 		double imag = htildehat[x].y;
-// 		htildehat[x].x = -kS * imag;
-// 		htildehat[x].y = kS * real;
-// 		// phase shift to translate function to cell boundaries
-// 		real = htildehat[x].x;
-// 		imag = htildehat[x].y;
-// 		double beta = 0.5 * CELLSIZE * kS;
-// 		htildehat[x].x = cos(beta) * real - sin(beta) * imag;
-// 		htildehat[x].y = sin(beta) * real + cos(beta) * imag;
-// 		for (int depth = 0; depth < DEPTH_NUM; depth++)
-// 		{
-// 			double k2 = std::max(0.0001, 2. * kx / GRIDSIZE);  //k2 = 0..1
-// 			double omega = sqrtf(GRAVITY * k * tanhf(k * Depth[depth]));
-// 			omega *= 1.f / sqrt(2.0 / (k2 * PI) * sin(k2 * PI / 2.0));  // grid dispersion correction
-// 			qtildehat_depth[depth][x].x = qtildehat[x].x * cos(omega * TIMESTEP) - omega / (kNonZero * kNonZero) * htildehat[x].x * sin(omega * TIMESTEP);
-// 			qtildehat_depth[depth][x].y = qtildehat[x].y * cos(omega * TIMESTEP) - omega / (kNonZero * kNonZero) * htildehat[x].y * sin(omega * TIMESTEP);
-// 		}
-// 	}
-// 	for (int depth = 0; depth < DEPTH_NUM; depth++)
-// 		fftc1dinv(qtildehat_depth[depth]); // Back transform
-// 	// interpolate surface velocity from the two closest water depth solutions
-// 	for (int x = 0; x < GRIDSIZE; x++)
-// 	{
-// 		float waterDepth = std::max(hbar[x], hbar[x_plus]);
-// 		int depth1 = 0;
-// 		for (int depth = 0; depth < DEPTH_NUM; depth++)
-// 			if (waterDepth >= Depth[depth])
-// 				depth1 = depth;
-// 		int depth2 = std::min(DEPTH_NUM - 1, depth1 + 1);
-// 		float s = 0.f;
-// 		if (depth1 != depth2)
-// 			s = (Depth[depth2] - waterDepth) / (Depth[depth2] - Depth[depth1]);
-// 		qtilde[x] = s * qtildehat_depth[depth1][x].x + (1.f - s) * qtildehat_depth[depth2][x].x;
-// 	}
-
 
 /////////// SWE ///////////
 
@@ -473,13 +419,12 @@ void CalcSWE(uint3 id : SV_DispatchThreadID) {
 
 
     // Compute dux_dt and duy_dt
-    float gravity = 9.8066f;
     float dux_dt = - (1/cellSize) * ((q_x_0/h_x_p05) * (in0[curr] - in0[left]) + (q_y_m05/h_x_p05) * (in0[curr] - in0[down]));
     float duy_dt = - (1/cellSize) * ((q_y_0/h_y_p05) * (in1[curr] - in1[down]) + (q_x_m05/h_y_p05) * (in1[curr] - in1[left]));
     // float dux_dt = - (1/(cellSize*h_x_p05)) * ((q_x_p1 * u_star_x_p1 - q_x_0 * u_star_x_0) - in0[curr] * (q_x_p1 - q_x_0));
     // float duy_dt = - (1/(cellSize*h_y_p05)) * ((q_y_p1 * u_star_y_p1 - q_y_0 * u_star_y_0) - in1[curr] * (q_y_p1 - q_y_0));
-    dux_dt -= (1/cellSize) * gravity * (in3[right] - in3[curr]);
-    duy_dt -= (1/cellSize) * gravity * (in3[up] - in3[curr]);
+    dux_dt -= (1/cellSize) * GRAVITY * (in3[right] - in3[curr]);
+    duy_dt -= (1/cellSize) * GRAVITY * (in3[up] - in3[curr]);
     float ubarNew_x = LimitVelocity(in0[curr] + timeStep * dux_dt);  // Enforcing CFL condition
     float ubarNew_y = LimitVelocity(in1[curr] + timeStep * duy_dt);  // Enforcing CFL condition
     
@@ -580,17 +525,123 @@ void IntegrateH(uint3 id : SV_DispatchThreadID) {
     q_xm = LimitFlowRate(q_xm, in6[curr_xm], in6[curr]);
     q_ym = LimitFlowRate(q_ym, in6[curr_ym], in6[curr]);
 
-    // if ((StopFlowOnTerrainBoundary(in6, in7, curr, false)) || (id.x == gridSize - 2))
-    //     q_x = 0.f;
-    // if ((StopFlowOnTerrainBoundary(in6, in7, curr, true )) || (id.y == gridSize - 2))
-    //     q_y = 0.f;
-    // if ((StopFlowOnTerrainBoundary(in6, in7, curr_xm, false)) || (id.x == gridSize - 2))
-    //     q_xm = 0.f;
-    // if ((StopFlowOnTerrainBoundary(in6, in7, curr_ym, true )) || (id.y == gridSize - 2))
-    //     q_ym = 0.f;
+    if (StopFlowOnTerrainBoundary(in6, in7, curr, false)) // || (id.x == gridSize - 2) // Volume Preserving (wall boundary)
+        q_x = 0.f;
+    if (StopFlowOnTerrainBoundary(in6, in7, curr, true )) // || (id.y == gridSize - 2) // Volume Preserving (wall boundary)
+        q_y = 0.f;
+    if (StopFlowOnTerrainBoundary(in6, in7, curr_xm, false))
+        q_xm = 0.f;
+    if (StopFlowOnTerrainBoundary(in6, in7, curr_ym, true )) 
+        q_ym = 0.f;
 
     float div_q = (q_x - q_xm + q_y - q_ym) / cellSize;
 	out0[curr] = max(0.f, in6[curr] - timeStep * div_q);
     out1[curr] = q_x;// - in2[curr]; // qbar + qtilde, removing qAdvect
     out2[curr] = q_y;// - in5[curr];
 }
+
+
+/////////// eWave ///////////
+// (At bottom because requires different inputs/outputs for each kernel)
+RWTexture2D<float2> hHat  : register(u1); // Complex
+RWTexture2D<float2> qHat_x: register(u2); // Complex
+RWTexture2D<float2> qHat_y: register(u3); // Complex
+[numthreads(16, 16, 1)]
+void TransferToFFT(uint3 id : SV_DispatchThreadID) {
+    // Inputs: in0 = htilde, in1 = qtilde_x, in2 = qtilde_y
+    // Outputs: out0 = htildeOld, out1 = hHat, out2 = qHat_x, out3 = qHat_y
+    float h_real = 0.5 * (in0[id.xy] + out0[id.xy]);
+    out0  [id.xy] = in0[id.xy];
+    hHat  [id.xy] = float2(h_real, 0.0f);
+    qHat_x[id.xy] = float2(in1[id.xy], 0.0f);
+    qHat_y[id.xy] = float2(in2[id.xy], 0.0f);
+}
+
+// FFT all three (see fft.hlsl)
+
+// Rebind in/out to be fully complex
+RWTexture2D<float2> hhat   : register(u0);
+RWTexture2D<float2> wavenum: register(u1);
+[numthreads(16, 16, 1)]
+void CalcHHat(uint3 id : SV_DispatchThreadID) {
+    // Inputs: none (hhat updated in place)
+    // Outputs: out0 = hHat, out1 = wavenum
+
+    // Calculate k (wave number) from grid position
+    float pos_x = id.x * 2 / gridSize; // range [0, 2), normalized by gridsize/2
+    float pos_y = id.y * 2 / gridSize;
+    float kx = 1 - abs(1 - pos_x);
+    float ky = 1 - abs(1 - pos_y);
+    float k = sqrt(kx*kx + ky*ky) * PI / cellSize;
+    float kS = k;  // signed k
+    if (id.x > (float)(gridSize) / 2.f)
+        kS = -k;
+    
+
+    // Fourier gradient: dhhat/dx = hhat * -ik
+    float real = hhat[id.xy].x;
+    float imag = hhat[id.xy].y;
+    hhat[id.xy].x = -kS * imag;
+    hhat[id.xy].y =  kS * real;
+
+    // Phase shift to translate hhat to cell boundaries: multiply hhat * e^-i*shift
+    real = hhat[id.xy].x;
+    imag = hhat[id.xy].y;
+    float shift = 0.5 * cellSize * kS;
+    hhat[id.xy] = float2(cos(shift) * real - sin(shift) * imag, // complex multiplication
+                         sin(shift) * real + cos(shift) * imag);
+}
+
+Texture2D<float>  waveNum: register(t0);
+Texture2D<float2> htHat  : register(t1);
+Texture2D<float2> qtHat_x: register(t2);
+Texture2D<float2> qtHat_y: register(t3);  
+RWTexture2DArray<float2> qhat_x_array: register(u0);
+RWTexture2DArray<float2> qhat_y_array: register(u1);
+[numthreads(16, 16, 1)]
+void CalcQHat(uint3 id : SV_DispatchThreadID) {
+    // Inputs: in0 = wavenum, in1 = hHat, in2 = qHat_x, in3 = qHat_y
+    // Outputs: out0 = qHat_x_array, qHat_y_array
+    float k = waveNum[id.xy];
+    float kNonZero = max(0.001, k);
+    float beta = sqrt(2.0 / (kNonZero * cellSize) * sin(k * cellSize / 2.0)); // from 2D, I think this is wrong? 
+    // float beta = sqrt(2.0 * k / cellSize * sin(k * cellSize / 2.0)); // grid dispersion correction
+    float omega = sqrt(GRAVITY * k * tanh(k * depth[id.z])) / beta;
+    float sin_term = (omega / (kNonZero * kNonZero)) * sin(omega * timeStep);
+    float cos_term = cos(omega * timeStep);
+    qhat_x_array[id] = float2(qtHat_x[id.xy].x * cos_term - htHat[id.xy].x * sin_term,
+                              qtHat_x[id.xy].y * cos_term - htHat[id.xy].y * sin_term);
+    qhat_y_array[id] = float2(qtHat_y[id.xy].x * cos_term - htHat[id.xy].x * sin_term,
+                              qtHat_y[id.xy].y * cos_term - htHat[id.xy].y * sin_term);
+}
+
+Texture2DArray<float2> qHat_x_array : register(t0);
+Texture2DArray<float2> qHat_y_array : register(t1);
+RWTexture2DArray<float> qtilde_x_array: register(u0);
+RWTexture2DArray<float> qtilde_y_array: register(u1);
+[numthreads(16, 16, 1)]
+void CopyFromFFT(uint3 id : SV_DispatchThreadID) {
+    qtilde_x_array[id] = qHat_x_array[id].x;
+    qtilde_y_array[id] = qHat_y_array[id].x;
+}
+
+[numthreads(16, 16, 1)]
+void InterpQ(uint3 id : SV_DispatchThreadID) {
+
+}
+
+
+// 	// interpolate surface velocity from the two closest water depth solutions
+// 	for (int x = 0; x < GRIDSIZE; x++)
+// 	{
+// 		float waterDepth = std::max(hbar[x], hbar[x_plus]);
+// 		int depth1 = 0;
+// 		for (int d = 0; d < DEPTH_NUM; d++)
+// 			if (waterDepth >= Depth[d])
+// 				depth1 = d;
+// 		int depth2 = std::min(DEPTH_NUM - 1, depth1 + 1);
+// 		float s = 0.f;
+// 		if (depth1 != depth2)
+// 			s = (Depth[depth2] - waterDepth) / (Depth[depth2] - Depth[depth1]);
+// 		qtilde[x] = s * qtildehat_depth[depth1][x].x + (1.f - s) * qtildehat_depth[depth2][x].x;
+// 	}

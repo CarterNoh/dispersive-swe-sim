@@ -73,12 +73,7 @@ std::vector<float> Sim::SetWater(std::vector<float>& terrain) {
 	return h;
 }
 
-Sim::Sim()
-{
-	// Init GPU
-	gpu = new GPU();
-	if (!gpu->Init(GRIDSIZE)) std::cerr << "GPU INIT FAILED" << std::endl;
-
+void Sim::Init(GPU* gpu) {
 	// Set up GPU Shaders
 	for (int i=0; i < sizeof(shaders) / sizeof(shaders[0]); i++) {
 		gpu->CompileComputeShader(L"shaders/kernels.hlsl", names[i], shaders[i]);
@@ -87,14 +82,20 @@ Sim::Sim()
 
 	// Create GPU Textures and Upload Initial Data
 	for (int i=0; i < sizeof(fields) / sizeof(fields[0]); i++) {
-		gpu->CreateGridTexture(fields[i], GRIDSIZE, false);
-		std::vector<float> temp(GRIDSIZE*GRIDSIZE, 0.0f);
+		gpu->CreateGridTexture(fields[i], GRIDSIZE);
+		std::vector<float> temp(GRIDSIZE * GRIDSIZE, 0.0f);
 		gpu->UploadToGPU(fields[i]->tex, temp, GRIDSIZE);
 	}
 	for (int i = 0; i < sizeof(fields_complex) / sizeof(fields_complex[0]); i++) {
 		gpu->CreateGridTexture(fields_complex[i], GRIDSIZE, true);
-		std::vector<float> temp(GRIDSIZE*GRIDSIZE*2, 0.0f);
-		gpu->UploadToGPU(fields_complex[i]->tex, temp, GRIDSIZE*2);
+		std::vector<float> temp(GRIDSIZE * GRIDSIZE * 2, 0.0f);
+		gpu->UploadToGPU(fields_complex[i]->tex, temp, GRIDSIZE, true);
+	}
+	for (int i = 0; i < 4; i++) {
+		bool complex = (i < 2) ? true : false;
+		gpu->CreateGridTexture(q_arrays[i], GRIDSIZE, complex, DEPTH_NUM);
+		std::vector<float> temp(GRIDSIZE * GRIDSIZE * DEPTH_NUM * 2, 0.0f);
+		gpu->UploadToGPU(q_arrays[i]->tex, temp, GRIDSIZE, complex, DEPTH_NUM);
 	}
 	std::vector<float> terrain_temp = SetTerrain();
 	std::vector<float> h_temp = SetWater(terrain_temp);
@@ -109,39 +110,19 @@ Sim::Sim()
 	gpu->UploadToGPU(hbarOld.tex, h_temp, GRIDSIZE);
 }
 
+Sim::Sim()
+{
+	// Init GPU
+	gpu = new GPU();
+	if (!gpu->Init(GRIDSIZE)) std::cerr << "GPU INIT FAILED" << std::endl;
+	Sim::Init(gpu);
+}
+
 Sim::Sim(HWND hwnd = nullptr)
 {
 	gpu = new GPU();
 	if (!gpu->Init(GRIDSIZE, hwnd)) std::cerr << "GPU INIT FAILED" << std::endl;
-
-	// Set up GPU Shaders
-	for (int i=0; i < sizeof(shaders) / sizeof(shaders[0]); i++) {
-		gpu->CompileComputeShader(L"shaders/kernels.hlsl", names[i], shaders[i]);
-	}
-    gpu->UpdateConstants(constants);
-
-	// Create GPU Textures and Upload Initial Data
-	for (int i=0; i < sizeof(fields) / sizeof(fields[0]); i++) {
-		gpu->CreateGridTexture(fields[i], GRIDSIZE, false);
-		std::vector<float> temp(GRIDSIZE*GRIDSIZE, 0.0f);
-		gpu->UploadToGPU(fields[i]->tex, temp, GRIDSIZE);
-	}
-	for (int i = 0; i < sizeof(fields_complex) / sizeof(fields_complex[0]); i++) {
-		gpu->CreateGridTexture(fields_complex[i], GRIDSIZE, true);
-		std::vector<float> temp(GRIDSIZE*GRIDSIZE*2, 0.0f);
-		gpu->UploadToGPU(fields_complex[i]->tex, temp, GRIDSIZE*2);
-	}
-	std::vector<float> terrain_temp = SetTerrain();
-	std::vector<float> h_temp = SetWater(terrain_temp);
-	std::vector<float> H_temp(GRIDSIZE*GRIDSIZE, 0.0f);
-	for (int i = 0; i < GRIDSIZE*GRIDSIZE; i++) {
-		H_temp[i] = terrain_temp[i] + h_temp[i];
-	}
-	gpu->UploadToGPU(terrain.tex, terrain_temp, GRIDSIZE);
-	gpu->UploadToGPU(h.tex, h_temp, GRIDSIZE);
-	gpu->UploadToGPU(H.tex, H_temp, GRIDSIZE);
-	gpu->UploadToGPU(hbar.tex, h_temp, GRIDSIZE);
-	gpu->UploadToGPU(hbarOld.tex, h_temp, GRIDSIZE);
+	Sim::Init(gpu);
 
 	// Set up rendering shaders and mesh
 	gpu->CompileVertexShader(L"shaders/render.hlsl", "VSMain");
@@ -210,22 +191,29 @@ void Sim::DecompositionStep() {
 }
 
 void Sim::eWaveStep() {
-	// Copy variables to fourier domain & FFT
-	gpu->UploadToFFT(htilde.srv, hHat.uav);
-	gpu->UploadToFFT(qtilde_x.srv, qHat_x.uav);
-	gpu->UploadToFFT(qtilde_y.srv, qHat_y.uav);
+	// Copy variables to fourier domain & perform FFT
+	gpu->Dispatch(TransferToFFT, 
+		{htilde.srv, qtilde_x.srv, qtilde_y.srv}, 
+		{htildeOld.uav, hHat.uav, qHat_x.uav, qHat_x.uav});
 	gpu->ExecuteFFT(hHat.uav, GRIDSIZE, false);
 	gpu->ExecuteFFT(qHat_x.uav, GRIDSIZE, false);
 	gpu->ExecuteFFT(qHat_y.uav, GRIDSIZE, false);
 
 	// Compute eWave
-	// TODO
+	gpu->Dispatch(CalcHHat, {},
+		{hHat.uav, wavenum.uav});
+	gpu->Dispatch(CalcQHat, 
+		{wavenum.srv, hHat.srv, qHat_x.srv, qHat_y.srv},
+		{qHat_x_array.uav, qHat_y_array.uav});
 
 	// Inverse FFT fourier variables & copy
-	gpu->ExecuteFFT(qHat_x.uav, GRIDSIZE, true);
-	gpu->ExecuteFFT(qHat_y.uav, GRIDSIZE, true);
-	gpu->DownloadFromFFT(qHat_x.srv, qtilde_x.uav);
-	gpu->DownloadFromFFT(qHat_y.srv, qtilde_y.uav);
+	gpu->ExecuteFFT(qHat_x_array.uav, GRIDSIZE, true, DEPTH_NUM);
+	gpu->ExecuteFFT(qHat_y_array.uav, GRIDSIZE, true);
+	gpu->Dispatch(CopyFromFFT, 
+		{qHat_x_array.srv, qHat_y_array.srv}, 
+		{qtilde_x_array.uav, qtilde_y_array.uav});
+
+
 
 }
 
