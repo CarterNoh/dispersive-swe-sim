@@ -49,21 +49,11 @@ float4 PSMain(Pixel input) : SV_TARGET {
 
     // 1. Normalize the height from 0.0 to 1.0
     // Adjust hMax depending on how high your water level / waves get!
-    float hMin = 5.0f;
+    float hMin = 0.0f;
     float hMax = 20.0f; // Adjust based on your wave heights!
     float t = saturate((input.height - hMin) / (hMax - hMin));
 
-    // float3 c_blue   = float3(0.0f, 0.0f, 0.6f);
-    // float3 c_cyan   = float3(0.0f, 1.0f, 1.0f);
-    // float3 c_green  = float3(0.0f, 1.0f, 0.0f);
-    // float3 c_yellow = float3(1.0f, 1.0f, 0.0f);
-    // float3 c_red    = float3(0.8f, 0.0f, 0.0f);
-    // float3 baseColor;
-    // if      (t < 0.25f) baseColor = lerp(c_blue, c_cyan,   t / 0.25f);
-    // else if (t < 0.50f) baseColor = lerp(c_cyan, c_green,  (t - 0.25f) / 0.25f);
-    // else if (t < 0.75f) baseColor = lerp(c_green, c_yellow, (t - 0.50f) / 0.25f);
-    // else                baseColor = lerp(c_yellow, c_red,   (t - 0.75f) / 0.25f);
-
+    // "viterbi" color scheme
     float3 v0 = float3(0.267f, 0.004f, 0.329f); // Dark Purple
     float3 v1 = float3(0.231f, 0.322f, 0.545f); // Blue
     float3 v2 = float3(0.129f, 0.569f, 0.549f); // Teal

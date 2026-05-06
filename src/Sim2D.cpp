@@ -206,15 +206,18 @@ void Sim::eWaveStep() {
 		{wavenum.srv, hHat.srv, qHat_x.srv, qHat_y.srv},
 		{qHat_x_array.uav, qHat_y_array.uav});
 
-	// Inverse FFT fourier variables & copy
+	// Inverse FFT fourier variables
 	gpu->ExecuteFFT(qHat_x_array.uav, GRIDSIZE, true, DEPTH_NUM);
 	gpu->ExecuteFFT(qHat_y_array.uav, GRIDSIZE, true);
-	gpu->Dispatch(CopyFromFFT, 
-		{qHat_x_array.srv, qHat_y_array.srv}, 
-		{qtilde_x_array.uav, qtilde_y_array.uav});
+	// gpu->Dispatch(CopyFromFFT, 
+	// 	{qHat_x_array.srv, qHat_y_array.srv}, 
+	// 	{qtilde_x_array.uav, qtilde_y_array.uav});
 
-
-
+	gpu->Dispatch(InterpQ,
+		{hbar.srv, qHat_x_array.srv, qHat_y_array.srv},
+		{qtilde_x.uav, qtilde_y.uav});
+	gpu->Dispatch(ApplyBoundaries, {}, 
+		{qtilde_x.uav, qtilde_y.uav});
 }
 
 void Sim::SWEStep() {
@@ -268,4 +271,8 @@ void Sim::ComputeValues() {
 		{h.uav, q_x.uav, q_y.uav});
 	gpu->Dispatch(ApplyBoundaries, {}, 
 		{h.uav, q_x.uav, q_y.uav});
+
+	gpu->Dispatch(InitDecomp, 
+		{h.srv, q_x.srv, q_y.srv, terrain.srv}, 
+		{H.uav, Q_x.uav, Q_y.uav});
 }

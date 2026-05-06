@@ -543,6 +543,9 @@ void IntegrateH(uint3 id : SV_DispatchThreadID) {
 
 /////////// eWave ///////////
 // (At bottom because requires different inputs/outputs for each kernel)
+// These all have slight variants on teh names so HLSL doesn't get mad for redefining a name used before
+
+// Average htilde in time to get on same timestep as q, then prep variables for FFT
 RWTexture2D<float2> hHat  : register(u1); // Complex
 RWTexture2D<float2> qHat_x: register(u2); // Complex
 RWTexture2D<float2> qHat_y: register(u3); // Complex
@@ -559,7 +562,7 @@ void TransferToFFT(uint3 id : SV_DispatchThreadID) {
 
 // FFT all three (see fft.hlsl)
 
-// Rebind in/out to be fully complex
+// Update hHat to be at the right sample time and calculate wavenumber
 RWTexture2D<float2> hhat   : register(u0);
 RWTexture2D<float2> wavenum: register(u1);
 [numthreads(16, 16, 1)]
@@ -576,7 +579,6 @@ void CalcHHat(uint3 id : SV_DispatchThreadID) {
     float kS = k;  // signed k
     if (id.x > (float)(gridSize) / 2.f)
         kS = -k;
-    
 
     // Fourier gradient: dhhat/dx = hhat * -ik
     float real = hhat[id.xy].x;
@@ -590,8 +592,10 @@ void CalcHHat(uint3 id : SV_DispatchThreadID) {
     float shift = 0.5 * cellSize * kS;
     hhat[id.xy] = float2(cos(shift) * real - sin(shift) * imag, // complex multiplication
                          sin(shift) * real + cos(shift) * imag);
+    wavenum[id.xy] = k;
 }
 
+// eWave update: calculate resulting qHat at varying depths
 Texture2D<float>  waveNum: register(t0);
 Texture2D<float2> htHat  : register(t1);
 Texture2D<float2> qtHat_x: register(t2);
@@ -615,6 +619,9 @@ void CalcQHat(uint3 id : SV_DispatchThreadID) {
                               qtHat_y[id.xy].y * cos_term - htHat[id.xy].y * sin_term);
 }
 
+// Inverse FFT the resulting qtilde arrays
+
+// // Convert complex output to real
 Texture2DArray<float2> qHat_x_array : register(t0);
 Texture2DArray<float2> qHat_y_array : register(t1);
 RWTexture2DArray<float> qtilde_x_array: register(u0);
@@ -625,23 +632,36 @@ void CopyFromFFT(uint3 id : SV_DispatchThreadID) {
     qtilde_y_array[id] = qHat_y_array[id].x;
 }
 
+// Interpolate qtilde between depths
+Texture2D<float>       hbar        : register(t0);
+Texture2DArray<float2> Qhat_x_array: register(t1);
+Texture2DArray<float2> Qhat_y_array: register(t2);
+RWTexture2D<float>     qtilde_x    : register(u0);
+RWTexture2D<float>     qtilde_y    : register(u1);
 [numthreads(16, 16, 1)]
 void InterpQ(uint3 id : SV_DispatchThreadID) {
+    // Inputs: qtilde_x_array, qtilde_y_array, hbar
+    // Outputs: qtilde_x, qtilde_y
+    if (id.x < 0 || id.x >= (uint)(gridSize - 1) || id.y < 0 || id.y >= (uint)(gridSize - 1)) return;
 
+    float waterDepth_x = max(hbar[id.xy], hbar[id.xy + uint2(1, 0)]);
+    float waterDepth_y = max(hbar[id.xy], hbar[id.xy + uint2(0, 1)]);
+    int d1_x = 0;
+    int d1_y = 0;
+    for (int d = 0; d < depthNum; d++)
+        if (waterDepth_x >= depth[d])
+            d1_x = d;
+        if (waterDepth_y >= depth[d])
+            d1_y = d;
+    int d2_x = min(depthNum - 1, d1_x + 1);
+    int d2_y = min(depthNum - 1, d1_y + 1);
+    float sx = 0.f;
+    float sy = 0.f;
+    if (d1_x != d2_x)
+        sx = (depth[d2_x] - waterDepth_x) / (depth[d2_x] - depth[d1_x]);
+    if (d1_y != d2_y)
+        sy = (depth[d2_y] - waterDepth_y) / (depth[d2_y] - depth[d1_y]);
+
+    qtilde_x[id.xy] = sx * Qhat_x_array[uint3(id.x, id.y, d1_x)].x + (1.f - sx) * Qhat_x_array[uint3(id.x, id.y, d2_x)].x;
+    qtilde_y[id.xy] = sy * Qhat_y_array[uint3(id.x, id.y, d1_y)].x + (1.f - sy) * Qhat_y_array[uint3(id.x, id.y, d2_y)].x;
 }
-
-
-// 	// interpolate surface velocity from the two closest water depth solutions
-// 	for (int x = 0; x < GRIDSIZE; x++)
-// 	{
-// 		float waterDepth = std::max(hbar[x], hbar[x_plus]);
-// 		int depth1 = 0;
-// 		for (int d = 0; d < DEPTH_NUM; d++)
-// 			if (waterDepth >= Depth[d])
-// 				depth1 = d;
-// 		int depth2 = std::min(DEPTH_NUM - 1, depth1 + 1);
-// 		float s = 0.f;
-// 		if (depth1 != depth2)
-// 			s = (Depth[depth2] - waterDepth) / (Depth[depth2] - Depth[depth1]);
-// 		qtilde[x] = s * qtildehat_depth[depth1][x].x + (1.f - s) * qtildehat_depth[depth2][x].x;
-// 	}
