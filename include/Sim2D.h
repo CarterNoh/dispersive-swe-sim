@@ -20,6 +20,7 @@ public:
 	static constexpr int TERRAIN_TYPE = 0; // 0 = flat, 1 = ramp, 2 = bumps, 3 = basins, 4 = beach
 	static constexpr int WATER_TYPE = 0; // 0 = localized splash, 1 = step/dam break, 2 = basin flood
 	static constexpr float WATER_LEVEL = 10.f; 
+	static constexpr float WATER_SCALE = 10.f; 
 	static constexpr int BOUNDARY_TYPE = 0; // 0 = wall, 1 = free
 	
 	static constexpr float MIN_WATER_HEIGHT = 0.01f;  // minimum water height for stability
@@ -82,14 +83,14 @@ private:
 	// GPU Compute Shaders
 	ID3D11ComputeShader *ApplyBoundaries, *InitDecomp, *CalcDiffusionCoeffs, *DiffusionStep, *DecomposeFields, 
 						*CalcUbar, *CalcSWE, *UpdateTilde, *CalcQAdvect, *IntegrateH, 
-						*TransferToFFT, *CalcHHat, *CalcQHat, *InterpQ;
-	ID3D11ComputeShader** shaders[14] = {
+						*TransferToFFT, *CalcEWave, *InterpQ;
+	ID3D11ComputeShader** shaders[13] = {
 						&ApplyBoundaries, &InitDecomp, &CalcDiffusionCoeffs, &DiffusionStep, &DecomposeFields, 
 						&CalcUbar, &CalcSWE, &UpdateTilde, &CalcQAdvect, &IntegrateH, 
-						&TransferToFFT, &CalcHHat, &CalcQHat, &InterpQ};
-	char* names[15] = {"ApplyBoundaries", "InitDecomp", "CalcDiffusionCoeffs", "DiffusionStep", "DecomposeFields", 
+						&TransferToFFT, &CalcEWave, &InterpQ};
+	char* names[13] = {"ApplyBoundaries", "InitDecomp", "CalcDiffusionCoeffs", "DiffusionStep", "DecomposeFields", 
 					   "CalcUbar", "CalcSWE", "UpdateTilde", "CalcQAdvect", "IntegrateH", 
-					   "TransferToFFT", "CalcHHat", "CalcQHat", "InterpQ"};
+					   "TransferToFFT", "CalcEWave", "InterpQ"};
 	SimConstants constants = {GRIDSIZE, CELLSIZE, TIMESTEP, BOUNDARY_TYPE, MIN_WATER_HEIGHT,// Sim Params
 							  DIFFUSION_ITERATIONS, DELTA_T, DIFFUSION_PENALTY, 			// Diffusion Params
 							  CFL_CONDITION, GAMMA_TRANSPORT, 								// SWE Params

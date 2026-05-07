@@ -52,11 +52,11 @@ std::vector<float> Sim::SetWater(std::vector<float>& terrain) {
             if (WATER_TYPE == 0) { // Localized splash (Gaussian pill)
                 float dist = sqrt(pow(xf - 0.5f, 2) + pow(yf - 0.5f, 2));
                 if (dist < 0.1f) 
-					waterSurface += 10.0f * cos(dist * PI * 5.0f);
+					waterSurface += WATER_SCALE * cos(dist * PI * 5.0f);
             }
             else if (WATER_TYPE == 1) { // Step/Dam Break
                 if (xf < 0.3f) 
-					waterSurface += 10.0f;
+					waterSurface += WATER_SCALE;
             }
             else if (WATER_TYPE == 2) { // Basin Flood
                 // Fill only the left basin (xf < 0.5)
@@ -203,10 +203,8 @@ void Sim::eWaveStep() {
 	gpu->ExecuteFFT(qHat_y.uav, GRIDSIZE, false);
 
 	// Compute eWave
-	gpu->Dispatch(CalcHHat, {hHat.srv},
-		{wavenum.uav, dhHat_dx.uav, dhHat_dy.uav});
-	gpu->Dispatch(CalcQHat, 
-		{wavenum.srv, dhHat_dx.srv, dhHat_dy.srv, qHat_x.srv, qHat_y.srv},
+	gpu->Dispatch(CalcEWave, 
+		{hHat.srv, qHat_x.srv, qHat_y.srv},
 		{qHat_x_array.uav, qHat_y_array.uav}, DEPTH_NUM);
 
 	// Inverse FFT fourier variables
