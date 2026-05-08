@@ -309,6 +309,36 @@ bool GPU::DownloadFromGPU(ID3D11Texture2D* tex, std::vector<float>& data, int si
     return false;
 }
 
+bool GPU::CreateBuffer(GPUBuffer* bufferObj, const void* data, UINT elementSize, UINT elementCount) {
+    if (!bufferObj) return false;
+
+    D3D11_BUFFER_DESC desc = {};
+    desc.Usage = D3D11_USAGE_DEFAULT; 
+    desc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+    // REMOVE the MiscFlags Structured tag completely
+    desc.MiscFlags = 0; 
+    desc.StructureByteStride = 0;
+    desc.ByteWidth = (elementSize * elementCount);
+    
+    D3D11_SUBRESOURCE_DATA subresourceData = {};
+    if (data != nullptr) {
+        subresourceData.pSysMem = data;
+    }
+    
+    HRESULT hr = device->CreateBuffer(&desc, &subresourceData, &bufferObj->buffer);
+    if (FAILED(hr)) return false;
+
+    D3D11_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
+    // explicitly define it as a 32-bit float array
+    srvDesc.Format = DXGI_FORMAT_R32_FLOAT; 
+    srvDesc.ViewDimension = D3D11_SRV_DIMENSION_BUFFER;
+    srvDesc.Buffer.FirstElement = 0;
+    srvDesc.Buffer.NumElements = elementCount;
+    
+    hr = device->CreateShaderResourceView(bufferObj->buffer, &srvDesc, &bufferObj->srv);
+    return SUCCEEDED(hr);
+}
+
 bool GPU::CompileComputeShader(const std::wstring& file, const std::string& entryPoint, ID3D11ComputeShader** shader) {
     ID3DBlob* shaderBlob = nullptr;
     ID3DBlob* errorBlob = nullptr;
@@ -322,6 +352,10 @@ bool GPU::CompileComputeShader(const std::wstring& file, const std::string& entr
     device->CreateComputeShader(shaderBlob->GetBufferPointer(), shaderBlob->GetBufferSize(), nullptr, shader);
     shaderBlob->Release();
     return true;
+}
+
+void GPU::BindSRV(int slot, ID3D11ShaderResourceView* srv) {
+    context->CSSetShaderResources(slot, 1, &srv);
 }
 
 void GPU::Dispatch(ID3D11ComputeShader* shader, 
@@ -377,7 +411,7 @@ bool GPU::CompileFFTShaders(int size) {
 
     D3D_SHADER_MACRO arrayMacros[] = {
     { "FFT_SIZE", std::to_string(size).c_str() },
-    { "IS_ARRAY", "1" }, // IS_ARRAY IS defined!
+    { "IS_ARRAY", "1" },
     { NULL, NULL }};
     HRESULT hr1 = D3DCompileFromFile(L"shaders/fft.hlsl", arrayMacros, nullptr, "FFTKernel_1D", "cs_5_0", 0, 0, &shaderBlob, &errorBlob);
     if (FAILED(hr1)) {

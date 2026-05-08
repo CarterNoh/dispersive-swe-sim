@@ -18,7 +18,7 @@ public:
 	static constexpr float TERRAIN_HEIGHT = -10.f; // base height of terrain features (meters)
 	static constexpr float TERRAIN_SCALE = 15.f; // scale of terrain features (meters)
 	static constexpr int TERRAIN_TYPE = 0; // 0 = flat, 1 = ramp, 2 = bumps, 3 = basins, 4 = beach
-	static constexpr int WATER_TYPE = 0; // 0 = localized splash, 1 = step/dam break, 2 = basin flood
+	static constexpr int WATER_TYPE = 1; // 0 = localized splash, 1 = step/dam break, 2 = basin flood
 	static constexpr float WATER_LEVEL = 10.f; 
 	static constexpr float WATER_SCALE = 10.f; 
 	static constexpr int BOUNDARY_TYPE = 0; // 0 = wall, 1 = free
@@ -30,9 +30,9 @@ public:
 	static constexpr float DELTA_T = 0.25f;
 	static constexpr float DIFFUSION_PENALTY = 0.01f; // penalty factor for diffusion, higher means more diffusion and more stability but also more damping of waves
 	
-	// eWave, SWE, & Transport Parameters
-	static constexpr int DEPTH_NUM = 5;		// number of discrete water depth solutions to compute for eWave dispersion correction
-	static constexpr float Depth[5] = { 1.f, 2.f, 4.f, 16.f, 64.f };
+	// eWave Parameters
+	std::vector<float> depths = { 1.0f, 2.0f, 4.0f, 16.0f, 64.0f };
+	int DEPTH_NUM = depths.size(); // number of discrete water depth solutions to compute for eWave dispersion correction
 
 	// Transport Parameters
 	static constexpr float CFL_CONDITION = 0.25f;  // max allowed CFL condition for stability of SWE step, can be higher than overall CFL condition since diffusion and transport steps handle stability as well
@@ -56,6 +56,7 @@ public:
 		&hPast, &hbarOld, &htildeOld};
 	GPUField* fields_complex[6] = {&hHat, &qHat_x, &qHat_y, &dhHat_dx, &dhHat_dy, &wavenum};
 	GPUField* q_arrays[2] = {&qHat_x_array, &qHat_y_array};
+	GPUBuffer depth;
 
 	GPU* gpu;
 
@@ -93,8 +94,7 @@ private:
 					   "TransferToFFT", "CalcEWave", "InterpQ"};
 	SimConstants constants = {GRIDSIZE, CELLSIZE, TIMESTEP, BOUNDARY_TYPE, MIN_WATER_HEIGHT,// Sim Params
 							  DIFFUSION_ITERATIONS, DELTA_T, DIFFUSION_PENALTY, 			// Diffusion Params
-							  CFL_CONDITION, GAMMA_TRANSPORT, 								// SWE Params
-							  Depth[5], DEPTH_NUM};											// eWave Params
+							  CFL_CONDITION, GAMMA_TRANSPORT, DEPTH_NUM, depths[5]}; 				// SWE & eWave Params
 	RenderConstants render_constants = {DirectX::XMMatrixIdentity(), (float)GRIDSIZE, CELLSIZE, {0.f, 0.f}};
 
 };

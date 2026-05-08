@@ -23,10 +23,10 @@ struct SimConstants {
     float cflCondition;
     float gammaTransport;
     // eWave Params
-    float depth[5];
-    float depthNum;
-    // // Padding for 16-byte alignment
-    // float buffer[2];
+    int depthNum;
+    float depths[5];
+    // Padding for 16-byte alignment
+    // float buffer;
 };
 
 struct FFTConstants {
@@ -49,6 +49,12 @@ struct GPUField {
     ID3D11UnorderedAccessView* uav;  // write
 };
 
+struct GPUBuffer {
+    ID3D11Buffer* buffer = nullptr;
+    ID3D11ShaderResourceView* srv = nullptr;
+};
+
+
 class GPU {
 public:
     GPU();
@@ -62,7 +68,9 @@ public:
     bool CreateGridTexture(GPUField* field, int size, bool isComplex = false, int arraySize = 1);
     bool UploadToGPU(ID3D11Texture2D* tex, const std::vector<float>& data, int gridSize, bool isComplex = false, int arraySize = 1);
     bool DownloadFromGPU(ID3D11Texture2D* tex, std::vector<float>& data, int size);
+    bool CreateBuffer(GPUBuffer* bufferObj, const void* initData, UINT elementSize, UINT elementCount);
     bool CompileComputeShader(const std::wstring& file, const std::string& entryPoint, ID3D11ComputeShader** shader);
+    void BindSRV(int slot, ID3D11ShaderResourceView* srv);
     void Dispatch(ID3D11ComputeShader* shader, 
                   const std::vector<ID3D11ShaderResourceView*>& srvs, 
                   const std::vector<ID3D11UnorderedAccessView*>& uavs,
