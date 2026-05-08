@@ -366,6 +366,11 @@ void CalcSWE(uint3 id : SV_DispatchThreadID) {
     float q_x_0 = 0.5f * (q_x_m05 + q_x_p05);
     
     // Calculate h_(i+0.5,j) and h_(i-0.5,j) using upwinding
+    // float h_x_p05 = 0.f;
+    // if (in0[curr] >= 0.f)
+    //     h_x_p05 = in2[curr];
+    // else
+    //     h_x_p05 = in2[right];
     float h_x_p05 = (in2[curr] + in2[right]) / 2.f;
     float q_x_p15 = in0[right];  //q_(i+1.5,j) = hfr at position x
     if (q_x_p15 >= 0.f)
@@ -403,6 +408,11 @@ void CalcSWE(uint3 id : SV_DispatchThreadID) {
     float q_y_0 = 0.5f * (q_y_m05 + q_y_p05);
 
     // Calculate h_(i,j+0.5)
+    // float h_y_p05 = 0.f;
+    // if (in1[curr] >= 0.f)
+    //     h_y_p05 = in2[curr];
+    // else
+    //     h_y_p05 = in2[up];
     float h_y_p05 = (in2[curr] + in2[right]) / 2.f;
     float q_y_p15 = in1[up];  //q_(i+1.5,j) = hfr at position x
     if (q_y_p15 >= 0.f)
@@ -424,8 +434,10 @@ void CalcSWE(uint3 id : SV_DispatchThreadID) {
     	u_star_y_p1 = in0[up];
 
     // Compute dux_dt and duy_dt
-    float dux_dt = - (1/(cellSize*h_x_p05)) * ((q_x_p1 * u_star_x_p1 - q_x_0 * u_star_x_0) - in0[curr] * (q_x_p1 - q_x_0));
-    float duy_dt = - (1/(cellSize*h_y_p05)) * ((q_y_p1 * u_star_y_p1 - q_y_0 * u_star_y_0) - in1[curr] * (q_y_p1 - q_y_0));
+    // float dux_dt = - (1/cellSize) * ((q_x_0/h_x_p05) * (in0[curr] - in0[left]) + (q_y_m05/h_x_p05) * (in0[curr] - in0[down]));
+    // float duy_dt = - (1/cellSize) * ((q_y_0/h_y_p05) * (in1[curr] - in1[down]) + (q_x_m05/h_y_p05) * (in1[curr] - in1[left]));
+    float dux_dt = - (1/(cellSize * h_x_p05)) * ((q_x_p1 * u_star_x_p1 - q_x_0 * u_star_x_0) - in0[curr] * (q_x_p1 - q_x_0));
+    float duy_dt = - (1/(cellSize * h_y_p05)) * ((q_y_p1 * u_star_y_p1 - q_y_0 * u_star_y_0) - in1[curr] * (q_y_p1 - q_y_0));
     dux_dt -= (1/cellSize) * GRAVITY * (in3[right] - in3[curr]);
     duy_dt -= (1/cellSize) * GRAVITY * (in3[up] - in3[curr]);
     float ubarNew_x = LimitVelocity(in0[curr] + timeStep * dux_dt);  // Enforcing CFL condition
