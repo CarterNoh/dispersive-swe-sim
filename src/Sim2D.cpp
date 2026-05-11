@@ -145,7 +145,7 @@ int Sim::Release(void)
 void Sim::SimStep()
 {
 	DecompositionStep();
-	eWaveStep();
+	// eWaveStep();
 	// FFTStep();
 	SWEStep();
 	TransportStep();
@@ -191,8 +191,8 @@ void Sim::DecompositionStep() {
 		{htilde.uav, qtilde_x.uav, qtilde_y.uav});
 
 	gpu->Dispatch(InitDecomp, 
-		{h.srv, q_x.srv, q_y.srv, terrain.srv}, 
-		{H.uav, Q_x.uav, Q_y.uav});
+		{h.srv, nullptr, nullptr, terrain.srv}, 
+		{H.uav});
 }
 
 void Sim::eWaveStep() {
@@ -251,7 +251,7 @@ void Sim::TransportStep() {
 	std::swap(qtilde_y, qtildePast_y);
 	gpu->Dispatch(UpdateTilde, 
 		{ubarNew_x.srv, ubar_x.srv, ubarNew_y.srv, ubar_y.srv, 
-			qtildePast_x.srv, qtildePast_y.srv, h.srv},
+			qtildePast_x.srv, qtildePast_y.srv, h.srv, htilde.srv},
 		{qtilde_x.uav, qtilde_y.uav, htilde.uav});	
 	gpu->Dispatch(ApplyBoundaries, {}, 
 		{qtilde_x.uav, qtilde_y.uav, htilde.uav});
@@ -273,7 +273,7 @@ void Sim::ComputeValues() {
 	gpu->Dispatch(ApplyBoundaries, {}, 
 		{h.uav, q_x.uav, q_y.uav});
 
-	// gpu->Dispatch(InitDecomp, 
-	// 	{h.srv, q_x.srv, q_y.srv, terrain.srv}, 
-	// 	{H.uav, Q_x.uav, Q_y.uav});
+	gpu->Dispatch(InitDecomp, 
+		{h.srv, nullptr, nullptr, terrain.srv}, 
+		{H.uav});
 }

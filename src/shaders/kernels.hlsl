@@ -139,7 +139,8 @@ float2 ComplexMul(float2 a, float2 b) {
 void ApplyBoundaries(uint3 id : SV_DispatchThreadID){
     uint x = id.x;
     uint y = id.y;
-    if (x >= (uint)gridSize || y >= (uint)gridSize) return;
+    if (x < 0 || x >= (uint)(gridSize) || y < 0 || y >= (uint)(gridSize)) return;
+
     bool left   = (x == 0);
     bool right  = (x == (uint)gridSize - 1);
     bool bottom = (y == 0);
@@ -190,6 +191,7 @@ void ApplyBoundaries(uint3 id : SV_DispatchThreadID){
 void InitDecomp(uint3 id : SV_DispatchThreadID) {
     // Inputs: in0 = h, in1 = q_x, in2 = q_y, in3 = terrain
     // Outputs: out0 = H, out1 = Q_x, out2 = Q_y
+    if (id.x < 0 || id.x >= (uint)(gridSize) || id.y < 0 || id.y >= (uint)(gridSize)) return;
     out0[id.xy] = in0[id.xy] + in3[id.xy];
     out1[id.xy] = in1[id.xy];
     out2[id.xy] = in2[id.xy];
@@ -261,14 +263,15 @@ void DecomposeFields(uint3 id : SV_DispatchThreadID) {
     //         in3 = h, in4 = q_x, in5 = q_y, in6 = terrain
     // Outputs: out0 = hbar, out1 = qbar_x, out2 = qbar_y, 
     //          out3 = htilde, out4 = qtilde_x, out5 = qtilde_y
-    if (id.x >= (uint)(gridSize - 1) || id.y >= (uint)(gridSize - 1)) return;
+    if (id.x < 0 || id.x >= (uint)(gridSize - 1) || id.y < 0 || id.y >= (uint)(gridSize - 1)) return;
 
-    out0[id.xy] = max(0.f, in0[id.xy] - in6[id.xy]);
+    float hbar = max(0.f, in0[id.xy] - in6[id.xy]);
+    out0[id.xy] = hbar;
     out1[id.xy] = in1[id.xy];
     out2[id.xy] = in2[id.xy];
-    out3[id.xy] = in3[id.xy] - out0[id.xy];
-    out4[id.xy] = in4[id.xy] - out1[id.xy];
-    out5[id.xy] = in5[id.xy] - out2[id.xy];
+    out3[id.xy] = in3[id.xy] - hbar;
+    out4[id.xy] = in4[id.xy] - in1[id.xy];
+    out5[id.xy] = in5[id.xy] - in2[id.xy];
 
     // // Airy Only
     // out0[id.xy] = max(0.f, in0[id.xy] - in6[id.xy]);
@@ -456,7 +459,7 @@ void CalcSWE(uint3 id : SV_DispatchThreadID) {
 [numthreads(16, 16, 1)]
 void UpdateTilde(uint3 id : SV_DispatchThreadID) {
     // Inputs: in0 = ubarNew_x, in1 = ubar_x, in2 = ubarNew_y, in3 = ubar_y, 
-    //         in4 = qtildePast_x, in5 = qtildePast_y, in6 = h
+    //         in4 = qtildePast_x, in5 = qtildePast_y, in6 = h, in7 = htilde
     // Outputs: out0 = qtilde_x, out1 = qtilde_y, out2 = htilde
     if (id.x < 1 || id.x >= (uint)(gridSize - 1) || id.y < 1 || id.y >= (uint)(gridSize - 1)) return;
 
@@ -497,7 +500,7 @@ void UpdateTilde(uint3 id : SV_DispatchThreadID) {
     div_ubar = div_ubar_x + div_ubar_y;
     if (div_ubar < 0.f) // dampen if converging to avoid breaking waves
         div_ubar *= gammaTransport;
-    out2[id.xy] = out2[id.xy] * exp(-div_ubar * timeStep);
+    out2[id.xy] = in7[id.xy] * exp(-div_ubar * timeStep);
 }
 
 [numthreads(16, 16, 1)]
@@ -505,6 +508,7 @@ void CalcQAdvect(uint3 id : SV_DispatchThreadID) {
     // Inputs: in0 = ubarNew_x, in1 = ubarNew_y, in2 = htilde
     // Outputs: out0 = qAdvect_x, out1 = qAdvect_y
     // cubic reconstruction: 1/2 cell accounts for staggered grid, 0.5 * dt accounts for h and u at different 1/2 times
+    if (id.x < 0 || id.x >= (uint)(gridSize) || id.y < 0 || id.y >= (uint)(gridSize)) return;
     float step_x = 0.5f - in0[id.xy] * (0.5f * timeStep) / cellSize;
     float step_y = 0.5f - in1[id.xy] * (0.5f * timeStep) / cellSize; 
     out0[id.xy] = in0[id.xy] * SampleCubicClamped(in2, id.x + step_x, id.xy, false);  
@@ -561,6 +565,7 @@ RWTexture2D<float2> qHat_y: register(u3); // Complex
 void TransferToFFT(uint3 id : SV_DispatchThreadID) {
     // Inputs: in0 = htilde, in1 = qtilde_x, in2 = qtilde_y
     // Outputs: out0 = htildeOld, out1 = hHat, out2 = qHat_x, out3 = qHat_y
+    if (id.x < 0 || id.x >= (uint)(gridSize) || id.y < 0 || id.y >= (uint)(gridSize)) return;
 
     // Average htilde in time to get on same timestep as q, then prep variables for FFT
     float h_real = 0.5 * (in0[id.xy] + out0[id.xy]);
@@ -579,6 +584,7 @@ RWTexture2DArray<float2> qhat_y_array: register(u1);
 void CalcEWave(uint3 id : SV_DispatchThreadID) {
     // Inputs: in0 = hHat, in1 = qHat_x, in2 = qHat_y, in3 = depth
     // Outputs: out0 = qHat_x_array, qHat_y_array
+    if (id.x < 0 || id.x >= (uint)(gridSize) || id.y < 0 || id.y >= (uint)(gridSize)) return;
 
     // Early return for DC component 
     if (id.x == 0 && id.y == 0) {
