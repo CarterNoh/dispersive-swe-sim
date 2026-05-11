@@ -17,19 +17,7 @@ GPU::~GPU() {
     if (device) device->Release();
 }
 
-bool GPU::Init(int size) {
-    // Create a headless D3D11 device
-    UINT createDeviceFlags = 0;
-    // #ifdef _DEBUG
-    //     createDeviceFlags |= D3D11_CREATE_DEVICE_DEBUG;
-    // #endif
-
-    /*** Create Device ***/
-    D3D_FEATURE_LEVEL featureLevel;
-    HRESULT hr = D3D11CreateDevice(nullptr, D3D_DRIVER_TYPE_HARDWARE, nullptr, createDeviceFlags,
-                                   nullptr, 0, D3D11_SDK_VERSION, &device, &featureLevel, &context);
-    if (FAILED(hr)) return false;
-
+bool GPU::BaseInit(int size) {
     /*** Compute Shaders ***/
     group = (size + 15) / 16; // size for shader dispatch
     // Create Compute Constant Buffer
@@ -71,6 +59,17 @@ bool GPU::Init(int size) {
         std::cerr << "ERROR: Failed to create FFT shaders." << std::endl;
         return false;
     }
+}
+
+bool GPU::Init(int size) {
+    // Create a headless D3D11 device
+    UINT createDeviceFlags = 0;
+    D3D_FEATURE_LEVEL featureLevel;
+    HRESULT hr = D3D11CreateDevice(nullptr, D3D_DRIVER_TYPE_HARDWARE, nullptr, createDeviceFlags,
+                                   nullptr, 0, D3D11_SDK_VERSION, &device, &featureLevel, &context);
+    if (FAILED(hr)) return false;
+
+    BaseInit(size);    
 
     return true;
 }
@@ -123,48 +122,6 @@ bool GPU::Init(int size, HWND hwnd) {
     // Bind it to the pipeline
     context->RSSetState(rasterState);
 
-    /*** Compute Shaders ***/
-    group = (size + 15) / 16; // size for shader dispatch
-    // Create the Sim Constant Buffer
-    if (sizeof(SimConstants) % 16 != 0) {
-        std::cerr << "CRITICAL ERROR: SimConstants is " << sizeof(SimConstants) 
-                  << " bytes. It MUST be a multiple of 16. Add padding!" << std::endl;
-        return false;
-    }
-    D3D11_BUFFER_DESC cbDesc = {};
-    cbDesc.ByteWidth = sizeof(SimConstants);
-    cbDesc.Usage = D3D11_USAGE_DYNAMIC;
-    cbDesc.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
-    cbDesc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
-    HRESULT hr_cb = device->CreateBuffer(&cbDesc, nullptr, &constantBuffer);
-    if (FAILED(hr_cb)) {
-        std::cerr << "ERROR: Failed to create Constant Buffer." << std::endl;
-        return false;
-    }
-
-    /*** FFT ***/
-    // Create FFT Constant Buffer
-    if (sizeof(FFTConstants) % 16 != 0) {
-        std::cerr << "CRITICAL ERROR: FFTConstants is " << sizeof(FFTConstants) 
-                  << " bytes. It MUST be a multiple of 16. Add padding!" << std::endl;
-        return false;
-    }
-    D3D11_BUFFER_DESC fftCbDesc = {};
-    fftCbDesc.ByteWidth = sizeof(FFTConstants);
-    fftCbDesc.Usage = D3D11_USAGE_DYNAMIC;
-    fftCbDesc.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
-    fftCbDesc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
-    HRESULT hr_fft_cb = device->CreateBuffer(&fftCbDesc, nullptr, &fftConstantBuffer);
-    if (FAILED(hr_fft_cb)) {
-        std::cerr << "ERROR: Failed to create FFT Constant Buffer." << std::endl;
-        return false;
-    }
-    // Compile FFT Shader
-    if (!CompileFFTShaders(size)) {
-        std::cerr << "ERROR: Failed to create FFT shaders." << std::endl;
-        return false;
-    }
-
     /*** Rendering ***/
     // Create the Render Constant Buffer
     if (sizeof(RenderConstants) % 16 != 0) {
@@ -201,6 +158,9 @@ bool GPU::Init(int size, HWND hwnd) {
     sampDesc.AddressW = D3D11_TEXTURE_ADDRESS_CLAMP;
     sampDesc.ComparisonFunc = D3D11_COMPARISON_NEVER;
     device->CreateSamplerState(&sampDesc, &samplerState);
+
+    /*** Everything Else ***/
+    BaseInit(size);
 
     return true;
 }
@@ -309,34 +269,66 @@ bool GPU::DownloadFromGPU(ID3D11Texture2D* tex, std::vector<float>& data, int si
     return false;
 }
 
-bool GPU::CreateBuffer(GPUBuffer* bufferObj, const void* data, UINT elementSize, UINT elementCount) {
+bool GPU::CreateBuffer(GPUBuffer* bufferObj, const void* data, UINT elementCount) {
     if (!bufferObj) return false;
 
     D3D11_BUFFER_DESC desc = {};
-    desc.Usage = D3D11_USAGE_DEFAULT; 
-    desc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
-    // REMOVE the MiscFlags Structured tag completely
-    desc.MiscFlags = 0; 
-    desc.StructureByteStride = 0;
-    desc.ByteWidth = (elementSize * elementCount);
-    
-    D3D11_SUBRESOURCE_DATA subresourceData = {};
-    if (data != nullptr) {
-        subresourceData.pSysMem = data;
-    }
-    
-    HRESULT hr = device->CreateBuffer(&desc, &subresourceData, &bufferObj->buffer);
+    desc.BindFlags = D3D11_BIND_UNORDERED_ACCESS | D3D11_BIND_SHADER_RESOURCE;
+    desc.ByteWidth = UINT(elementCount * sizeof(float));
+    desc.MiscFlags = D3D11_RESOURCE_MISC_BUFFER_STRUCTURED;
+    desc.StructureByteStride = sizeof(float);
+    desc.Usage = D3D11_USAGE_DEFAULT;
+    D3D11_SUBRESOURCE_DATA initData = {};
+    initData.pSysMem = data;
+    HRESULT hr = device->CreateBuffer(&desc, &initData, &bufferObj->buf);
     if (FAILED(hr)) return false;
 
     D3D11_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
-    // explicitly define it as a 32-bit float array
-    srvDesc.Format = DXGI_FORMAT_R32_FLOAT; 
+    srvDesc.Format = DXGI_FORMAT_UNKNOWN; 
     srvDesc.ViewDimension = D3D11_SRV_DIMENSION_BUFFER;
     srvDesc.Buffer.FirstElement = 0;
     srvDesc.Buffer.NumElements = elementCount;
+    hr = device->CreateShaderResourceView(bufferObj->buf, &srvDesc, &bufferObj->srv);
+    if (FAILED(hr)) return false;
     
-    hr = device->CreateShaderResourceView(bufferObj->buffer, &srvDesc, &bufferObj->srv);
-    return SUCCEEDED(hr);
+    D3D11_UNORDERED_ACCESS_VIEW_DESC uavDesc = {};
+    uavDesc.Format = DXGI_FORMAT_UNKNOWN;
+    uavDesc.ViewDimension = D3D11_UAV_DIMENSION_BUFFER;
+    uavDesc.Buffer.FirstElement = 0;
+    uavDesc.Buffer.NumElements = elementCount;
+    hr = device->CreateUnorderedAccessView(bufferObj->buf, &uavDesc, &bufferObj->uav);
+    if (FAILED(hr)) return false;
+
+    return true; 
+}
+
+bool GPU::DownloadBuffer(ID3D11Buffer* buf, std::vector<float>& data, int size) {
+    if (!stagingBuf) {
+        D3D11_BUFFER_DESC stDesc = {};
+        buf->GetDesc(&stDesc);
+        stDesc.Usage = D3D11_USAGE_STAGING;
+        stDesc.BindFlags = 0;
+        stDesc.MiscFlags = D3D11_RESOURCE_MISC_BUFFER_STRUCTURED;
+        stDesc.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
+        stDesc.ByteWidth = UINT(size * sizeof(float));
+        stDesc.StructureByteStride = sizeof(float);
+        device->CreateBuffer(&stDesc, nullptr, &stagingBuf);
+    }
+    // Copy from VRAM to System RAM accessible buffer
+    context->CopyResource(stagingBuf, buf);
+
+    D3D11_MAPPED_SUBRESOURCE mapped;
+    if (SUCCEEDED(context->Map(stagingBuf, 0, D3D11_MAP_READ, 0, &mapped))) {
+        if (data.size() < size) {
+            data.resize(size);
+        }
+        float* pData = reinterpret_cast<float*>(mapped.pData); // (float*)
+        memcpy(data.data(), pData, size * sizeof(float));
+        context->Unmap(stagingBuf, 0);
+        return true;
+    }
+
+    return false;
 }
 
 bool GPU::CompileComputeShader(const std::wstring& file, const std::string& entryPoint, ID3D11ComputeShader** shader) {

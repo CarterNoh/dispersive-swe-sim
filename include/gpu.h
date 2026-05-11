@@ -24,9 +24,8 @@ struct SimConstants {
     float gammaTransport;
     // eWave Params
     int depthNum;
-    float depths[5];
     // Padding for 16-byte alignment
-    // float buffer;
+    float buffer;
 };
 
 struct FFTConstants {
@@ -50,8 +49,9 @@ struct GPUField {
 };
 
 struct GPUBuffer {
-    ID3D11Buffer* buffer = nullptr;
-    ID3D11ShaderResourceView* srv = nullptr;
+    ID3D11Buffer* buf;
+    ID3D11ShaderResourceView* srv;
+    ID3D11UnorderedAccessView* uav;  // write
 };
 
 
@@ -60,15 +60,17 @@ public:
     GPU();
     ~GPU();
 
+    bool BaseInit(int size);
     bool Init(int size); // For headless compute
-    bool Init(int size, HWND hwnd);
+    bool Init(int size, HWND hwnd); // For rendering
 
     // Compute Shaders
     void UpdateConstants(const SimConstants& constants);
     bool CreateGridTexture(GPUField* field, int size, bool isComplex = false, int arraySize = 1);
     bool UploadToGPU(ID3D11Texture2D* tex, const std::vector<float>& data, int gridSize, bool isComplex = false, int arraySize = 1);
     bool DownloadFromGPU(ID3D11Texture2D* tex, std::vector<float>& data, int size);
-    bool CreateBuffer(GPUBuffer* bufferObj, const void* initData, UINT elementSize, UINT elementCount);
+    bool CreateBuffer(GPUBuffer* bufferObj, const void* initData, UINT elementCount);
+    bool DownloadBuffer(ID3D11Buffer* buf, std::vector<float>& data, int size);
     bool CompileComputeShader(const std::wstring& file, const std::string& entryPoint, ID3D11ComputeShader** shader);
     void BindSRV(int slot, ID3D11ShaderResourceView* srv);
     void Dispatch(ID3D11ComputeShader* shader, 
@@ -98,6 +100,7 @@ private:
     ID3D11DeviceContext* context = nullptr;
     ID3D11Buffer* constantBuffer = nullptr;
     ID3D11Texture2D* stagingTex = nullptr; // Used to download data back to CPU
+    ID3D11Buffer* stagingBuf = nullptr;
     
     // FFT
     ID3D11Buffer* fftConstantBuffer = nullptr;
@@ -118,6 +121,4 @@ private:
     ID3D11DepthStencilView* depthStencilView = nullptr;
     ID3D11Buffer* indexBuffer = nullptr;
     UINT indexCount = 0; // We need to remember how many indices to draw
-
-    
 };

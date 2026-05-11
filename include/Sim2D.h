@@ -18,7 +18,7 @@ public:
 	static constexpr float TERRAIN_HEIGHT = -10.f; // base height of terrain features (meters)
 	static constexpr float TERRAIN_SCALE = 15.f; // scale of terrain features (meters)
 	static constexpr int TERRAIN_TYPE = 0; // 0 = flat, 1 = ramp, 2 = bumps, 3 = basins, 4 = beach
-	static constexpr int WATER_TYPE = 1; // 0 = localized splash, 1 = step/dam break, 2 = basin flood
+	static constexpr int WATER_TYPE = 0; // 0 = localized splash, 1 = step/dam break, 2 = basin flood
 	static constexpr float WATER_LEVEL = 10.f; 
 	static constexpr float WATER_SCALE = 10.f; 
 	static constexpr int BOUNDARY_TYPE = 0; // 0 = wall, 1 = free
@@ -94,7 +94,7 @@ private:
 					   "TransferToFFT", "CalcEWave", "InterpQ"};
 	SimConstants constants = {GRIDSIZE, CELLSIZE, TIMESTEP, BOUNDARY_TYPE, MIN_WATER_HEIGHT,// Sim Params
 							  DIFFUSION_ITERATIONS, DELTA_T, DIFFUSION_PENALTY, 			// Diffusion Params
-							  CFL_CONDITION, GAMMA_TRANSPORT, DEPTH_NUM, depths[5]}; 				// SWE & eWave Params
+							  CFL_CONDITION, GAMMA_TRANSPORT, DEPTH_NUM, 0.0f}; 				// SWE & eWave Params
 	RenderConstants render_constants = {DirectX::XMMatrixIdentity(), (float)GRIDSIZE, CELLSIZE, {0.f, 0.f}};
 
 };

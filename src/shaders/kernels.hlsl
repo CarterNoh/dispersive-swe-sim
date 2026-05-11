@@ -18,14 +18,9 @@ cbuffer Constants : register(b0) {
 
     // eWave params
     int depthNum;
-    float depth0; 
-    float depth1;
-    float depth2;
-    float depth3;
-    float depth4;
 
     // Padding for 16-byte alignment 
-    // float buffer;
+    float buffer;
 };
 
 #define GRAVITY 9.80665
@@ -40,7 +35,7 @@ Texture2D<float>   in4 : register(t4);
 Texture2D<float>   in5 : register(t5);
 Texture2D<float>   in6 : register(t6);
 Texture2D<float>   in7 : register(t7);
-Buffer<float>      in8 : register(t8);
+StructuredBuffer<float> in8 : register(t8);
 RWTexture2D<float> out0: register(u0);
 RWTexture2D<float> out1: register(u1);
 RWTexture2D<float> out2: register(u2);
@@ -592,8 +587,6 @@ void CalcEWave(uint3 id : SV_DispatchThreadID) {
         return;
     }
 
-    float Depth[5] = {depth0, depth1, depth2, depth3, depth4};
-
     ///// Wave Number ///////
     // Calculate the physical size of the grid and the frequency step (dK)
     float domainSize = (float)gridSize * cellSize;
@@ -613,11 +606,11 @@ void CalcEWave(uint3 id : SV_DispatchThreadID) {
 
     /////// Dispersion ///////
     // numerical dispersion correction
-    // float beta = sqrt(2.0 / (k * cellSize) * sin(k * cellSize / 2.0)); 
+    float beta = sqrt(2.0 / (k * cellSize) * sin(k * cellSize / 2.0)); 
     // float beta = sqrt(2.0 * k / cellSize * sin(k * cellSize / 2.0)); 
-    float beta = 1;
+    // float beta = 1;
     // Angular frequency for dispersion relation
-    float omega = sqrt(GRAVITY * k * tanh(k * Depth[id.z])) / beta;
+    float omega = sqrt(GRAVITY * k * tanh(k * in8[id.z])) / beta;
     float S = sin(omega * timeStep) * omega / (k * k);
     float C = cos(omega * timeStep);
     float Ck = (C-1) * kx_ * ky_;
@@ -662,7 +655,7 @@ void CalcEWave(uint3 id : SV_DispatchThreadID) {
     float qx_i = (C*kx2 + ky2) * qhat_x[id.xy].y + Ck * qy_shifted.y - kx_ * S * dhdx.y;
     float qy_r = (C*ky2 + kx2) * qhat_y[id.xy].x + Ck * qx_shifted.x - ky_ * S * dhdy.x;
     float qy_i = (C*ky2 + kx2) * qhat_y[id.xy].y + Ck * qx_shifted.y - ky_ * S * dhdy.y;
-    // float qx_r = (C*kx2 + ky2) * qhat_x[id.xy].x + Ck * qy_shifted.x - S * dhdx.x;
+    // float qx_r = (C*kx2 + ky2) * qhat_x[id.xy].x + Ck * qy_shifted.x - S * dhdx.x; // Above but minus the k term on dhdt
     // float qx_i = (C*kx2 + ky2) * qhat_x[id.xy].y + Ck * qy_shifted.y - S * dhdx.y;
     // float qy_r = (C*ky2 + kx2) * qhat_y[id.xy].x + Ck * qx_shifted.x - S * dhdy.x;
     // float qy_i = (C*ky2 + kx2) * qhat_y[id.xy].y + Ck * qx_shifted.y - S * dhdy.y;
@@ -685,8 +678,6 @@ void InterpQ(uint3 id : SV_DispatchThreadID) {
     // Outputs: qtilde_x, qtilde_y
     if (id.x < 1 || id.x >= (uint)(gridSize - 1) || id.y < 1 || id.y >= (uint)(gridSize - 1)) return;
 
-    // float depth[5] = {depth0, depth1, depth2, depth3, depth4};
-
     float waterDepth_x = max(hbar[id.xy], hbar[id.xy + uint2(1, 0)]);
     float waterDepth_y = max(hbar[id.xy], hbar[id.xy + uint2(0, 1)]);
     int d1_x = 0;
@@ -703,8 +694,6 @@ void InterpQ(uint3 id : SV_DispatchThreadID) {
         sx = (in8[d2_x] - waterDepth_x) / (in8[d2_x] - in8[d1_x]);
     if (d1_y != d2_y)
         sy = (in8[d2_y] - waterDepth_y) / (in8[d2_y] - in8[d1_y]);
-    // sx = saturate(sx);
-    // sy = saturate(sy);
     
     qtilde_x[id.xy] = sx * qHat_x_array[uint3(id.x, id.y, d1_x)].x + (1.f - sx) * qHat_x_array[uint3(id.x, id.y, d2_x)].x;
     qtilde_y[id.xy] = sy * qHat_y_array[uint3(id.x, id.y, d1_y)].x + (1.f - sy) * qHat_y_array[uint3(id.x, id.y, d2_y)].x;
