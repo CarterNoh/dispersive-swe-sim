@@ -18,7 +18,7 @@ public:
 	static constexpr float TERRAIN_HEIGHT = -10.f; // base height of terrain features (meters)
 	static constexpr float TERRAIN_SCALE = 15.f; // scale of terrain features (meters)
 	static constexpr int TERRAIN_TYPE = 0; // 0 = flat, 1 = ramp, 2 = bumps, 3 = basins, 4 = beach
-	static constexpr int WATER_TYPE = 0; // 0 = localized splash, 1 = step/dam break, 2 = basin flood
+	static constexpr int WATER_TYPE = 1; // 0 = localized splash, 1 = step/dam break, 2 = basin flood
 	static constexpr float WATER_LEVEL = 10.f; 
 	static constexpr float WATER_SCALE = 10.f; 
 	static constexpr int BOUNDARY_TYPE = 0; // 0 = wall, 1 = free
@@ -45,8 +45,7 @@ public:
 			 ubar_x, ubar_y, ubarNew_x, ubarNew_y,
 			 qtildePast_x, qtildePast_y, qAdvect_x, qAdvect_y, 
 			 hPast, hbarOld, htildeOld, 
-			 hHat, qHat_x, qHat_y, wavenum, dhHat_dx, dhHat_dy,
-			 qHat_x_array, qHat_y_array, qtilde_x_array, qtilde_y_array;
+			 hHat, qHat_x, qHat_y, qHat_x_array, qHat_y_array;
 	GPUField* fields[30] = {
 		&terrain, &H, &Q_x, &Q_y, &h, &q_x, &q_y,
 		&HPast, &QPast_x, &QPast_y, &alpha_H, &alpha_Q_x, &alpha_Q_y,
@@ -54,8 +53,8 @@ public:
 		&ubar_x, &ubar_y, &ubarNew_x, &ubarNew_y,
 		&qtildePast_x, &qtildePast_y, &qAdvect_x, &qAdvect_y,
 		&hPast, &hbarOld, &htildeOld};
-	GPUField* fields_complex[6] = {&hHat, &qHat_x, &qHat_y, &dhHat_dx, &dhHat_dy, &wavenum};
-	GPUField* q_arrays[2] = {&qHat_x_array, &qHat_y_array};
+	GPUField* fields_complex[3] = {&hHat, &qHat_x, &qHat_y};
+	GPUField* fields_arrays[2] = {&qHat_x_array, &qHat_y_array};
 	GPUBuffer depth;
 
 	GPU* gpu;

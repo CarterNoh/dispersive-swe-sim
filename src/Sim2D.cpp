@@ -92,9 +92,9 @@ void Sim::Init(GPU* gpu) {
 		gpu->UploadToGPU(fields_complex[i]->tex, temp, GRIDSIZE, true);
 	}
 	for (int i = 0; i < 2; i++) {
-		gpu->CreateGridTexture(q_arrays[i], GRIDSIZE, true, DEPTH_NUM);
+		gpu->CreateGridTexture(fields_arrays[i], GRIDSIZE, true, DEPTH_NUM);
 		std::vector<float> temp(GRIDSIZE * GRIDSIZE * DEPTH_NUM * 2, 0.0f);
-		gpu->UploadToGPU(q_arrays[i]->tex, temp, GRIDSIZE, true, DEPTH_NUM);
+		gpu->UploadToGPU(fields_arrays[i]->tex, temp, GRIDSIZE, true, DEPTH_NUM);
 	}
 	gpu->CreateBuffer(&depth, depths.data(), DEPTH_NUM);
 	gpu->BindSRV(8, depth.srv);
@@ -111,16 +111,14 @@ void Sim::Init(GPU* gpu) {
 	gpu->UploadToGPU(hbarOld.tex, h_temp, GRIDSIZE);
 }
 
-Sim::Sim()
-{
+Sim::Sim() {
 	// Init GPU
 	gpu = new GPU();
 	if (!gpu->Init(GRIDSIZE)) std::cerr << "GPU INIT FAILED" << std::endl;
 	Sim::Init(gpu);
 }
 
-Sim::Sim(HWND hwnd = nullptr)
-{
+Sim::Sim(HWND hwnd = nullptr) {
 	gpu = new GPU();
 	if (!gpu->Init(GRIDSIZE, hwnd)) std::cerr << "GPU INIT FAILED" << std::endl;
 	Sim::Init(gpu);
@@ -132,8 +130,7 @@ Sim::Sim(HWND hwnd = nullptr)
 	gpu->CreateGridVertexBuffer(GRIDSIZE);
 }
 
-int Sim::Release(void)
-{
+int Sim::Release(void) {
 	return 0;
 }
 
@@ -142,8 +139,7 @@ int Sim::Release(void)
 // Simulation functions
 // ********************************************************************************************************************
 
-void Sim::SimStep()
-{
+void Sim::SimStep() {
 	DecompositionStep();
 	eWaveStep();
 	// FFTStep();
