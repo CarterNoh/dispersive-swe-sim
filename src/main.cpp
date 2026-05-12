@@ -16,8 +16,8 @@ extern "C" {
 namespace fs = std::filesystem;
 
 // Parameters
-int numTicks = 100; // Number of simulation steps to run
-bool render = false; // Whether to render the simulation or just run it headless
+int numTicks = 5000; // Number of simulation steps to run
+bool render = true; // Whether to render the simulation or just run it headless
 
 void SaveToCSV(const std::vector<float>& h, int size, int tick) {
     if (!fs::exists("data")) {
@@ -89,8 +89,8 @@ void SaveToCSV(const std::vector<std::complex<float>>& data, int size, int array
                 file //<< x << "," 
                      //<< y << "," 
                      //<< layer << "," 
-                    //  << val.real() << "," 
-                     << val.imag() << "," 
+                     << val.real() << "," 
+                    //  << val.imag() << "," 
                      //<< magnitude 
                      //<< "\n"
                      ;
@@ -235,11 +235,11 @@ int RunHeadless() {
     for (int tick = 1; tick < numTicks; ++tick) {
         auto start = std::chrono::high_resolution_clock::now();
         sim.SimStep();
-        // sim.gpu->DownloadFromGPU(sim.qHat_x_array.tex, array, size);
-        sim.gpu->DownloadFromGPU(sim.qHat_x_array.tex, array, size, arraySize);
-        // SaveToCSV(H, size, tick);
+        sim.gpu->DownloadFromGPU(sim.qtilde_x.tex, H, size);
+        SaveToCSV(H, size, tick);
         // SaveToCSV(hHat, size, tick);
-        SaveToCSV(array, size, arraySize, tick);
+        // sim.gpu->DownloadFromGPU(sim.qHat_x_array.tex, array, size, arraySize);
+        // SaveToCSV(array, size, arraySize, tick);
 
         auto sim_time = std::chrono::high_resolution_clock::now();
         std::chrono::duration<double, std::milli> elapsed = sim_time - start;

@@ -145,7 +145,7 @@ int Sim::Release(void)
 void Sim::SimStep()
 {
 	DecompositionStep();
-	// eWaveStep();
+	eWaveStep();
 	// FFTStep();
 	SWEStep();
 	TransportStep();
