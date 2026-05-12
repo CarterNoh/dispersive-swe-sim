@@ -253,10 +253,8 @@ bool GPU::DownloadFromGPU(ID3D11Texture2D* tex, std::vector<float>& data, int si
         stDesc.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
         device->CreateTexture2D(&stDesc, nullptr, &stagingTex);
     }
-
     // Copy from VRAM to System RAM accessible texture
     context->CopyResource(stagingTex, tex);
-
     D3D11_MAPPED_SUBRESOURCE mapped;
     if (SUCCEEDED(context->Map(stagingTex, 0, D3D11_MAP_READ, 0, &mapped))) {
         float* pData = reinterpret_cast<float*>(mapped.pData);
@@ -267,6 +265,67 @@ bool GPU::DownloadFromGPU(ID3D11Texture2D* tex, std::vector<float>& data, int si
         return true;
     }
     return false;
+}
+
+bool GPU::DownloadFromGPU(ID3D11Texture2D* tex, std::vector<std::complex<float>>& data, int size) {
+    if (!stagingComplexTex) {
+        D3D11_TEXTURE2D_DESC stDesc = {};
+        tex->GetDesc(&stDesc);
+        stDesc.Usage = D3D11_USAGE_STAGING;
+        stDesc.BindFlags = 0;
+        stDesc.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
+        device->CreateTexture2D(&stDesc, nullptr, &stagingComplexTex);
+    }
+    context->CopyResource(stagingComplexTex, tex);
+    D3D11_MAPPED_SUBRESOURCE mapped;
+    if (SUCCEEDED(context->Map(stagingComplexTex, 0, D3D11_MAP_READ, 0, &mapped))) {
+        if (data.size() < size * size) data.resize(size * size);
+        // Safely cast the raw VRAM bytes to the standard complex type
+        std::complex<float>* pData = reinterpret_cast<std::complex<float>*>(mapped.pData);
+        for (int y = 0; y < size; ++y) {
+            memcpy(&data[y * size], 
+                   pData + y * (mapped.RowPitch / sizeof(std::complex<float>)), 
+                   size * sizeof(std::complex<float>));
+        }
+        context->Unmap(stagingComplexTex, 0);
+        return true;
+    }
+    return false;
+}
+
+bool GPU::DownloadFromGPU(ID3D11Texture2D* tex, std::vector<std::complex<float>>& data, int size, int arraySize) {
+    if (!stagingComplexArrayTex) {
+        D3D11_TEXTURE2D_DESC stDesc = {};
+        tex->GetDesc(&stDesc);
+        stDesc.Usage = D3D11_USAGE_STAGING;
+        stDesc.BindFlags = 0;
+        stDesc.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
+        device->CreateTexture2D(&stDesc, nullptr, &stagingComplexArrayTex);
+    }
+    context->CopyResource(stagingComplexArrayTex, tex);
+    int elementsPerLayer = size * size;
+    int totalElements = elementsPerLayer * arraySize;
+    if (data.size() < totalElements) {
+        data.resize(totalElements);
+    }
+    for (int slice = 0; slice < arraySize; ++slice) {
+        UINT subresource = D3D11CalcSubresource(0, slice, 1);
+        D3D11_MAPPED_SUBRESOURCE mapped;
+        if (SUCCEEDED(context->Map(stagingComplexArrayTex, subresource, D3D11_MAP_READ, 0, &mapped))) {
+            std::complex<float>* pData = reinterpret_cast<std::complex<float>*>(mapped.pData);
+            int sliceMemoryOffset = slice * elementsPerLayer;
+            for (int y = 0; y < size; ++y) {
+                memcpy(&data[sliceMemoryOffset + (y * size)], 
+                       pData + y * (mapped.RowPitch / sizeof(std::complex<float>)), 
+                       size * sizeof(std::complex<float>));
+            }
+            context->Unmap(stagingComplexArrayTex, subresource);
+        } else {
+            return false; // Failed to map a specific slice
+        }
+    }
+    
+    return true;
 }
 
 bool GPU::CreateBuffer(GPUBuffer* bufferObj, const void* data, UINT elementCount) {

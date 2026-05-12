@@ -69,8 +69,11 @@ out = cv2.VideoWriter(output_video, cv2.VideoWriter_fourcc(*'mp4v'), fps, (width
 if not out.isOpened():
     raise RuntimeError("VideoWriter failed to open")
 for i in range(len(files)):
-    frame = update(i)      
-    out.write(frame)
+    # frame = update(i)      
+    # out.write(frame)
+    data = np.genfromtxt(files[i], delimiter=',')
+    data = data[~np.isnan(data)]
+    print(max(data))
     if i % 10 == 0:
         print(f"Processed frame {i}/{len(files)}")
 out.release()

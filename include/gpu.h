@@ -2,6 +2,7 @@
 #include <d3d11.h>
 #include <d3dcompiler.h>
 #include <vector>
+#include <complex>
 #include <string>
 #include <iostream>
 #include <dxgi.h>
@@ -54,7 +55,6 @@ struct GPUBuffer {
     ID3D11UnorderedAccessView* uav;  // write
 };
 
-
 class GPU {
 public:
     GPU();
@@ -69,6 +69,8 @@ public:
     bool CreateGridTexture(GPUField* field, int size, bool isComplex = false, int arraySize = 1);
     bool UploadToGPU(ID3D11Texture2D* tex, const std::vector<float>& data, int gridSize, bool isComplex = false, int arraySize = 1);
     bool DownloadFromGPU(ID3D11Texture2D* tex, std::vector<float>& data, int size);
+    bool DownloadFromGPU(ID3D11Texture2D* tex, std::vector<std::complex<float>>& data, int size);
+    bool DownloadFromGPU(ID3D11Texture2D* tex, std::vector<std::complex<float>>& data, int size, int arraySize);
     bool CreateBuffer(GPUBuffer* bufferObj, const void* initData, UINT elementCount);
     bool DownloadBuffer(ID3D11Buffer* buf, std::vector<float>& data, int size);
     bool CompileComputeShader(const std::wstring& file, const std::string& entryPoint, ID3D11ComputeShader** shader);
@@ -100,6 +102,8 @@ private:
     ID3D11DeviceContext* context = nullptr;
     ID3D11Buffer* constantBuffer = nullptr;
     ID3D11Texture2D* stagingTex = nullptr; // Used to download data back to CPU
+    ID3D11Texture2D* stagingComplexTex = nullptr;
+    ID3D11Texture2D* stagingComplexArrayTex = nullptr;
     ID3D11Buffer* stagingBuf = nullptr;
     
     // FFT

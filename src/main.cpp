@@ -1,5 +1,6 @@
 #include <iostream>
 #include <vector>
+#include <complex>
 #include <chrono>
 #include <string>
 #include <fstream>
@@ -15,8 +16,8 @@ extern "C" {
 namespace fs = std::filesystem;
 
 // Parameters
-int numTicks = 5000; // Number of simulation steps to run
-bool render = true; // Whether to render the simulation or just run it headless
+int numTicks = 100; // Number of simulation steps to run
+bool render = false; // Whether to render the simulation or just run it headless
 
 void SaveToCSV(const std::vector<float>& h, int size, int tick) {
     if (!fs::exists("data")) {
@@ -38,6 +39,65 @@ void SaveToCSV(const std::vector<float>& h, int size, int tick) {
         file << "\n";
     }
     file.close();
+}
+
+void SaveToCSV(const std::vector<std::complex<float>>& data, int size, int tick) {
+    if (!fs::exists("data")) {
+        fs::create_directory("data");
+    }
+    std::string filename = "data/frame_" + std::to_string(tick) + ".csv";
+    if (tick < 0) {
+        filename = "data/terrain.csv";
+    }
+    std::ofstream file(filename);
+    if (!file.is_open()) return;
+
+    for (int y = 0; y < size; ++y) {
+        for (int x = 0; x < size; ++x) {
+            std::complex<float> val = data[y * size + x];
+            
+            // std::abs() automatically calculates the magnitude (sqrt(r^2 + i^2))
+            // std::arg(val) would give you the phase angle!
+            float magnitude = std::abs(val);
+
+            file << val.real() << "," << val.imag();// << "," << magnitude;
+            
+            if (x < size - 1) file << ",";
+        }
+        file << "\n";
+    }
+}
+
+void SaveToCSV(const std::vector<std::complex<float>>& data, int size, int arraySize, int tick) {
+    if (!fs::exists("data")) {
+        fs::create_directory("data");
+    }
+    std::string filename = "data/frame_" + std::to_string(tick) + ".csv";
+    if (tick < 0) {
+        filename = "data/terrain.csv";
+    }
+    std::ofstream file(filename);
+    if (!file.is_open()) return;
+    // // Header optimized for Python / Pandas DataFrames
+    // file << "x,y,layer,real,imag,magnitude\n";
+    for (int layer = 0; layer < arraySize; ++layer) {
+        int sliceOffset = layer * (size * size);
+        for (int y = 0; y < size; ++y) {
+            for (int x = 0; x < size; ++x) {
+                std::complex<float> val = data[sliceOffset + (y * size) + x];
+                float magnitude = std::abs(val);
+                file //<< x << "," 
+                     //<< y << "," 
+                     //<< layer << "," 
+                    //  << val.real() << "," 
+                     << val.imag() << "," 
+                     //<< magnitude 
+                     //<< "\n"
+                     ;
+            }
+            file << "\n";
+        }
+    }
 }
 
 LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
@@ -160,10 +220,13 @@ int RunHeadless() {
     // Initialize the simulation
     Sim sim;
     int size = sim.GRIDSIZE;
+    int arraySize = sim.DEPTH_NUM;
     std::vector<float> terrain(size * size);
     std::vector<float> H(size * size);
+    std::vector<std::complex<float>> hHat(size*size);
+    std::vector<std::complex<float>> array;
     sim.gpu->DownloadFromGPU(sim.terrain.tex, terrain, size);
-    sim.gpu->DownloadFromGPU(sim.H.tex, H, size);
+    // sim.gpu->DownloadFromGPU(sim.H.tex, H, size);
     SaveToCSV(terrain, size, -1); // Save terrain data for reference
     SaveToCSV(H, size, 0); // Save initial water height data
 
@@ -172,8 +235,11 @@ int RunHeadless() {
     for (int tick = 1; tick < numTicks; ++tick) {
         auto start = std::chrono::high_resolution_clock::now();
         sim.SimStep();
-        sim.gpu->DownloadFromGPU(sim.H.tex, H, size);
-        SaveToCSV(H, size, tick);
+        // sim.gpu->DownloadFromGPU(sim.qHat_x_array.tex, array, size);
+        sim.gpu->DownloadFromGPU(sim.qHat_x_array.tex, array, size, arraySize);
+        // SaveToCSV(H, size, tick);
+        // SaveToCSV(hHat, size, tick);
+        SaveToCSV(array, size, arraySize, tick);
 
         auto sim_time = std::chrono::high_resolution_clock::now();
         std::chrono::duration<double, std::milli> elapsed = sim_time - start;
