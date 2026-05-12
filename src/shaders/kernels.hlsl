@@ -16,9 +16,15 @@ cbuffer Constants : register(b0) {
     float cflCondition;
     float gammaTransport;
 
+    // eWave params
+    int depthNum;
+
     // Padding for 16-byte alignment 
-    float buffer[2];  
+    float buffer;
 };
+
+#define GRAVITY 9.80665
+#define PI 3.14159265358979323846f
 
 // Texture Registers
 Texture2D<float>   in0 : register(t0);
@@ -29,6 +35,7 @@ Texture2D<float>   in4 : register(t4);
 Texture2D<float>   in5 : register(t5);
 Texture2D<float>   in6 : register(t6);
 Texture2D<float>   in7 : register(t7);
+StructuredBuffer<float> in8 : register(t8);
 RWTexture2D<float> out0: register(u0);
 RWTexture2D<float> out1: register(u1);
 RWTexture2D<float> out2: register(u2);
@@ -38,7 +45,7 @@ RWTexture2D<float> out5: register(u5);
 
 
 //////////////////// HELPER FUNCTIONS /////////////////////////
-float CalcGradient(Texture2D<float> f, Texture2D<float> a, uint2 curr) {
+float CalcDiffusion(Texture2D<float> f, Texture2D<float> a, uint2 curr) {
     uint2 left = curr - uint2(1,0);
     uint2 right = curr + uint2(1,0);
     uint2 up = curr + uint2(0,1);
@@ -120,6 +127,11 @@ float SampleCubicClamped(Texture2D<float> dataField, float samplePos, uint2 curr
 	return result;
 }
 
+float2 ComplexMul(float2 a, float2 b) {
+    return float2(a.x * b.x - a.y * b.y,
+                  a.x * b.y + a.y * b.x);
+}
+
 //////////////////// COMPUTE SHADERS /////////////////////////
 
 // Apply Boundary Conditions
@@ -127,7 +139,8 @@ float SampleCubicClamped(Texture2D<float> dataField, float samplePos, uint2 curr
 void ApplyBoundaries(uint3 id : SV_DispatchThreadID){
     uint x = id.x;
     uint y = id.y;
-    if (x >= (uint)gridSize || y >= (uint)gridSize) return;
+    if (x < 0 || x >= (uint)(gridSize) || y < 0 || y >= (uint)(gridSize)) return;
+
     bool left   = (x == 0);
     bool right  = (x == (uint)gridSize - 1);
     bool bottom = (y == 0);
@@ -178,6 +191,7 @@ void ApplyBoundaries(uint3 id : SV_DispatchThreadID){
 void InitDecomp(uint3 id : SV_DispatchThreadID) {
     // Inputs: in0 = h, in1 = q_x, in2 = q_y, in3 = terrain
     // Outputs: out0 = H, out1 = Q_x, out2 = Q_y
+    if (id.x >= (uint)(gridSize) || id.y >= (uint)(gridSize)) return;
     out0[id.xy] = in0[id.xy] + in3[id.xy];
     out1[id.xy] = in1[id.xy];
     out2[id.xy] = in2[id.xy];
@@ -237,10 +251,10 @@ void DiffusionStep(uint3 id : SV_DispatchThreadID) {
     // Outputs: out0 = H, out1 = Q_x, out3 = Q_y
     if (id.x < 1 || id.x >= (uint)(gridSize - 1) || id.y < 1 || id.y >= (uint)(gridSize - 1)) return;
 
-    float newH = in1[id.xy] + deltaT * CalcGradient(in1, in4, id.xy);
+    float newH = in1[id.xy] + deltaT * CalcDiffusion(in1, in4, id.xy);
     out0[id.xy] = max(in0[id.xy], newH);
-    out1[id.xy] = in2[id.xy] + deltaT * CalcGradient(in2, in5, id.xy);
-    out2[id.xy] = in3[id.xy] + deltaT * CalcGradient(in3, in6, id.xy);
+    out1[id.xy] = in2[id.xy] + deltaT * CalcDiffusion(in2, in5, id.xy);
+    out2[id.xy] = in3[id.xy] + deltaT * CalcDiffusion(in3, in6, id.xy);
 }
 
 [numthreads(16, 16, 1)]
@@ -252,32 +266,38 @@ void DecomposeFields(uint3 id : SV_DispatchThreadID) {
     if (id.x >= (uint)(gridSize - 1) || id.y >= (uint)(gridSize - 1)) return;
 
     float hbar = max(0.f, in0[id.xy] - in6[id.xy]);
-    float qbar_x = in1[id.xy];
-    float qbar_y = in2[id.xy];
-    float htilde = in3[id.xy] - hbar;
-    float qtilde_x = in4[id.xy] - qbar_x;
-    float qtilde_y = in5[id.xy] - qbar_y;
+    out0[id.xy] = hbar;
+    out1[id.xy] = in1[id.xy];
+    out2[id.xy] = in2[id.xy];
+    out3[id.xy] = in3[id.xy] - hbar;
+    out4[id.xy] = in4[id.xy] - in1[id.xy];
+    out5[id.xy] = in5[id.xy] - in2[id.xy];
+
+    // // Airy Only
+    // out0[id.xy] = max(0.f, in0[id.xy] - in6[id.xy]);
+    // out1[id.xy] = 0.f;
+    // out2[id.xy] = 0.f;
+    // out3[id.xy] = in3[id.xy] - out0[id.xy];
+    // out4[id.xy] = in4[id.xy];
+    // out5[id.xy] = in5[id.xy];
+
+    // // SWE Only
+    // out0[id.xy] = in3[id.xy];
+    // out1[id.xy] = in4[id.xy];
+    // out2[id.xy] = in5[id.xy];
+    // out3[id.xy] = 0;
+    // out4[id.xy] = 0;
+    // out5[id.xy] = 0;
 
     if (StopFlowOnTerrainBoundary(in3, in6, id.xy, false)) { // stop flow in x direction
-        qbar_x = 0.f;
-        qtilde_x = 0.f;
+        out1[id.xy] = 0.f;
+        out4[id.xy] = 0.f;
     }
     if (StopFlowOnTerrainBoundary(in3, in6, id.xy, true)) { // stop flow in y direction
-        qbar_y = 0.f;
-        qtilde_y = 0.f;
+        out2[id.xy] = 0.f;
+        out5[id.xy] = 0.f;
     }
-
-    out0[id.xy] = hbar;
-    out1[id.xy] = qbar_x;
-    out2[id.xy] = qbar_y;
-	out3[id.xy] = htilde;
-    out4[id.xy] = qtilde_x;
-    out5[id.xy] = qtilde_y;
 }
-
-/////////// eWave ///////////
-
-
 
 
 /////////// SWE ///////////
@@ -344,32 +364,30 @@ void CalcSWE(uint3 id : SV_DispatchThreadID) {
     float q_x_0 = 0.5f * (q_x_m05 + q_x_p05);
     
     // Calculate h_(i+0.5,j) and h_(i-0.5,j) using upwinding
-    float h_x_p05 = 0.f;
-    if (in0[curr] >= 0.f)
-        h_x_p05 = in2[curr];
+    // float h_x_p05 = 0.f;
+    // if (in0[curr] >= 0.f)
+    //     h_x_p05 = in2[curr];
+    // else
+    //     h_x_p05 = in2[right];
+    float h_x_p05 = (in2[curr] + in2[right]) / 2.f;
+    float q_x_p15 = in0[right];  //q_(i+1.5,j) = hfr at position x
+    if (q_x_p15 >= 0.f)
+    	q_x_p15 *= in2[right];
     else
-        h_x_p05 = in2[right];
-    
+    	q_x_p15 *= in2[uint2(min(id.x + 2, gridSize-1), id.y)];
+    float q_x_p1 = 0.5f * (q_x_p05 + q_x_p15);
 
-    // float h_x_p05 = (in2[curr] + in2[right]) / 2.f; // averaging, for some reason the old paper used this
-    // float q_x_p15 = in0[right];  //q_(i+1.5,j) = hfr at position x
-    // if (q_x_p15 >= 0.f)
-    // 	q_x_p15 *= in2[right];
-    // else
-    // 	q_x_p15 *= in2[uint2(min(id.x + 2, gridSize-1), id.y)];
-    // float q_x_p1 = 0.5f * (q_x_p05 + q_x_p15);
-    // // Calculate corresponding values for u_x_(i,j) using upwinding
-    // // (why do we use upwinding here instead of averaging like q?)
-    // float u_star_x_0 = 0.f;
-    // if (q_x_0 >= 0.f)
-    // 	u_star_x_0 = in0[left];
-    // else
-    // 	u_star_x_0 = in0[curr];
-    // float u_star_x_p1 = 0.f;
-    // if (q_x_p1 > 0.f)
-    // 	u_star_x_p1 = in0[curr];
-    // else
-    // 	u_star_x_p1 = in0[right];
+    // Calculate corresponding values for u_x_(i,j) using upwinding
+    float u_star_x_0 = 0.f;
+    if (q_x_0 >= 0.f)
+    	u_star_x_0 = in0[left];
+    else
+    	u_star_x_0 = in0[curr];
+    float u_star_x_p1 = 0.f;
+    if (q_x_p1 > 0.f)
+    	u_star_x_p1 = in0[curr];
+    else
+    	u_star_x_p1 = in0[right];
     
 
     /////// Y DIRECTION //////
@@ -387,59 +405,56 @@ void CalcSWE(uint3 id : SV_DispatchThreadID) {
         q_y_p05 *= in2[up];
     float q_y_0 = 0.5f * (q_y_m05 + q_y_p05);
 
-    // Calculate h_(i,j+0.5) and h_(i,j-0.5) using upwinding
-    float h_y_p05 = 0.f;
-    if (in1[curr] >= 0.f)
-        h_y_p05 = in2[curr];
+    // Calculate h_(i,j+0.5)
+    // float h_y_p05 = 0.f;
+    // if (in1[curr] >= 0.f)
+    //     h_y_p05 = in2[curr];
+    // else
+    //     h_y_p05 = in2[up];
+    float h_y_p05 = (in2[curr] + in2[right]) / 2.f;
+    float q_y_p15 = in1[up];  //q_(i+1.5,j) = hfr at position x
+    if (q_y_p15 >= 0.f)
+    	q_y_p15 *= in2[up];
     else
-        h_y_p05 = in2[up];
+    	q_y_p15 *= in2[uint2(id.x, min(id.y + 2, gridSize-1))];
+    float q_y_p1 = 0.5f * (q_y_p05 + q_y_p15);
 
-    // float h_y_p05 = (in2[curr] + in2[right]) / 2.f; // averaging, for some reason the old paper used this
-    // float q_y_p15 = in1[up];  //q_(i+1.5,j) = hfr at position x
-    // if (q_y_p15 >= 0.f)
-    // 	q_y_p15 *= in2[up];
-    // else
-    // 	q_y_p15 *= in2[uint2(id.x, min(id.y + 2, gridSize-1))];
-    // float q_y_p1 = 0.5f * (q_y_p05 + q_y_p15);
-    // // Calculate corresponding values for u_x_(i,j) using upwinding
-    // // (why do we use upwinding here instead of averaging like q?)
-    // float u_star_y_0 = 0.f;
-    // if (q_y_0 >= 0.f)
-    // 	u_star_y_0 = in0[down];
-    // else
-    // 	u_star_y_0 = in0[curr];
-    // float u_star_y_p1 = 0.f;
-    // if (q_y_p1 > 0.f)
-    // 	u_star_y_p1 = in0[curr];
-    // else
-    // 	u_star_y_p1 = in0[up];
-
+    // Calculate corresponding values for u_x_(i,j) using upwinding
+    float u_star_y_0 = 0.f;
+    if (q_y_0 >= 0.f)
+    	u_star_y_0 = in0[down];
+    else
+    	u_star_y_0 = in0[curr];
+    float u_star_y_p1 = 0.f;
+    if (q_y_p1 > 0.f)
+    	u_star_y_p1 = in0[curr];
+    else
+    	u_star_y_p1 = in0[up];
 
     // Compute dux_dt and duy_dt
-    float gravity = 9.8066f;
-    float dux_dt = - (1/cellSize) * ((q_x_0/h_x_p05) * (in0[curr] - in0[left]) + (q_y_m05/h_x_p05) * (in0[curr] - in0[down]));
-    float duy_dt = - (1/cellSize) * ((q_y_0/h_y_p05) * (in1[curr] - in1[down]) + (q_x_m05/h_y_p05) * (in1[curr] - in1[left]));
-    // float dux_dt = - (1/(cellSize*h_x_p05)) * ((q_x_p1 * u_star_x_p1 - q_x_0 * u_star_x_0) - in0[curr] * (q_x_p1 - q_x_0));
-    // float duy_dt = - (1/(cellSize*h_y_p05)) * ((q_y_p1 * u_star_y_p1 - q_y_0 * u_star_y_0) - in1[curr] * (q_y_p1 - q_y_0));
-    dux_dt -= (1/cellSize) * gravity * (in3[right] - in3[curr]);
-    duy_dt -= (1/cellSize) * gravity * (in3[up] - in3[curr]);
+    // float dux_dt = - (1/cellSize) * ((q_x_0/h_x_p05) * (in0[curr] - in0[left]) + (q_y_m05/h_x_p05) * (in0[curr] - in0[down]));
+    // float duy_dt = - (1/cellSize) * ((q_y_0/h_y_p05) * (in1[curr] - in1[down]) + (q_x_m05/h_y_p05) * (in1[curr] - in1[left]));
+    float dux_dt = - (1/(cellSize * h_x_p05)) * ((q_x_p1 * u_star_x_p1 - q_x_0 * u_star_x_0) - in0[curr] * (q_x_p1 - q_x_0));
+    float duy_dt = - (1/(cellSize * h_y_p05)) * ((q_y_p1 * u_star_y_p1 - q_y_0 * u_star_y_0) - in1[curr] * (q_y_p1 - q_y_0));
+    dux_dt -= (1/cellSize) * GRAVITY * (in3[right] - in3[curr]);
+    duy_dt -= (1/cellSize) * GRAVITY * (in3[up] - in3[curr]);
     float ubarNew_x = LimitVelocity(in0[curr] + timeStep * dux_dt);  // Enforcing CFL condition
     float ubarNew_y = LimitVelocity(in1[curr] + timeStep * duy_dt);  // Enforcing CFL condition
     
     out0[curr] = ubarNew_x;
     out1[curr] = ubarNew_y;
-    if (ubarNew_x >= 0.f || id.x == gridSize-1)
+    if (ubarNew_x >= 0.f)
         out2[curr] = ubarNew_x * in2[curr];
     else
         out2[curr] = ubarNew_x * in2[right];
-    if (ubarNew_y >= 0.f || id.y == gridSize-1)
+    if (ubarNew_y >= 0.f)
         out3[curr] = ubarNew_y * in2[curr];
     else
         out3[curr] = ubarNew_y * in2[up];
 }
 
 
-/////////// Transport ///////////
+/////////// Transport & Combine ///////////
 
 [numthreads(16, 16, 1)]
 void UpdateTilde(uint3 id : SV_DispatchThreadID) {
@@ -493,6 +508,7 @@ void CalcQAdvect(uint3 id : SV_DispatchThreadID) {
     // Inputs: in0 = ubarNew_x, in1 = ubarNew_y, in2 = htilde
     // Outputs: out0 = qAdvect_x, out1 = qAdvect_y
     // cubic reconstruction: 1/2 cell accounts for staggered grid, 0.5 * dt accounts for h and u at different 1/2 times
+    if (id.x >= (uint)(gridSize) || id.y >= (uint)(gridSize)) return;
     float step_x = 0.5f - in0[id.xy] * (0.5f * timeStep) / cellSize;
     float step_y = 0.5f - in1[id.xy] * (0.5f * timeStep) / cellSize; 
     out0[id.xy] = in0[id.xy] * SampleCubicClamped(in2, id.x + step_x, id.xy, false);  
@@ -522,18 +538,161 @@ void IntegrateH(uint3 id : SV_DispatchThreadID) {
     q_y  = LimitFlowRate(q_y, in6[curr], in6[curr_yp]);
     q_xm = LimitFlowRate(q_xm, in6[curr_xm], in6[curr]);
     q_ym = LimitFlowRate(q_ym, in6[curr_ym], in6[curr]);
-
-    // if ((StopFlowOnTerrainBoundary(in6, in7, curr, false)) || (id.x == gridSize - 2))
-    //     q_x = 0.f;
-    // if ((StopFlowOnTerrainBoundary(in6, in7, curr, true )) || (id.y == gridSize - 2))
-    //     q_y = 0.f;
-    // if ((StopFlowOnTerrainBoundary(in6, in7, curr_xm, false)) || (id.x == gridSize - 2))
-    //     q_xm = 0.f;
-    // if ((StopFlowOnTerrainBoundary(in6, in7, curr_ym, true )) || (id.y == gridSize - 2))
-    //     q_ym = 0.f;
+    if (StopFlowOnTerrainBoundary(in6, in7, curr, false)) // || (id.x == gridSize - 2) // Volume Preserving (wall boundary)
+        q_x = 0.f;
+    if (StopFlowOnTerrainBoundary(in6, in7, curr, true )) // || (id.y == gridSize - 2) // Volume Preserving (wall boundary)
+        q_y = 0.f;
+    if (StopFlowOnTerrainBoundary(in6, in7, curr_xm, false))
+        q_xm = 0.f;
+    if (StopFlowOnTerrainBoundary(in6, in7, curr_ym, true )) 
+        q_ym = 0.f;
 
     float div_q = (q_x - q_xm + q_y - q_ym) / cellSize;
 	out0[curr] = max(0.f, in6[curr] - timeStep * div_q);
-    out1[curr] = q_x;// - in2[curr]; // qbar + qtilde, removing qAdvect
-    out2[curr] = q_y;// - in5[curr];
+    out1[curr] = q_x - in2[curr]; // qbar + qtilde, removing qAdvect
+    out2[curr] = q_y - in5[curr];
+}
+
+
+/////////// eWave ///////////
+// (At bottom because requires different inputs/outputs for each kernel)
+// These all have slight variants on the names so HLSL doesn't get mad for redefining a name used before
+
+RWTexture2D<float2> hHat  : register(u1); // Complex
+RWTexture2D<float2> qHat_x: register(u2); // Complex
+RWTexture2D<float2> qHat_y: register(u3); // Complex
+[numthreads(16, 16, 1)]
+void TransferToFFT(uint3 id : SV_DispatchThreadID) {
+    // Inputs: in0 = htilde, in1 = qtilde_x, in2 = qtilde_y
+    // Outputs: out0 = htildeOld, out1 = hHat, out2 = qHat_x, out3 = qHat_y
+    if (id.x >= (uint)(gridSize) || id.y >= (uint)(gridSize)) return;
+
+    // Average htilde in time to get on same timestep as q, then prep variables for FFT
+    float h_real = 0.5 * (in0[id.xy] + out0[id.xy]);
+    out0[id.xy]   = in0[id.xy];
+    hHat[id.xy]   = float2(h_real, 0.0f);
+    qHat_x[id.xy] = float2(in1[id.xy], 0.0f);
+    qHat_y[id.xy] = float2(in2[id.xy], 0.0f);
+}
+
+Texture2D<float2> hhat   : register(t0);
+Texture2D<float2> qhat_x : register(t1);
+Texture2D<float2> qhat_y : register(t2);
+RWTexture2DArray<float2> qhat_x_array: register(u0);
+RWTexture2DArray<float2> qhat_y_array: register(u1);
+[numthreads(16, 16, 1)]
+void CalcEWave(uint3 id : SV_DispatchThreadID) {
+    // Inputs: in0 = hHat, in1 = qHat_x, in2 = qHat_y, in3 = depth
+    // Outputs: out0 = qHat_x_array, qHat_y_array
+    if (id.x >= (uint)(gridSize) || id.y >= (uint)(gridSize)) return;
+
+    // Early return for DC component 
+    if (id.x == 0 && id.y == 0) {
+        qhat_x_array[id] = qhat_x[id.xy];
+        qhat_y_array[id] = qhat_y[id.xy];
+        return;
+    }
+
+    ///// Wave Number ///////
+    // Calculate the physical size of the grid and the frequency step (dK)
+    float domainSize = (float)gridSize * cellSize;
+    float dK = 2.0f * PI / domainSize; 
+    float N_2 = (float)gridSize / 2.0f;
+    // Calculate the physical 2D wavenumber vector components (signed, handling the Nyquist wrap-around)
+    int freqX = (id.x <= N_2) ? (int)id.x : (int)id.x - (int)gridSize;
+    int freqY = (id.y <= N_2) ? (int)id.y : (int)id.y - (int)gridSize;
+    float kx = (float)freqX * dK; // spatial frequency: radians per meter
+    float ky = (float)freqY * dK;
+    float k = sqrt(kx * kx + ky * ky);
+
+    // Unit vectors
+    float kx_ = kx / k;
+    float ky_ = ky / k;
+    float kx2 = kx_ * kx_;
+    float ky2 = ky_ * ky_;
+
+    /////// Dispersion ///////
+    // numerical dispersion correction
+    float beta = sqrt((2.0 / (k * cellSize)) * sin(k * cellSize / 2.0)); 
+    // float beta = sqrt((2.0 * k / cellSize) * sin(k * cellSize / 2.0)); // correct formula from book, but not stable?
+    // Angular frequency for dispersion relation
+    float kh = k * in8[id.z];
+    float tanh_kh = (kh > 20.f) ? 1.0f : tanh(kh);
+    float omega = sqrt(GRAVITY * k * tanh_kh) / beta;
+    float S = sin(omega * timeStep) * omega / (k * k);
+    float C = cos(omega * timeStep);
+    float Cx = 1 + (C-1) * kx2;
+    float Cy = 1 + (C-1) * ky2;
+    float Ck = (C-1) * kx_ * ky_;
+
+    /////// Gradient of Shifted hHat ///////
+    // Fourier gradient in X: dh/dx = hhat * (i * kx)
+    float2 dhdx = float2(-kx * hhat[id.xy].y, kx * hhat[id.xy].x);
+    float2 dhdy = float2(-ky * hhat[id.xy].y, ky * hhat[id.xy].x);
+    // Phase shift in X: shift by dx/2 by multiplying by e^(-i * shiftX) = cos(shiftX) - i*sin(shiftX)
+    float shiftX = 0.5f * cellSize * kx;
+    float shiftY = 0.5f * cellSize * ky;
+    float2 e_mix = float2(cos(shiftX), -sin(shiftX));
+    float2 e_miy = float2(cos(shiftY), -sin(shiftY));
+    dhdx = ComplexMul(dhdx, e_mix);
+    dhdy = ComplexMul(dhdy, e_miy);
+    
+    // Shift the q cross-terms to align with their target faces
+    float theta_x = 0.5f * cellSize * (kx - ky);
+    float theta_y = 0.5f * cellSize * (ky - kx);
+    float2 shift_x = float2(cos(theta_x), sin(theta_x)); // e^{i * theta_xy} 
+    float2 shift_y = float2(cos(theta_y), sin(theta_y)); // e^{i * theta_yx}
+    float2 qx_shifted = ComplexMul(qhat_x[id.xy], shift_x);
+    float2 qy_shifted = ComplexMul(qhat_y[id.xy], shift_y);
+
+    /////// Update Q ///////
+    // 1) Decompose q into parallel and perpendicular: q_|| = kx_*qx + ky_*qy, q_T = kx_*qy - ky_*qx
+    // 2) Update in rotated basis: q_||+ = C*q_|| - S*dhdx (q_T unchanged bc Airy is irrotational)
+    // 3) Recombine: q = q_T + q_||+
+    float qx_r = Cx * qhat_x[id.xy].x + Ck * qy_shifted.x - S * dhdx.x;
+    float qx_i = Cx * qhat_x[id.xy].y + Ck * qy_shifted.y - S * dhdx.y;
+    float qy_r = Cy * qhat_y[id.xy].x + Ck * qx_shifted.x - S * dhdy.x;
+    float qy_i = Cy * qhat_y[id.xy].y + Ck * qx_shifted.y - S * dhdy.y;
+    // float qx_r = C * qhat_x[id.xy].x - S * dhdx.x; // Naive 1D translation
+    // float qx_i = C * qhat_x[id.xy].y - S * dhdx.y;
+    // float qy_r = C * qhat_y[id.xy].x - S * dhdy.x;
+    // float qy_i = C * qhat_y[id.xy].y - S * dhdy.y;
+    qhat_x_array[id] = float2(qx_r, qx_i);
+    qhat_y_array[id] = float2(qy_r, qy_i);
+
+    if ((id.x == N_2 && id.y == 0) || (id.x == 0 && id.y == N_2) || (id.x == N_2 && id.y == N_2)) {
+        qhat_x_array[id] = float2(qhat_x_array[id].x, 0.0f);
+        qhat_y_array[id] = float2(qhat_y_array[id].x, 0.0f);
+    }
+}
+
+Texture2D<float>       hbar        : register(t0);
+Texture2DArray<float2> qHat_x_array: register(t1);
+Texture2DArray<float2> qHat_y_array: register(t2);
+RWTexture2D<float>     qtilde_x    : register(u0);
+RWTexture2D<float>     qtilde_y    : register(u1);
+[numthreads(16, 16, 1)]
+void InterpQ(uint3 id : SV_DispatchThreadID) {
+    // Inputs: qtilde_x_array, qtilde_y_array, hbar, depth
+    // Outputs: qtilde_x, qtilde_y
+    if (id.x < 1 || id.x >= (uint)(gridSize - 1) || id.y < 1 || id.y >= (uint)(gridSize - 1)) return;
+
+    float waterDepth_x = max(hbar[id.xy], hbar[id.xy + uint2(1, 0)]);
+    float waterDepth_y = max(hbar[id.xy], hbar[id.xy + uint2(0, 1)]);
+    int d1_x = 0;
+    int d1_y = 0;
+    for (int d = 0; d < depthNum; d++) {
+        if (waterDepth_x >= in8[d]) d1_x = d;
+        if (waterDepth_y >= in8[d]) d1_y = d;
+    }
+    int d2_x = min(depthNum - 1, d1_x + 1);
+    int d2_y = min(depthNum - 1, d1_y + 1);
+    float sx = 0.f;
+    float sy = 0.f;
+    if (d1_x != d2_x)
+        sx = (in8[d2_x] - waterDepth_x) / (in8[d2_x] - in8[d1_x]);
+    if (d1_y != d2_y)
+        sy = (in8[d2_y] - waterDepth_y) / (in8[d2_y] - in8[d1_y]);
+    qtilde_x[id.xy] = sx * qHat_x_array[uint3(id.x, id.y, d1_x)].x + (1.f - sx) * qHat_x_array[uint3(id.x, id.y, d2_x)].x;
+    qtilde_y[id.xy] = sy * qHat_y_array[uint3(id.x, id.y, d1_y)].x + (1.f - sy) * qHat_y_array[uint3(id.x, id.y, d2_y)].x;
 }
