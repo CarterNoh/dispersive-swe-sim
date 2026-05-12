@@ -81,7 +81,7 @@ public:
     // FFT
     void UpdateFFTConstants(const FFTConstants& constants);
     bool CompileFFTShaders(int size);
-    void ExecuteFFT(ID3D11UnorderedAccessView* fftBufferUAV, int size, bool inverse, int numLayers = 1);
+    void ExecuteFFT(GPUField* ping, GPUField* pong, int size, bool inverse, int numLayers = 1);
 
     // Rendering 
     void UpdateRenderConstants(const RenderConstants& constants);
@@ -104,8 +104,10 @@ private:
     
     // FFT
     ID3D11Buffer* fftConstantBuffer = nullptr;
-    ID3D11ComputeShader* fftShader = nullptr;
+    ID3D11ComputeShader* fftRowShader = nullptr;
     ID3D11ComputeShader* fftArrayShader = nullptr;
+    ID3D11ComputeShader* transposeRowShader = nullptr;
+    ID3D11ComputeShader* transposeArrayShader = nullptr;
 
     // Rendering
     IDXGISwapChain* swapChain = nullptr;
@@ -120,5 +122,5 @@ private:
     ID3D11Texture2D* depthStencilBuffer = nullptr;
     ID3D11DepthStencilView* depthStencilView = nullptr;
     ID3D11Buffer* indexBuffer = nullptr;
-    UINT indexCount = 0; // We need to remember how many indices to draw
+    UINT indexCount = 0;
 };

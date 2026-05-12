@@ -45,8 +45,8 @@ public:
 			 ubar_x, ubar_y, ubarNew_x, ubarNew_y,
 			 qtildePast_x, qtildePast_y, qAdvect_x, qAdvect_y, 
 			 hPast, hbarOld, htildeOld, 
-			 hHat, qHat_x, qHat_y, wavenum, dhHat_dx, dhHat_dy,
-			 qHat_x_array, qHat_y_array, qtilde_x_array, qtilde_y_array;
+			 hHat, qHat_x, qHat_y, buffer_complex,
+			 qHat_x_array, qHat_y_array, buffer_array;
 	GPUField* fields[30] = {
 		&terrain, &H, &Q_x, &Q_y, &h, &q_x, &q_y,
 		&HPast, &QPast_x, &QPast_y, &alpha_H, &alpha_Q_x, &alpha_Q_y,
@@ -54,8 +54,8 @@ public:
 		&ubar_x, &ubar_y, &ubarNew_x, &ubarNew_y,
 		&qtildePast_x, &qtildePast_y, &qAdvect_x, &qAdvect_y,
 		&hPast, &hbarOld, &htildeOld};
-	GPUField* fields_complex[6] = {&hHat, &qHat_x, &qHat_y, &dhHat_dx, &dhHat_dy, &wavenum};
-	GPUField* q_arrays[2] = {&qHat_x_array, &qHat_y_array};
+	GPUField* fields_complex[4] = {&hHat, &qHat_x, &qHat_y, &buffer_complex};
+	GPUField* fields_arrays[3] = {&qHat_x_array, &qHat_y_array, &buffer_array};
 	GPUBuffer depth;
 
 	GPU* gpu;

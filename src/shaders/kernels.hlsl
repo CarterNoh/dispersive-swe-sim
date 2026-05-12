@@ -35,7 +35,7 @@ Texture2D<float>   in4 : register(t4);
 Texture2D<float>   in5 : register(t5);
 Texture2D<float>   in6 : register(t6);
 Texture2D<float>   in7 : register(t7);
-StructuredBuffer<float> in8 : register(t8);
+// StructuredBuffer<float> in8 : register(t8);
 RWTexture2D<float> out0: register(u0);
 RWTexture2D<float> out1: register(u1);
 RWTexture2D<float> out2: register(u2);
@@ -578,6 +578,7 @@ void TransferToFFT(uint3 id : SV_DispatchThreadID) {
 Texture2D<float2> hhat   : register(t0);
 Texture2D<float2> qhat_x : register(t1);
 Texture2D<float2> qhat_y : register(t2);
+StructuredBuffer<float> Depth : register(t3);
 RWTexture2DArray<float2> qhat_x_array: register(u0);
 RWTexture2DArray<float2> qhat_y_array: register(u1);
 [numthreads(16, 16, 1)]
@@ -586,44 +587,45 @@ void CalcEWave(uint3 id : SV_DispatchThreadID) {
     // Outputs: out0 = qHat_x_array, qHat_y_array
     if (id.x < 0 || id.x >= (uint)(gridSize) || id.y < 0 || id.y >= (uint)(gridSize)) return;
 
-    // Early return for DC component 
-    if (id.x == 0 && id.y == 0) {
+    // // Early return for DC component 
+    // if (id.x == 0 && id.y == 0) {
         qhat_x_array[id] = qhat_x[id.xy];
         qhat_y_array[id] = qhat_y[id.xy];
         return;
-    }
+    // }
 
-    ///// Wave Number ///////
-    // Calculate the physical size of the grid and the frequency step (dK)
-    float domainSize = (float)gridSize * cellSize;
-    float dK = 2.0f * PI / domainSize; 
-    // Calculate the physical 2D wavenumber vector components (signed, handling the Nyquist wrap-around)
-    int freqX = (id.x <= gridSize / 2) ? (int)id.x : (int)id.x - (int)gridSize;
-    int freqY = (id.y <= gridSize / 2) ? (int)id.y : (int)id.y - (int)gridSize;
-    float kx = (float)freqX * dK; // spatial frequency: radians per meter
-    float ky = (float)freqY * dK;
-    float k = sqrt(kx * kx + ky * ky);
+    // ///// Wave Number ///////
+    // // Calculate the physical size of the grid and the frequency step (dK)
+    // float domainSize = (float)gridSize * cellSize;
+    // float dK = 2.0f * PI / domainSize; 
+    // // Calculate the physical 2D wavenumber vector components (signed, handling the Nyquist wrap-around)
+    // int freqX = (id.x <= gridSize / 2) ? (int)id.x : (int)id.x - (int)gridSize;
+    // int freqY = (id.y <= gridSize / 2) ? (int)id.y : (int)id.y - (int)gridSize;
+    // float kx = (float)freqX * dK; // spatial frequency: radians per meter
+    // float ky = (float)freqY * dK;
+    // float k = sqrt(kx * kx + ky * ky);
 
-    // Unit vectors
-    float kx_ = kx / k;
-    float ky_ = ky / k;
-    float kx2 = kx_ * kx_;
-    float ky2 = ky_ * ky_;
+    // // Unit vectors
+    // float kx_ = kx / k;
+    // float ky_ = ky / k;
+    // float kx2 = kx_ * kx_;
+    // float ky2 = ky_ * ky_;
 
-    /////// Dispersion ///////
-    // numerical dispersion correction
-    float beta = sqrt(2.0 / (k * cellSize) * sin(k * cellSize / 2.0)); 
-    // float beta = sqrt(2.0 * k / cellSize * sin(k * cellSize / 2.0)); 
+    // /////// Dispersion ///////
+    // // numerical dispersion correction
+    // // float beta = sqrt(2.0 / (k * cellSize) * sin(k * cellSize / 2.0)); 
+    // // float beta = sqrt(2.0 * k / cellSize * sin(k * cellSize / 2.0)); 
     // float beta = 1;
-    // Angular frequency for dispersion relation
-    float omega = sqrt(GRAVITY * k * tanh(k * in8[id.z])) / beta;
-    float S = sin(omega * timeStep) * omega / (k * k);
-    float C = cos(omega * timeStep);
-    float Ck = (C-1) * kx_ * ky_;
+    // // Angular frequency for dispersion relation
+    // // float depth[5] = {1.f, 2.f, 4.f, 16.f, 64.f};
+    // float omega = sqrt(GRAVITY * k * tanh(k * Depth[id.z])) / beta;
+    // float S = sin(omega * timeStep) * omega / (k * k);
+    // float C = cos(omega * timeStep);
+    // float Ck = (C-1) * kx_ * ky_;
 
-    /////// Gradient of Shifted hHat ///////
-    float2 qx_shifted = qhat_x[id.xy];
-    float2 qy_shifted = qhat_y[id.xy];
+    // /////// Gradient of Shifted hHat ///////
+    // float2 qx_shifted = qhat_x[id.xy];
+    // float2 qy_shifted = qhat_y[id.xy];
 
     // // Fourier gradient in X: dh/dx = hhat * (i * kx)
     // float2 dhdx = float2(-kx * hhat[id.xy].y, kx * hhat[id.xy].x);
@@ -636,46 +638,47 @@ void CalcEWave(uint3 id : SV_DispatchThreadID) {
     // dhdx = ComplexMul(dhdx, e_mix);
     // dhdy = ComplexMul(dhdy, e_miy);
 
-    // More accurate? Shift hhat in parallel direction
-    float2 dhdx = float2(-k * hhat[id.xy].y, k * hhat[id.xy].x);
-    float2 dhdy = float2(-k * hhat[id.xy].y, k * hhat[id.xy].x);
-    float shift = 0.5f * cellSize * k;
-    float2 e_mi = float2(cos(shift), -sin(shift));
-    dhdx = ComplexMul(dhdx, e_mi);
-    dhdy = ComplexMul(dhdy, e_mi);
+    // // // More accurate? Shift hhat in parallel direction
+    // // float2 dhdx = float2(-k * hhat[id.xy].y, k * hhat[id.xy].x);
+    // // float2 dhdy = float2(-k * hhat[id.xy].y, k * hhat[id.xy].x);
+    // // float shift = 0.5f * cellSize * k;
+    // // float2 e_mi = float2(cos(shift), -sin(shift));
+    // // dhdx = ComplexMul(dhdx, e_mi);
+    // // dhdy = ComplexMul(dhdy, e_mi);
     
-    // Technically more accurate, but difference is negligible
-    // Shift the cross-terms to align with their target faces
-    float theta_yx = 0.5f * cellSize * (ky - kx);
-    float theta_xy = 0.5f * cellSize * (kx - ky);
-    float2 shift_yx = float2(cos(theta_yx), sin(theta_yx)); // e^{i * theta_yx}
-    float2 shift_xy = float2(cos(theta_xy), sin(theta_xy)); // e^{i * theta_xy} 
-    qy_shifted = ComplexMul(qhat_y[id.xy], shift_yx);
-    qx_shifted = ComplexMul(qhat_x[id.xy], shift_xy);
+    // // Technically more accurate, but difference is negligible
+    // // Shift the cross-terms to align with their target faces
+    // float theta_yx = 0.5f * cellSize * (ky - kx);
+    // float theta_xy = 0.5f * cellSize * (kx - ky);
+    // float2 shift_yx = float2(cos(theta_yx), sin(theta_yx)); // e^{i * theta_yx}
+    // float2 shift_xy = float2(cos(theta_xy), sin(theta_xy)); // e^{i * theta_xy} 
+    // qy_shifted = ComplexMul(qhat_y[id.xy], shift_yx);
+    // qx_shifted = ComplexMul(qhat_x[id.xy], shift_xy);
 
-    /////// Update Q ///////
-    // 1) Decompose q into parallel and perpendicular: q_|| = kx_*qx + ky_*qy, q_T = kx_*qy - ky_*qx
-    // 2) Update in rotated basis: q_|| = C*q_|| - S*dhdx (q_T unchanged bc Airy is irrotational)
-    // 3) Rotate back: qx = kx_*q_|| - ky_*q_T, qy = ky_*q_|| + kx_*q_T
-    float qx_r = (C*kx2 + ky2) * qhat_x[id.xy].x + Ck * qy_shifted.x - kx_ * S * dhdx.x;
-    float qx_i = (C*kx2 + ky2) * qhat_x[id.xy].y + Ck * qy_shifted.y - kx_ * S * dhdx.y;
-    float qy_r = (C*ky2 + kx2) * qhat_y[id.xy].x + Ck * qx_shifted.x - ky_ * S * dhdy.x;
-    float qy_i = (C*ky2 + kx2) * qhat_y[id.xy].y + Ck * qx_shifted.y - ky_ * S * dhdy.y;
-    // float qx_r = (C*kx2 + ky2) * qhat_x[id.xy].x + Ck * qy_shifted.x - S * dhdx.x; // Above but minus the k term on dhdt
-    // float qx_i = (C*kx2 + ky2) * qhat_x[id.xy].y + Ck * qy_shifted.y - S * dhdx.y;
-    // float qy_r = (C*ky2 + kx2) * qhat_y[id.xy].x + Ck * qx_shifted.x - S * dhdy.x;
-    // float qy_i = (C*ky2 + kx2) * qhat_y[id.xy].y + Ck * qx_shifted.y - S * dhdy.y;
+    // /////// Update Q ///////
+    // // 1) Decompose q into parallel and perpendicular: q_|| = kx_*qx + ky_*qy, q_T = kx_*qy - ky_*qx
+    // // 2) Update in rotated basis: q_|| = C*q_|| - S*dhdx (q_T unchanged bc Airy is irrotational)
+    // // 3) Rotate back: qx = kx_*q_|| - ky_*q_T, qy = ky_*q_|| + kx_*q_T
+    // // float qx_r = (C*kx2 + ky2) * qhat_x[id.xy].x + Ck * qy_shifted.x - kx_ * S * dhdx.x;
+    // // float qx_i = (C*kx2 + ky2) * qhat_x[id.xy].y + Ck * qy_shifted.y - kx_ * S * dhdx.y;
+    // // float qy_r = (C*ky2 + kx2) * qhat_y[id.xy].x + Ck * qx_shifted.x - ky_ * S * dhdy.x;
+    // // float qy_i = (C*ky2 + kx2) * qhat_y[id.xy].y + Ck * qx_shifted.y - ky_ * S * dhdy.y;
+    // // float qx_r = (C*kx2 + ky2) * qhat_x[id.xy].x + Ck * qy_shifted.x - S * dhdx.x; // Above but minus the k term on dhdt
+    // // float qx_i = (C*kx2 + ky2) * qhat_x[id.xy].y + Ck * qy_shifted.y - S * dhdx.y;
+    // // float qy_r = (C*ky2 + kx2) * qhat_y[id.xy].x + Ck * qx_shifted.x - S * dhdy.x;
+    // // float qy_i = (C*ky2 + kx2) * qhat_y[id.xy].y + Ck * qx_shifted.y - S * dhdy.y;
     // float qx_r = C * qhat_x[id.xy].x - S * dhdx.x; // Naive 1D translation
     // float qx_i = C * qhat_x[id.xy].y - S * dhdx.y;
     // float qy_r = C * qhat_y[id.xy].x - S * dhdy.x;
     // float qy_i = C * qhat_y[id.xy].y - S * dhdy.y;
-    qhat_x_array[id] = float2(qx_r, qx_i);
-    qhat_y_array[id] = float2(qy_r, qy_i);
+    // qhat_x_array[id] = float2(qx_r, qx_i);
+    // qhat_y_array[id] = float2(qy_r, qy_i);
 }
 
 Texture2D<float>       hbar        : register(t0);
 Texture2DArray<float2> qHat_x_array: register(t1);
 Texture2DArray<float2> qHat_y_array: register(t2);
+StructuredBuffer<float> depth      : register(t3);
 RWTexture2D<float>     qtilde_x    : register(u0);
 RWTexture2D<float>     qtilde_y    : register(u1);
 [numthreads(16, 16, 1)]
@@ -684,22 +687,24 @@ void InterpQ(uint3 id : SV_DispatchThreadID) {
     // Outputs: qtilde_x, qtilde_y
     if (id.x < 1 || id.x >= (uint)(gridSize - 1) || id.y < 1 || id.y >= (uint)(gridSize - 1)) return;
 
+    // float depth[5] = {1.f, 2.f, 4.f, 16.f, 64.f};
+
     float waterDepth_x = max(hbar[id.xy], hbar[id.xy + uint2(1, 0)]);
     float waterDepth_y = max(hbar[id.xy], hbar[id.xy + uint2(0, 1)]);
     int d1_x = 0;
     int d1_y = 0;
     for (int d = 0; d < depthNum; d++) {
-        if (waterDepth_x >= in8[d]) d1_x = d;
-        if (waterDepth_y >= in8[d]) d1_y = d;
+        if (waterDepth_x >= depth[d]) d1_x = d;
+        if (waterDepth_y >= depth[d]) d1_y = d;
     }
     int d2_x = min(depthNum - 1, d1_x + 1);
     int d2_y = min(depthNum - 1, d1_y + 1);
     float sx = 0.f;
     float sy = 0.f;
     if (d1_x != d2_x)
-        sx = (in8[d2_x] - waterDepth_x) / (in8[d2_x] - in8[d1_x]);
+        sx = (depth[d2_x] - waterDepth_x) / (depth[d2_x] - depth[d1_x]);
     if (d1_y != d2_y)
-        sy = (in8[d2_y] - waterDepth_y) / (in8[d2_y] - in8[d1_y]);
+        sy = (depth[d2_y] - waterDepth_y) / (depth[d2_y] - depth[d1_y]);
     
     qtilde_x[id.xy] = sx * qHat_x_array[uint3(id.x, id.y, d1_x)].x + (1.f - sx) * qHat_x_array[uint3(id.x, id.y, d2_x)].x;
     qtilde_y[id.xy] = sy * qHat_y_array[uint3(id.x, id.y, d1_y)].x + (1.f - sy) * qHat_y_array[uint3(id.x, id.y, d2_y)].x;

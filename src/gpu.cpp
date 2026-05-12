@@ -9,8 +9,11 @@ GPU::~GPU() {
     if (stagingTex) stagingTex->Release();
     if (constantBuffer) constantBuffer->Release();
     if (fftConstantBuffer) fftConstantBuffer->Release();
-    if (fftShader) fftShader->Release();
+    // if (fftShader) fftShader->Release();
     if (fftArrayShader) fftArrayShader->Release();
+    if (fftRowShader) fftArrayShader->Release();
+    if (transposeArrayShader) fftArrayShader->Release();
+    if (transposeRowShader) fftArrayShader->Release();
     if (vertexShader) vertexShader->Release();
     if (pixelShader) pixelShader->Release();
     if (context) context->Release();
@@ -385,65 +388,104 @@ void GPU::UpdateFFTConstants(const FFTConstants& constants) {
 }
 
 bool GPU::CompileFFTShaders(int size) {
-    // if (!CompileComputeShader(L"shaders/fft.hlsl", "FFTKernel_1D", &fftShader))
-    //     return false;
-
     ID3DBlob* shaderBlob = nullptr;
     ID3DBlob* errorBlob = nullptr;
+    HRESULT hr;
+
     D3D_SHADER_MACRO singleMacros[] = {
         { "FFT_SIZE", std::to_string(size).c_str() },
         { NULL, NULL }};
-    HRESULT hr = D3DCompileFromFile(L"shaders/fft.hlsl", singleMacros, nullptr, "FFTKernel_1D", "cs_5_0", 0, 0, &shaderBlob, &errorBlob);
-    if (FAILED(hr)) {
-        if (errorBlob) std::cerr << "Shader Error: " << (char*)errorBlob->GetBufferPointer() << std::endl;
-        return false;
-    }
-    device->CreateComputeShader(shaderBlob->GetBufferPointer(), shaderBlob->GetBufferSize(), nullptr, &fftShader);
-    shaderBlob->Release();
-
     D3D_SHADER_MACRO arrayMacros[] = {
     { "FFT_SIZE", std::to_string(size).c_str() },
     { "IS_ARRAY", "1" },
     { NULL, NULL }};
-    HRESULT hr1 = D3DCompileFromFile(L"shaders/fft.hlsl", arrayMacros, nullptr, "FFTKernel_1D", "cs_5_0", 0, 0, &shaderBlob, &errorBlob);
-    if (FAILED(hr1)) {
-        if (errorBlob) std::cerr << "Shader Error: " << (char*)errorBlob->GetBufferPointer() << std::endl;
+
+    // Row Shaders
+    hr = D3DCompileFromFile(L"shaders/fft.hlsl", singleMacros, nullptr, "RowFFT", "cs_5_0", 0, 0, &shaderBlob, &errorBlob);
+    if (FAILED(hr)) {
+        if (errorBlob) std::cerr << "FFT Row Shader Error: " << (char*)errorBlob->GetBufferPointer() << std::endl;
+        return false;
+    }
+    device->CreateComputeShader(shaderBlob->GetBufferPointer(), shaderBlob->GetBufferSize(), nullptr, &fftRowShader);
+    shaderBlob->Release();
+    hr = D3DCompileFromFile(L"shaders/fft.hlsl", arrayMacros, nullptr, "RowFFT", "cs_5_0", 0, 0, &shaderBlob, &errorBlob);
+    if (FAILED(hr)) {
+        if (errorBlob) std::cerr << "FFT Array Shader Error: " << (char*)errorBlob->GetBufferPointer() << std::endl;
         return false;
     }
     device->CreateComputeShader(shaderBlob->GetBufferPointer(), shaderBlob->GetBufferSize(), nullptr, &fftArrayShader);
     shaderBlob->Release();
 
+    // Array Shaders
+    hr = D3DCompileFromFile(L"shaders/fft.hlsl", singleMacros, nullptr, "Transpose", "cs_5_0", 0, 0, &shaderBlob, &errorBlob);
+    if (FAILED(hr)) {
+        if (errorBlob) std::cerr << "Transpose Row Shader Error: " << (char*)errorBlob->GetBufferPointer() << std::endl;
+        return false;
+    }
+    device->CreateComputeShader(shaderBlob->GetBufferPointer(), shaderBlob->GetBufferSize(), nullptr, &transposeRowShader);
+    shaderBlob->Release();
+    hr = D3DCompileFromFile(L"shaders/fft.hlsl", arrayMacros, nullptr, "Transpose", "cs_5_0", 0, 0, &shaderBlob, &errorBlob);
+    if (FAILED(hr)) {
+        if (errorBlob) std::cerr << "Transpose Array Shader Error: " << (char*)errorBlob->GetBufferPointer() << std::endl;
+        return false;
+    }
+    device->CreateComputeShader(shaderBlob->GetBufferPointer(), shaderBlob->GetBufferSize(), nullptr, &transposeArrayShader);
+    shaderBlob->Release();
+
     return true;
 }
 
-void GPU::ExecuteFFT(ID3D11UnorderedAccessView* fftBufferUAV, int size, bool inverse, int numLayers) {
-    // Setup
-    if (numLayers > 1)
-        context->CSSetShader(fftArrayShader, nullptr, 0);
-    else
-        context->CSSetShader(fftShader, nullptr, 0);
-    context->CSSetUnorderedAccessViews(0, 1, &fftBufferUAV, nullptr);
-
+void GPU::ExecuteFFT(GPUField* ping, GPUField* pong, int size, bool inverse, int numLayers) {
     FFTConstants constants = {};
     constants.N = size;
     constants.Inverse = inverse ? 1 : 0;
-    unsigned int bits = 0; // integer Log2
+    int bits = 0;
     int temp = size;
-    while (temp >>= 1) ++bits;
+    while(temp >>= 1)
+        ++bits;
     constants.Bits = bits;
-
-    // Row pass
-    constants.Row = true;
     UpdateFFTConstants(constants);
-    context->Dispatch(1, size, numLayers); // One group per row
 
-    // Column pass
-    constants.Row = false;
-    UpdateFFTConstants(constants);
-    context->Dispatch(1, size, numLayers); // One group per column
+    bool isArray = numLayers > 1;
 
-    // Unbind
+    ID3D11ComputeShader* fft =
+        isArray ? fftArrayShader : fftRowShader;
+    ID3D11ComputeShader* transpose =
+        isArray ? transposeArrayShader : transposeRowShader;
+
+    ID3D11ShaderResourceView* nullSRV = nullptr;
     ID3D11UnorderedAccessView* nullUAV = nullptr;
+
+    // PASS 1: Row FFT //
+    context->CSSetShader(fft, nullptr, 0);
+    context->CSSetShaderResources(0, 1, &ping->srv);
+    context->CSSetUnorderedAccessViews(0, 1, &pong->uav, nullptr);
+    context->Dispatch(size, numLayers, 1);
+    context->CSSetShaderResources(0, 1, &nullSRV);
+    context->CSSetUnorderedAccessViews(0, 1, &nullUAV, nullptr);
+
+    // PASS 2: Transpose //
+    context->CSSetShader(transpose, nullptr, 0);
+    context->CSSetShaderResources(0, 1, &pong->srv);
+    context->CSSetUnorderedAccessViews(0, 1, &ping->uav, nullptr);
+    context->Dispatch(size / 16, size / 16, numLayers);
+    context->CSSetShaderResources(0, 1, &nullSRV);
+    context->CSSetUnorderedAccessViews(0, 1, &nullUAV, nullptr);
+
+    // PASS 3: Second Row FFT //
+    context->CSSetShader(fft, nullptr, 0);
+    context->CSSetShaderResources(0, 1, &ping->srv);
+    context->CSSetUnorderedAccessViews(0, 1, &pong->uav, nullptr);
+    context->Dispatch(size, numLayers, 1);
+    context->CSSetShaderResources(0, 1, &nullSRV);
+    context->CSSetUnorderedAccessViews(0, 1, &nullUAV, nullptr);
+
+    // PASS 4: Final Transpose //
+    context->CSSetShader(transpose, nullptr, 0);
+    context->CSSetShaderResources(0, 1, &pong->srv);
+    context->CSSetUnorderedAccessViews(0, 1, &ping->uav, nullptr);
+    context->Dispatch(size / 16, size / 16, numLayers);
+    context->CSSetShaderResources(0, 1, &nullSRV);
     context->CSSetUnorderedAccessViews(0, 1, &nullUAV, nullptr);
 }
 

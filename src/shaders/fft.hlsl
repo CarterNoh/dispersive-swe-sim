@@ -15,9 +15,11 @@ cbuffer FFTConstants : register(b1) {
 
 // Texture Registers
 #ifdef IS_ARRAY
-    RWTexture2DArray<float2> fft : register(u0);
+    Texture2DArray<float2> inputTex : register(t0);
+    RWTexture2DArray<float2> outputTex : register(u0);
 #else
-    RWTexture2D<float2> fft : register(u0);
+    Texture2D<float2> inputTex : register(t0);
+    RWTexture2D<float2> outputTex : register(u0);
 #endif
 
 // Groupshared memory
@@ -28,14 +30,6 @@ groupshared float2 gs_Data[FFT_SIZE];
 float2 complex_mul(float2 a, float2 b) {
     return float2(a.x * b.x - a.y * b.y,
                   a.x * b.y + a.y * b.x);
-}
-
-float2 complex_add(float2 a, float2 b) {
-    return float2(a.x + b.x, a.y + b.y);
-}
-
-float2 complex_sub(float2 a, float2 b) {
-    return float2(a.x - b.x, a.y - b.y);
 }
 
 float2 twiddle_factor(uint k, uint N, bool inverse) {
@@ -61,70 +55,55 @@ uint bit_reverse(uint x, uint bits) {
 // ---------------------------------------------------------------------------
 
 [numthreads(FFT_SIZE, 1, 1)]
-void FFTKernel_1D(
-    uint3 GI  : SV_GroupThreadID,   // tid = GI.x  ∈ [0, FFT_MAX_N)
-    uint3 GID : SV_GroupID          // GID.y = row or column index
-) {
-    const uint tid = GI.x;
+void RowFFT(uint3 tid : SV_GroupThreadID,
+            uint3 gid : SV_GroupID) {
+    uint x = tid.x;
+    uint y = gid.x;
+    uint rev = bit_reverse(x, cb_Bits);
+    #ifdef IS_ARRAY
+        uint z = gid.y;
+        uint3 coord = uint3(x, y, z);
+    #else
+        uint2 coord = uint2(x, y);
+    #endif
+    gs_Data[rev] = inputTex[coord];
 
-    // -------------------------------------------------------------------------
-    // PHASE 1 — Load with bit-reversal permutation into groupshared memory
-    // -------------------------------------------------------------------------
-
-    // Global element coordinate: row pass uses (tid, row), column pass uses (column, tid).
-    // if (tid < cb_N) {
-        const uint rev = bit_reverse(tid, cb_Bits);
-        #ifdef IS_ARRAY
-            uint3 coord = (cb_IsRow == 1) ? uint3(tid, GID.y, GID.z) : uint3(GID.y, tid, GID.z);
-        #else
-            uint2 coord = (cb_IsRow == 1) ? uint2(tid, GID.y) : uint2(GID.y, tid);
-        #endif
-        gs_Data[rev] = fft[coord];
-    // }
     GroupMemoryBarrierWithGroupSync();
-
-    // -------------------------------------------------------------------------
-    // PHASE 2 — Butterfly passes
-    // -------------------------------------------------------------------------
-
-    for (uint passNum = 0; passNum < cb_Bits; ++passNum) {
-        const uint span      = 1u << passNum;
-        const uint groupSize = span << 1;
-        // Declare variables outside the scope so we can write them later
-        float2 newEven, newOdd;
-        uint evenIdx, oddIdx;
-        if (tid < cb_N / 2) {
-            const uint k       = tid % span;
-            evenIdx            = (tid / span) * groupSize + k;
-            oddIdx             = evenIdx + span;
-            float2 tw   = twiddle_factor(k, groupSize, cb_Inverse);
-            float2 even = gs_Data[evenIdx];
-            float2 odd  = complex_mul(tw, gs_Data[oddIdx]);
-            newEven = complex_add(even, odd);
-            newOdd  = complex_sub(even, odd);
+    for(uint p = 0; p < (uint)cb_Bits; ++p) {
+        uint span = 1 << p;
+        uint step = span << 1;
+        float2 outA, outB;
+        uint even, odd;
+        if(x < (uint)cb_N / 2) {
+            uint k = x % span;
+            even = (x / span) * step + k;
+            odd  = even + span;
+            float2 W = twiddle_factor(k, step, cb_Inverse);
+            float2 a = gs_Data[even];
+            float2 b = complex_mul(W, gs_Data[odd]);
+            outA = a + b;
+            outB = a - b;
         }
-        // All threads sync before we overwrite the old data
         GroupMemoryBarrierWithGroupSync();
-        if (tid < cb_N / 2) {
-            gs_Data[evenIdx] = newEven;
-            gs_Data[oddIdx]  = newOdd;
+        if(x < (uint)cb_N / 2) {
+            gs_Data[even] = outA;
+            gs_Data[odd]  = outB;
         }
-        // All threads sync before the next pass loop begins
         GroupMemoryBarrierWithGroupSync();
     }
 
-    // -------------------------------------------------------------------------
-    // PHASE 3 — Normalize (inverse only) and write back to global memory
-    // -------------------------------------------------------------------------
-
     float scale = cb_Inverse ? (1.0f / (float)cb_N) : 1.0f;
-
-    float2 result;
-    result.x = gs_Data[tid].x * scale;
-    result.y = gs_Data[tid].y * scale;
-    fft[coord] = result;
+    outputTex[coord] = gs_Data[x] * scale;
 }
 
 
-
-
+[numthreads(16, 16, 1)]
+void Transpose(uint3 id : SV_DispatchThreadID) {
+    #ifdef IS_ARRAY
+        uint3 dst = uint3(id.y, id.x, id.z);
+        outputTex[dst] = inputTex[id];
+    #else
+        uint2 dst = uint2(id.y, id.x);
+        outputTex[dst] = inputTex[id.xy];
+    #endif
+}
