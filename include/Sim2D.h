@@ -18,11 +18,10 @@ public:
 	static constexpr float TERRAIN_HEIGHT = -10.f; // base height of terrain features (meters)
 	static constexpr float TERRAIN_SCALE = 15.f; // scale of terrain features (meters)
 	static constexpr int TERRAIN_TYPE = 0; // 0 = flat, 1 = ramp, 2 = bumps, 3 = basins, 4 = beach
-	static constexpr int WATER_TYPE = 1; // 0 = localized splash, 1 = step/dam break, 2 = basin flood
+	static constexpr int WATER_TYPE = 0; // 0 = localized splash, 1 = step/dam break, 2 = basin flood
 	static constexpr float WATER_LEVEL = 10.f; 
 	static constexpr float WATER_SCALE = 10.f; 
 	static constexpr int BOUNDARY_TYPE = 0; // 0 = wall, 1 = free
-	
 	static constexpr float MIN_WATER_HEIGHT = 0.01f;  // minimum water height for stability
 	
 	// Decomposition Parameters

@@ -139,7 +139,7 @@ float2 ComplexMul(float2 a, float2 b) {
 void ApplyBoundaries(uint3 id : SV_DispatchThreadID){
     uint x = id.x;
     uint y = id.y;
-    if (x < 0 || x >= (uint)(gridSize) || y < 0 || y >= (uint)(gridSize)) return;
+    if (x >= (uint)(gridSize) || y >= (uint)(gridSize)) return;
 
     bool left   = (x == 0);
     bool right  = (x == (uint)gridSize - 1);

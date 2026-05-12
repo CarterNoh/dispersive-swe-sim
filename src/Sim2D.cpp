@@ -210,11 +210,11 @@ void Sim::eWaveStep() {
 	gpu->ExecuteFFT(qHat_y_array.uav, GRIDSIZE, true, DEPTH_NUM);
 
 	// Interpolate between depths to get qtilde
-	gpu->Dispatch(InterpQ,
-		{hbar.srv, qHat_x_array.srv, qHat_y_array.srv},
-		{qtilde_x.uav, qtilde_y.uav}, DEPTH_NUM);
-	gpu->Dispatch(ApplyBoundaries, {}, 
-		{qtilde_x.uav, qtilde_y.uav});
+	// gpu->Dispatch(InterpQ,
+	// 	{hbar.srv, qHat_x_array.srv, qHat_y_array.srv},
+	// 	{qtilde_x.uav, qtilde_y.uav}, DEPTH_NUM);
+	// gpu->Dispatch(ApplyBoundaries, {}, 
+	// 	{qtilde_x.uav, qtilde_y.uav});
 }
 
 void Sim::SWEStep() {
