@@ -224,8 +224,8 @@ void Sim::SWEStep() {
 	gpu->Dispatch(CalcUbar, 
 		{qbar_x.srv, qbar_y.srv, hbarOld.srv,}, 
 		{ubar_x.uav, ubar_y.uav});
-	gpu->Dispatch(ApplyBoundaries, {}, 
-		{ubar_x.uav, ubar_y.uav});
+	// gpu->Dispatch(ApplyBoundaries, {}, 
+	// 	{ubar_x.uav, ubar_y.uav});
 		
 	// Compute time derivative of u_bar and integrate to get new u_bar, then 
 	// transfer back to flow rate using upwinding on most recent hbar
@@ -248,9 +248,9 @@ void Sim::TransportStep() {
 	gpu->Dispatch(UpdateTilde, 
 		{ubarNew_x.srv, ubar_x.srv, ubarNew_y.srv, ubar_y.srv, 
 			qtildePast_x.srv, qtildePast_y.srv, h.srv, htilde.srv},
-		{qtilde_x.uav, qtilde_y.uav, htilde.uav});	
+		{htilde.uav, qtilde_x.uav, qtilde_y.uav});	
 	gpu->Dispatch(ApplyBoundaries, {}, 
-		{qtilde_x.uav, qtilde_y.uav, htilde.uav});
+		{htilde.uav, qtilde_x.uav, qtilde_y.uav});
 	
 	// Advection of h through ubar:
 	// Construct q_advect = ubar * htilde sampled at cell edges using cubic sampling
