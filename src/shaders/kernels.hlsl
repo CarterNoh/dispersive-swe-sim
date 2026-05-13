@@ -210,7 +210,7 @@ void CalcDiffusionCoeffs(uint3 id : SV_DispatchThreadID) {
 	Their code for initial calculation:
 	// Identify the correct height (sigma) to use for diffusivity calculation
 	alpha_H[idx(x,y)] = 0.f;
-	float maxGround = std::max(terrain[idx(x,y)], terrain[idx(x+1,y)], terrain[idx(x,y+1)]); // Why do this?
+	float maxGround = max(terrain[idx(x,y)], terrain[idx(x+1,y)], terrain[idx(x,y+1)]); // Why do this?
 	float minWaterlevel = (H[idx(x,y)] + H[idx(x+1,y)] + H[idx(x,y+1)]) / 3.f; // Why average here?
 	if ((h[idx(x,y)] > 0.f) && (h[idx(x+1,y)] > 0.f) && (h[idx(x,y+1)] > 0.f))
 	{
@@ -227,21 +227,19 @@ void CalcDiffusionCoeffs(uint3 id : SV_DispatchThreadID) {
 
     // float max_ground = max(in1[curr], in1[right], in1[up]);
     // float min_water = min(in0[curr], in0[right], in0[up]);
-    float max_alpha = (cellSize * cellSize) / (4.0f * deltaT);
+    float h = in0[curr] - in1[curr];
+    float hr = in0[right] - in1[right];
+    float hu = in0[up] - in1[up];
     float denom = 2.0f * deltaT * diffusionIterations;
-    // Alpha_H
     float grad_x = (in0[right] - in0[curr]) / cellSize;
     float grad_y = (in0[up] - in0[curr]) / cellSize;
-    float penalty = -diffusionPenalty * (grad_x * grad_x + grad_y * grad_y);
-    // out0[curr] = max(0.f, min(max_alpha, in0[curr] * in0[curr] / denom) * exp(penalty));
-    // Alpha_Q
-    float avg_H_x = 0.5f * (in0[curr] + in0[right]);
-    float avg_H_y = 0.5f * (in0[curr] + in0[up]);
-    // out1[curr] = max(0.f, min(max_alpha, avg_H_x * avg_H_x / denom) * exp(penalty));
-    // out2[curr] = max(0.f, min(max_alpha, avg_H_y * avg_H_y / denom) * exp(penalty));
-    out0[curr] = min(max_alpha, in0[curr] * in0[curr] / denom) * exp(penalty);
-    out1[curr] = min(max_alpha, avg_H_x * avg_H_x / denom) * exp(penalty);
-    out2[curr] = min(max_alpha, avg_H_y * avg_H_y / denom) * exp(penalty);
+    float penalty = exp(- diffusionPenalty * (grad_x * grad_x + grad_y * grad_y));
+    float avg_h_x = 0.5f * (h * h + hr * hr);
+    float avg_h_y = 0.5f * (h * h + hu * hu);
+    float max_alpha = (cellSize * cellSize) / (4.0f * deltaT);
+    out0[curr] = min(max_alpha, h * h   / denom) * penalty;
+    out1[curr] = min(max_alpha, avg_h_x / denom) * penalty;
+    out2[curr] = min(max_alpha, avg_h_y / denom) * penalty;
 }
 
 [numthreads(16, 16, 1)]
