@@ -213,19 +213,17 @@ void Sim::eWaveStep() {
 	gpu->Dispatch(InterpQ,
 		{hbar.srv, qHat_x_array.srv, qHat_y_array.srv},
 		{qtilde_x.uav, qtilde_y.uav}, DEPTH_NUM);
-	gpu->Dispatch(ApplyBoundaries, {}, 
-		{qtilde_x.uav, qtilde_y.uav});
+	// gpu->Dispatch(ApplyBoundaries, {}, 
+	// 	{qtilde_x.uav, qtilde_y.uav});
 }
 
 void Sim::SWEStep() {
 	// SWE bulk simulation using [Stelling03]
 
-	// qbar to ubar using hbar from LAST timestep	
+	// qbar to ubar using hbar from last timestep	
 	gpu->Dispatch(CalcUbar, 
 		{qbar_x.srv, qbar_y.srv, hbarOld.srv,}, 
 		{ubar_x.uav, ubar_y.uav});
-	// gpu->Dispatch(ApplyBoundaries, {}, 
-	// 	{ubar_x.uav, ubar_y.uav});
 		
 	// Compute time derivative of u_bar and integrate to get new u_bar, then 
 	// transfer back to flow rate using upwinding on most recent hbar

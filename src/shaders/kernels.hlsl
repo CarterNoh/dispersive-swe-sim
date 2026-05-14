@@ -291,8 +291,8 @@ void CalcUbar(uint3 id : SV_DispatchThreadID) {
     float ubar_x = in0[id.xy];
     float ubar_y = in1[id.xy];
 
-    uint2 xplus = uint2(max(id.x + 1, gridSize - 1), id.y);
-    uint2 yplus = uint2(id.x, max(id.y + 1, gridSize - 1));
+    uint2 xplus = uint2(min(id.x + 1, gridSize - 1), id.y);
+    uint2 yplus = uint2(id.x, min(id.y + 1, gridSize - 1));
     // First-Order Up-Winding
     if (ubar_x >= 0.f || id.x == gridSize-1)
         ubar_x /= max(minWaterHeight, in2[id.xy]);
@@ -301,7 +301,7 @@ void CalcUbar(uint3 id : SV_DispatchThreadID) {
     if (ubar_y >= 0.f || id.y == gridSize-1)
         ubar_y /= max(minWaterHeight, in2[id.xy]);
     else
-        ubar_y /= max(minWaterHeight, in2[yplus]);
+        ubar_y /= max(minWaterHeight, in2[id.xy + uint2(0,1)]);
 
     // Enforcing CFL condition for later surface waves advection
     out0[id.xy] = LimitVelocity(ubar_x);  
@@ -385,43 +385,41 @@ void UpdateTilde(uint3 id : SV_DispatchThreadID) {
     uint2 up    = curr + uint2(0, 1);
     uint2 down  = curr - uint2(0, 1);
     
-    // Adjust qtilde to account for bulk flow
-    float ubar_x_avg = 0.5f * (in0[curr] + in1[curr]); // ubar is on same timestep as h, need to get back to timestep of q 
+    // ubar is on same timestep as h, need to get back to timestep of q 
+    float ubar_x_avg = 0.5f * (in0[curr] + in1[curr]); 
+    float ubar_x_m1  = 0.5f * (in0[left] + in1[left]);
+    float ubar_x_p1  = 0.5f * (in0[right] + in1[right]);
     float ubar_y_avg = 0.5f * (in2[curr] + in3[curr]);
-    float step_x = - ubar_x_avg * timeStep / cellSize; // unitless (cells)
-    float step_y = - ubar_y_avg * timeStep / cellSize;
+    float ubar_y_m1  = 0.5f * (in2[down] + in3[down]);
+    float ubar_y_p1  = 0.5f * (in2[up] + in3[up]);
 
     // ubar divergence using central difference
-    float ubar_x_m1 = 0.5f * (in0[left] + in1[left]);
-    float ubar_x_p1 = 0.5f * (in0[right] + in1[right]);
-    float ubar_y_m1 = 0.5f * (in2[down] + in3[down]);
-    float ubar_y_p1 = 0.5f * (in2[up] + in3[up]);
-    float div_ubar_x = (ubar_x_p1 - ubar_x_m1) / (2.f * cellSize);
-    float div_ubar_y = (ubar_y_p1 - ubar_y_m1) / (2.f * cellSize);
-    float div_ubar = div_ubar_x + div_ubar_y;
-    if (div_ubar < 0.f) // dampen if converging to avoid breaking waves
-        div_ubar *= gammaTransport;
+    float div_ubar = (ubar_x_p1 - ubar_x_m1);
+    div_ubar += (ubar_y_p1 - ubar_y_m1);
+    div_ubar /= 2.f * cellSize;
+    div_ubar *= (div_ubar < 0.f) ? gammaTransport : 1; // dampen if converging to avoid breaking waves
 
     // Update qtilde using bulk flow and ubar divergence: dq/dt = -q * div(ubar)
+    float step_x = - ubar_x_avg * timeStep / cellSize; // unitless (cells)
+    float step_y = - ubar_y_avg * timeStep / cellSize;
     if (((ubar_x_avg >= 0.f) && (in6[curr] <= minWaterHeight)) ||
         ((ubar_x_avg < 0.f) && (in6[right] <= minWaterHeight)))
         out1[curr] = 0.f;
     else
         out1[curr] = SampleCubicClamped(in4, id.x + step_x, curr, false) * exp(-div_ubar * timeStep);
-        // out1[curr] = LimitFlowRate(out0[curr], in6[curr], in6[right]); 
+        out1[curr] = LimitFlowRate(out1[curr], in6[curr], in6[right]); 
     if (((ubar_y_avg >= 0.f) && (in6[curr] <= minWaterHeight)) ||
         ((ubar_y_avg < 0.f) && (in6[up] <= minWaterHeight)))
         out2[curr] = 0.f;
     else
         out2[curr] = SampleCubicClamped(in5, id.y + step_y, curr, true) * exp(-div_ubar * timeStep);
-        // out2[curr] = LimitFlowRate(out1[curr], in6[curr], in6[up]); 
+        out2[curr] = LimitFlowRate(out2[curr], in6[curr], in6[up]); 
 
     // Update htilde using ubar divergence
-    div_ubar_x = (in0[curr] - in0[left]) / cellSize;
-    div_ubar_y = (in2[curr] - in2[down]) / cellSize;
-    div_ubar = div_ubar_x + div_ubar_y;
-    if (div_ubar < 0.f) // dampen if converging to avoid breaking waves
-        div_ubar *= gammaTransport;
+    div_ubar  = (in0[curr] - in0[left]);
+    div_ubar += (in2[curr] - in2[down]);
+    div_ubar /= cellSize;
+    div_ubar *= (div_ubar < 0.f) ? gammaTransport : 1; // dampen if converging to avoid breaking waves
     out0[curr] = in7[curr] * exp(-div_ubar * timeStep);
 }
 
@@ -432,8 +430,8 @@ void CalcQAdvect(uint3 id : SV_DispatchThreadID) {
     // cubic reconstruction: 1/2 cell accounts for staggered grid, 0.5 * dt accounts for h and u at different 1/2 times
     if (id.x >= (uint)(gridSize) || id.y >= (uint)(gridSize)) return;
     float step_x = 0.5f - in0[id.xy] * (0.5f * timeStep) / cellSize;
-    float step_y = 0.5f - in1[id.xy] * (0.5f * timeStep) / cellSize; 
-    out0[id.xy] = in0[id.xy] * SampleCubicClamped(in2, id.x + step_x, id.xy, false);  
+    float step_y = 0.5f - in1[id.xy] * (0.5f * timeStep) / cellSize;
+    out0[id.xy] = in0[id.xy] * SampleCubicClamped(in2, id.x + step_x, id.xy, false);
     out1[id.xy] = in1[id.xy] * SampleCubicClamped(in2, id.y + step_y, id.xy, true);
     // out1[curr] = LimitFlowRate(out1[curr], in6[curr], in6[right]); // this doesnt even have the right height
     // out2[curr] = LimitFlowRate(out2[curr], in6[curr], in6[up]);
@@ -474,8 +472,8 @@ void IntegrateH(uint3 id : SV_DispatchThreadID) {
 	out0[curr] = max(0.f, in6[curr] - timeStep * div_q);
     out1[curr] = q_x - in2[curr]; // qbar + qtilde, removing qAdvect
     out2[curr] = q_y - in5[curr];
-    // out1[curr] = LimitFlowRate(out1[curr], in6[curr], in6[right]);
-    // out2[curr] = LimitFlowRate(out2[curr], in6[curr], in6[up]);
+    out1[curr] = LimitFlowRate(out1[curr], in6[curr], in6[right]);
+    out2[curr] = LimitFlowRate(out2[curr], in6[curr], in6[up]);
     if (StopFlowOnTerrainBoundary(in6, in7, curr, false))
         out1[curr] = 0.f;
     if (StopFlowOnTerrainBoundary(in6, in7, curr, true))
@@ -604,7 +602,7 @@ RWTexture2D<float>     qtilde_y    : register(u1);
 void InterpQ(uint3 id : SV_DispatchThreadID) {
     // Inputs: qtilde_x_array, qtilde_y_array, hbar, depth
     // Outputs: qtilde_x, qtilde_y
-    if (id.x < 1 || id.x >= (uint)(gridSize - 1) || id.y < 1 || id.y >= (uint)(gridSize - 1)) return;
+    if (id.x >= (uint)(gridSize) || id.y >= (uint)(gridSize)) return;
 
     float waterDepth_x = max(hbar[id.xy], hbar[id.xy + uint2(1, 0)]);
     float waterDepth_y = max(hbar[id.xy], hbar[id.xy + uint2(0, 1)]);
@@ -624,6 +622,6 @@ void InterpQ(uint3 id : SV_DispatchThreadID) {
         sy = (in8[d2_y] - waterDepth_y) / (in8[d2_y] - in8[d1_y]);
     qtilde_x[id.xy] = sx * qHat_x_array[uint3(id.x, id.y, d1_x)].x + (1.f - sx) * qHat_x_array[uint3(id.x, id.y, d2_x)].x;
     qtilde_y[id.xy] = sy * qHat_y_array[uint3(id.x, id.y, d1_y)].x + (1.f - sy) * qHat_y_array[uint3(id.x, id.y, d2_y)].x;
-    // qtilde_x[id.xy] = LimitFlowRate(qtilde_x[id.xy], hbar[id.xy], hbar[id.xy + uint2(1, 0)]); // this should use h but uses hbar
-    // qtilde_y[id.xy] = LimitFlowRate(qtilde_y[id.xy], hbar[id.xy], hbar[id.xy + uint2(0, 1)]);
+    // qtilde_x[id.xy] = LimitFlowRate(qtilde_x[id.xy], hbar[id.xy], hbar[uint2(min(id.x+1, gridSize-1), id.y)]); // this should use h but uses hbar
+    // qtilde_y[id.xy] = LimitFlowRate(qtilde_y[id.xy], hbar[id.xy], hbar[uint2(id.x, min(id.y+1, gridSize-1))]);
 }

@@ -16,8 +16,8 @@ extern "C" {
 namespace fs = std::filesystem;
 
 // Parameters
-int numTicks = 3000; // Number of simulation steps to run
-bool render = true; // Whether to render the simulation or just run it headless
+int numTicks = 300; // Number of simulation steps to run
+bool render = false; // Whether to render the simulation or just run it headless
 
 void SaveToCSV(const std::vector<float>& h, int size, int tick) {
     if (!fs::exists("data")) {
