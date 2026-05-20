@@ -46,10 +46,14 @@ RWTexture2D<float> out5: register(u5);
 
 //////////////////// HELPER FUNCTIONS /////////////////////////
 float CalcDiffusion(Texture2D<float> f, Texture2D<float> a, uint2 curr) {
-    uint2 left = curr - uint2(1,0);
-    uint2 right = curr + uint2(1,0);
-    uint2 up = curr + uint2(0,1);
-    uint2 down = curr - uint2(0,1);
+    // uint2 left = curr - uint2(1,0);
+    // uint2 right = curr + uint2(1,0);
+    // uint2 up = curr + uint2(0,1);
+    // uint2 down = curr - uint2(0,1);
+    uint2 right = uint2(min(curr.x + 1, gridSize - 1), curr.y);
+    uint2 left  = uint2(max(curr.x - 1, 0), curr.y);
+    uint2 up    = uint2(curr.x, min(curr.y + 1, gridSize - 1));
+    uint2 down  = uint2(curr.x, max(curr.y - 1, 0));
     float dF_x = a[curr] * (f[right] - f[curr]) - a[left] * (f[curr] - f[left]);
     float dF_y = a[curr] * (f[up] - f[curr]) - a[down] * (f[curr] - f[down]);
     float dFdX = (dF_x + dF_y) / (cellSize * cellSize);
@@ -201,11 +205,17 @@ void InitDecomp(uint3 id : SV_DispatchThreadID) {
 void CalcDiffusionCoeffs(uint3 id : SV_DispatchThreadID) {
     // Inputs: in0 = H, in1 = terrain
     // Outputs: out0 = alpha_H, out1 = alpha_Q_x, out2 = alpha_Q_y
-    if (id.x >= (uint)(gridSize - 1) || id.y >= (uint)(gridSize - 1)) return;
+    // if (id.x >= (uint)(gridSize - 1) || id.y >= (uint)(gridSize - 1)) return;
  
-    uint2 curr = id.xy;
-    uint2 right = curr + uint2(1, 0);
-    uint2 up = curr + uint2(0, 1);
+    // uint2 curr = id.xy;
+    // uint2 right = curr + uint2(1, 0);
+    // uint2 up = curr + uint2(0, 1);
+
+    if (id.x >= (uint)(gridSize) || id.y >= (uint)(gridSize)) return;
+
+    uint2 curr  = id.xy;
+    uint2 right = uint2(min(id.x + 1, gridSize - 1), id.y);
+    uint2 up    = uint2(id.x, min(id.y + 1, gridSize - 1));
 
     // float max_ground = max(in1[curr], in1[right], in1[up]);
     // float min_water = min(in0[curr], in0[right], in0[up]); // or average of these 3
@@ -229,7 +239,8 @@ void DiffusionStep(uint3 id : SV_DispatchThreadID) {
     // Inputs: in0 = terrain, in1 = HPast, in2 = QPast_x, in3 = QPast_y, 
     //         in4 = alpha_H, in5 = alpha_Q_x, in6 = alpha_Q_y
     // Outputs: out0 = H, out1 = Q_x, out3 = Q_y
-    if (id.x < 1 || id.x >= (uint)(gridSize - 1) || id.y < 1 || id.y >= (uint)(gridSize - 1)) return;
+    // if (id.x < 1 || id.x >= (uint)(gridSize - 1) || id.y < 1 || id.y >= (uint)(gridSize - 1)) return;
+    if (id.x >= (uint)(gridSize) || id.y >= (uint)(gridSize)) return;
 
     float newH = in1[id.xy] + deltaT * CalcDiffusion(in1, in4, id.xy);
     out0[id.xy] = max(in0[id.xy], newH);
@@ -312,15 +323,20 @@ void CalcUbar(uint3 id : SV_DispatchThreadID) {
 void CalcSWE(uint3 id : SV_DispatchThreadID) {
     // Inputs: in0 = ubar_x, in1 = ubar_y, in2 = hbar, in3 = H
     // Outputs: out0 = ubarNew_x, out1 = ubarNew_y, out2 = qbar_x, out3 = qbar_y
-    if (id.x < 1 || id.x >= (uint)(gridSize - 1) || id.y < 1 || id.y >= (uint)(gridSize - 1)) return;
+    // if (id.x < 1 || id.x >= (uint)(gridSize - 1) || id.y < 1 || id.y >= (uint)(gridSize - 1)) return;
+    if (id.x >= (uint)(gridSize) || id.y >= (uint)(gridSize)) return;
 
     uint2 curr = id.xy;
-    uint2 right = curr + uint2(1,0);
-    uint2 left = curr - uint2(1,0);
-    uint2 up = curr + uint2(0,1);
-    uint2 down = curr - uint2(0,1);
-    uint2 r2 = uint2(min(id.x + 2, gridSize-1), id.y);
-    uint2 u2 = uint2(id.x, min(id.y + 2, gridSize-1));
+    // uint2 right = curr + uint2(1,0);
+    // uint2 left = curr - uint2(1,0);
+    // uint2 up = curr + uint2(0,1);
+    // uint2 down = curr - uint2(0,1);
+    uint2 right = uint2(min(id.x + 1, gridSize - 1), id.y);
+    uint2 left  = uint2(max(id.x - 1, 0), id.y);
+    uint2 up    = uint2(id.x, min(id.y + 1, gridSize - 1));
+    uint2 down  = uint2(id.x, max(id.y - 1, 0));
+    uint2 r2 = uint2(min(id.x + 2, gridSize - 1), id.y);
+    uint2 u2 = uint2(id.x, min(id.y + 2, gridSize - 1));
     // Compute intermediate values needed for du/dt calculations
     // Need: q_x/y_ij, q_x_i-0.5_j, q_y_i_j-0.5, 
     // 	     h_i+0.5_j, h_i_j+0.5, h_ij=hbar[x,y], h_i+1_j=hbar[x+1,y], h_i_j+1=hbar[x,y+1],
@@ -377,13 +393,18 @@ void UpdateTilde(uint3 id : SV_DispatchThreadID) {
     // Inputs: in0 = ubarNew_x, in1 = ubar_x, in2 = ubarNew_y, in3 = ubar_y, 
     //         in4 = qtildePast_x, in5 = qtildePast_y, in6 = h, in7 = htilde
     // Outputs: out0 = htilde, out1 = qtilde_x, out2 = qtilde_y
-    if (id.x < 1 || id.x >= (uint)(gridSize - 1) || id.y < 1 || id.y >= (uint)(gridSize - 1)) return;
+    // if (id.x < 1 || id.x >= (uint)(gridSize - 1) || id.y < 1 || id.y >= (uint)(gridSize - 1)) return;
+    if (id.x >= (uint)(gridSize) || id.y >= (uint)(gridSize)) return;
 
     uint2 curr = id.xy;
-    uint2 right = curr + uint2(1, 0);
-    uint2 left  = curr - uint2(1, 0);
-    uint2 up    = curr + uint2(0, 1);
-    uint2 down  = curr - uint2(0, 1);
+    // uint2 right = curr + uint2(1, 0);
+    // uint2 left  = curr - uint2(1, 0);
+    // uint2 up    = curr + uint2(0, 1);
+    // uint2 down  = curr - uint2(0, 1);
+    uint2 right = uint2(min(id.x + 1, gridSize - 1), id.y);
+    uint2 left  = uint2(max(id.x - 1, 0), id.y);
+    uint2 up    = uint2(id.x, min(id.y + 1, gridSize - 1));
+    uint2 down  = uint2(id.x, max(id.y - 1, 0));
     
     // ubar is on same timestep as h, need to get back to timestep of q 
     float ubar_x_avg = 0.5f * (in0[curr] + in1[curr]); 
@@ -442,13 +463,18 @@ void IntegrateH(uint3 id : SV_DispatchThreadID) {
     // Inputs: in0 = qbar_x, in1 = qtilde_x, in2 = qAdvect_x, 
     //         in3 = qbar_y, in4 = qtilde_y, in5 = qAdvect_y, in6 = hPast, in7 = terrain
     // Outputs: out0 = h, out1 = q_x, out2 = q_y
-    if (id.x < 1 || id.x >= (uint)(gridSize - 1) || id.y < 1 || id.y >= (uint)(gridSize - 1)) return;
+    // if (id.x < 1 || id.x >= (uint)(gridSize - 1) || id.y < 1 || id.y >= (uint)(gridSize - 1)) return;
+    if (id.x >= (uint)(gridSize) || id.y >= (uint)(gridSize)) return;
 
     uint2 curr  = id.xy;
-    uint2 left  = id.xy - uint2(1, 0);
-    uint2 right = id.xy + uint2(1, 0);
-    uint2 down  = id.xy - uint2(0, 1);
-    uint2 up    = id.xy + uint2(0, 1);
+    // uint2 left  = id.xy - uint2(1, 0);
+    // uint2 right = id.xy + uint2(1, 0);
+    // uint2 down  = id.xy - uint2(0, 1);
+    // uint2 up    = id.xy + uint2(0, 1);
+    uint2 right = uint2(min(id.x + 1, gridSize - 1), id.y);
+    uint2 left  = uint2(max(id.x - 1, 0), id.y);
+    uint2 up    = uint2(id.x, min(id.y + 1, gridSize - 1));
+    uint2 down  = uint2(id.x, max(id.y - 1, 0));
 
     // q = qbar + qtilde + qAdvect
     float q_x = in0[curr] + in1[curr] + in2[curr];
