@@ -46,10 +46,6 @@ RWTexture2D<float> out5: register(u5);
 
 //////////////////// HELPER FUNCTIONS /////////////////////////
 float CalcDiffusion(Texture2D<float> f, Texture2D<float> a, uint2 curr) {
-    // uint2 left = curr - uint2(1,0);
-    // uint2 right = curr + uint2(1,0);
-    // uint2 up = curr + uint2(0,1);
-    // uint2 down = curr - uint2(0,1);
     uint2 right = uint2(min(curr.x + 1, gridSize - 1), curr.y);
     uint2 left  = uint2(max(curr.x - 1, 0), curr.y);
     uint2 up    = uint2(curr.x, min(curr.y + 1, gridSize - 1));
@@ -109,14 +105,12 @@ float SampleCubicClamped2D(Texture2D<float> dataField, float2 samplePos) {
     // 3. Precompute cubic weights for X and Y
     float2 frac2 = frac * frac;
     float2 frac3 = frac2 * frac;
-    
     float4 wX = float4(
         -frac3.x + 2.f * frac2.x - frac.x,
          3.f * frac3.x - 5.f * frac2.x + 2.f,
         -3.f * frac3.x + 4.f * frac2.x + frac.x,
          frac3.x - frac2.x
     ) * 0.5f;
-
     float4 wY = float4(
         -frac3.y + 2.f * frac2.y - frac.y,
          3.f * frac3.y - 5.f * frac2.y + 2.f,
@@ -143,7 +137,6 @@ float SampleCubicClamped2D(Texture2D<float> dataField, float2 samplePos) {
     float c10 = dataField[int2(id2.x, id1.y)];
     float c01 = dataField[int2(id1.x, id2.y)];
     float c11 = dataField[int2(id2.x, id2.y)];
-    
     float minVal = min(min(c00, c10), min(c01, c11));
     float maxVal = max(max(c00, c10), max(c01, c11));
 
@@ -224,12 +217,6 @@ void InitDecomp(uint3 id : SV_DispatchThreadID) {
 void CalcDiffusionCoeffs(uint3 id : SV_DispatchThreadID) {
     // Inputs: in0 = H, in1 = terrain
     // Outputs: out0 = alpha_H, out1 = alpha_Q_x, out2 = alpha_Q_y
-    // if (id.x >= (uint)(gridSize - 1) || id.y >= (uint)(gridSize - 1)) return;
- 
-    // uint2 curr = id.xy;
-    // uint2 right = curr + uint2(1, 0);
-    // uint2 up = curr + uint2(0, 1);
-
     if (id.x >= (uint)(gridSize) || id.y >= (uint)(gridSize)) return;
 
     uint2 curr  = id.xy;
@@ -258,7 +245,6 @@ void DiffusionStep(uint3 id : SV_DispatchThreadID) {
     // Inputs: in0 = terrain, in1 = HPast, in2 = QPast_x, in3 = QPast_y, 
     //         in4 = alpha_H, in5 = alpha_Q_x, in6 = alpha_Q_y
     // Outputs: out0 = H, out1 = Q_x, out3 = Q_y
-    // if (id.x < 1 || id.x >= (uint)(gridSize - 1) || id.y < 1 || id.y >= (uint)(gridSize - 1)) return;
     if (id.x >= (uint)(gridSize) || id.y >= (uint)(gridSize)) return;
 
     float newH = in1[id.xy] + deltaT * CalcDiffusion(in1, in4, id.xy);
@@ -275,7 +261,6 @@ void DecomposeFields(uint3 id : SV_DispatchThreadID) {
     //          out3 = htilde, out4 = qtilde_x, out5 = qtilde_y
     if (id.x >= (uint)(gridSize) || id.y >= (uint)(gridSize)) return;
     
-
     float hbar = max(0.f, in0[id.xy] - in6[id.xy]);
     out0[id.xy] = hbar;
     out1[id.xy] = in1[id.xy];
@@ -343,14 +328,9 @@ void CalcUbar(uint3 id : SV_DispatchThreadID) {
 void CalcSWE(uint3 id : SV_DispatchThreadID) {
     // Inputs: in0 = ubar_x, in1 = ubar_y, in2 = hbar, in3 = H
     // Outputs: out0 = ubarNew_x, out1 = ubarNew_y, out2 = qbar_x, out3 = qbar_y
-    // if (id.x < 1 || id.x >= (uint)(gridSize - 1) || id.y < 1 || id.y >= (uint)(gridSize - 1)) return;
     if (id.x >= (uint)(gridSize) || id.y >= (uint)(gridSize)) return;
 
     uint2 curr = id.xy;
-    // uint2 right = curr + uint2(1,0);
-    // uint2 left = curr - uint2(1,0);
-    // uint2 up = curr + uint2(0,1);
-    // uint2 down = curr - uint2(0,1);
     uint2 right = uint2(min(id.x + 1, gridSize - 1), id.y);
     uint2 left  = uint2(max(id.x - 1, 0), id.y);
     uint2 up    = uint2(id.x, min(id.y + 1, gridSize - 1));
@@ -413,14 +393,9 @@ void UpdateTilde(uint3 id : SV_DispatchThreadID) {
     // Inputs: in0 = ubarNew_x, in1 = ubar_x, in2 = ubarNew_y, in3 = ubar_y, 
     //         in4 = qtildePast_x, in5 = qtildePast_y, in6 = h, in7 = htilde
     // Outputs: out0 = htilde, out1 = qtilde_x, out2 = qtilde_y
-    // if (id.x < 1 || id.x >= (uint)(gridSize - 1) || id.y < 1 || id.y >= (uint)(gridSize - 1)) return;
     if (id.x >= (uint)(gridSize) || id.y >= (uint)(gridSize)) return;
 
     uint2 curr = id.xy;
-    // uint2 right = curr + uint2(1, 0);
-    // uint2 left  = curr - uint2(1, 0);
-    // uint2 up    = curr + uint2(0, 1);
-    // uint2 down  = curr - uint2(0, 1);
     uint2 right = uint2(min(id.x + 1, gridSize - 1), id.y);
     uint2 left  = uint2(max(id.x - 1, 0), id.y);
     uint2 up    = uint2(id.x, min(id.y + 1, gridSize - 1));
@@ -497,14 +472,9 @@ void IntegrateH(uint3 id : SV_DispatchThreadID) {
     // Inputs: in0 = qbar_x, in1 = qtilde_x, in2 = qAdvect_x, 
     //         in3 = qbar_y, in4 = qtilde_y, in5 = qAdvect_y, in6 = hPast, in7 = terrain
     // Outputs: out0 = h, out1 = q_x, out2 = q_y
-    // if (id.x < 1 || id.x >= (uint)(gridSize - 1) || id.y < 1 || id.y >= (uint)(gridSize - 1)) return;
     if (id.x >= (uint)(gridSize) || id.y >= (uint)(gridSize)) return;
 
     uint2 curr  = id.xy;
-    // uint2 left  = id.xy - uint2(1, 0);
-    // uint2 right = id.xy + uint2(1, 0);
-    // uint2 down  = id.xy - uint2(0, 1);
-    // uint2 up    = id.xy + uint2(0, 1);
     uint2 right = uint2(min(id.x + 1, gridSize - 1), id.y);
     uint2 left  = uint2(max(id.x - 1, 0), id.y);
     uint2 up    = uint2(id.x, min(id.y + 1, gridSize - 1));
@@ -684,6 +654,4 @@ void InterpQ(uint3 id : SV_DispatchThreadID) {
         sy = (in8[d2_y] - waterDepth_y) / (in8[d2_y] - in8[d1_y]);
     qtilde_x[id.xy] = sx * qHat_x_array[uint3(id.x, id.y, d1_x)].x + (1.f - sx) * qHat_x_array[uint3(id.x, id.y, d2_x)].x;
     qtilde_y[id.xy] = sy * qHat_y_array[uint3(id.x, id.y, d1_y)].x + (1.f - sy) * qHat_y_array[uint3(id.x, id.y, d2_y)].x;
-    // qtilde_x[id.xy] = LimitFlowRate(qtilde_x[id.xy], hbar[id.xy], hbar[uint2(min(id.x+1, gridSize-1), id.y)]); // this should use h but uses hbar
-    // qtilde_y[id.xy] = LimitFlowRate(qtilde_y[id.xy], hbar[id.xy], hbar[uint2(id.x, min(id.y+1, gridSize-1))]);
 }
