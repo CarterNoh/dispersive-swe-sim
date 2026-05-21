@@ -241,7 +241,7 @@ void Sim::TransportStep() {
 	/****** Advect high-frequency wave height and flow rate through bulk velocity ******/ 
 
 	// Adjust qtilde to account for advection by ubar, using cubic sampling to get better accuracy.
-	std::swap(qtilde_x, qtildePast_x);  // store current qtilde for sampling, we will update qtilde in place
+	std::swap(qtilde_x, qtildePast_x);
 	std::swap(qtilde_y, qtildePast_y);
 	gpu->Dispatch(UpdateTilde, 
 		{ubarNew_x.srv, ubar_x.srv, ubarNew_y.srv, ubar_y.srv, 

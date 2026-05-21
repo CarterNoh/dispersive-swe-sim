@@ -101,8 +101,8 @@ bool GPU::Init(int size, HWND hwnd) {
 
     // Create the Depth/Stencil Buffer
     D3D11_TEXTURE2D_DESC descDepth = {};
-    descDepth.Width = 800;  // Must match Window Width!
-    descDepth.Height = 600; // Must match Window Height!
+    descDepth.Width = sd.BufferDesc.Width;  // Must match Window Width!
+    descDepth.Height = sd.BufferDesc.Height; // Must match Window Height!
     descDepth.MipLevels = 1;
     descDepth.ArraySize = 1;
     descDepth.Format = DXGI_FORMAT_D24_UNORM_S8_UINT; // 24 bits for Depth, 8 for Stencil
@@ -142,8 +142,8 @@ bool GPU::Init(int size, HWND hwnd) {
 
     // Define the Viewport (Must match window size in render.hlsl)
     D3D11_VIEWPORT vp = {};
-    vp.Width = 800.0f;
-    vp.Height = 600.0f;
+    vp.Width = (float)sd.BufferDesc.Width;
+    vp.Height = (float)sd.BufferDesc.Height;
     vp.MinDepth = 0.0f;
     vp.MaxDepth = 1.0f;
     vp.TopLeftX = 0;
