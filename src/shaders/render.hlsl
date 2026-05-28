@@ -24,7 +24,7 @@ Pixel VSMain(Vertex input) {
     Pixel output;
     
     // Convert flat vertex position to texture UV coordinates (0.0 to 1.0)
-    float2 uv = input.position / (gridSize * cellSize);
+    float2 uv = input.position / (gridSize - 1);
     float h = HeightMap.SampleLevel(PointSampler, uv, 0);
     float scale = 4.f;
     float3 wPos = float3(input.position.x, h * scale, input.position.y);
