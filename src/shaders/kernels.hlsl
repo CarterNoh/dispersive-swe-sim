@@ -228,16 +228,16 @@ void CalcDiffusionCoeffs(uint3 id : SV_DispatchThreadID) {
     float h = in0[curr] - in1[curr]; // min_water - max_ground;
     float hr = in0[right] - in1[right];
     float hu = in0[up] - in1[up];
+    hr = (h + hr) / 2;
+    hu = (h + hu) / 2;
     float denom = 2.0f * deltaT * diffusionIterations;
     float grad_x = (in0[right] - in0[curr]) / cellSize;
     float grad_y = (in0[up] - in0[curr]) / cellSize;
     float penalty = exp(- diffusionPenalty * (grad_x * grad_x + grad_y * grad_y));
-    float avg_h2_x = 0.5f * (h * h + hr * hr);
-    float avg_h2_y = 0.5f * (h * h + hu * hu);
-    float max_alpha = (cellSize * cellSize) / (4.0f * deltaT);
+    float max_alpha = (cellSize * cellSize) / (4.0f * deltaT); // Von Neumann Stability Condition
     out0[curr] = min(max_alpha, h * h   / denom) * penalty;
-    out1[curr] = min(max_alpha, avg_h2_x / denom) * penalty;
-    out2[curr] = min(max_alpha, avg_h2_y / denom) * penalty;
+    out1[curr] = min(max_alpha, hr * hr / denom) * penalty;
+    out2[curr] = min(max_alpha, hu * hu / denom) * penalty;
 }
 
 [numthreads(16, 16, 1)]
