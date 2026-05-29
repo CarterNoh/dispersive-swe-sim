@@ -8,6 +8,7 @@
 
 std::vector<float> Sim::SetTerrain() {
 	std::vector<float> terrain(GRIDSIZE * GRIDSIZE, 0.0f);
+	float boundary = 2.f * abs(TERRAIN_HEIGHT);
     for (int y = 0; y < GRIDSIZE; y++) {
         for (int x = 0; x < GRIDSIZE; x++) {
             float xf = (float)x / (GRIDSIZE - 1);
@@ -27,16 +28,29 @@ std::vector<float> Sim::SetTerrain() {
             }
             else if (TERRAIN_TYPE == 3) { // Two Basins with Divider
                 // Create two dips with a ridge at xf = 0.5
-                float divider = (xf > 0.48f && xf < 0.52f) ? 5.0f : 0.0f;
-                terrain[i] = TERRAIN_HEIGHT + divider;
+				float divider = (xf > 0.4f && xf < 0.6f) ? 5.0f : 0.0f;
+				terrain[i] = TERRAIN_HEIGHT + divider;
             }
             else if (TERRAIN_TYPE == 4) { // Beach Scene
                 // Simple slope with some noise for "sand dunes"
-                float slope = xf * 15.0f;
-                float dunes = 0.5f * sin(30.f * yf) * xf; 
-                terrain[i] = TERRAIN_HEIGHT + slope + dunes;
+                float dunes = 0.05f * sin(20.f * yf); 
+                terrain[i] = TERRAIN_HEIGHT + TERRAIN_SCALE * (xf * (1 + dunes));
             }
+			else if (TERRAIN_TYPE == 5) {// 1D Hill in center of scene
+				// Bumpy hill near middle of scene
+				float hill = -0.9f + 0.1f * xf + 0.03f * sin(20.f * xf) + 0.9f * sin(2.5f * xf);
+				terrain[i] = hill * abs(TERRAIN_HEIGHT * 1.2);
+			}
+			else if (TERRAIN_TYPE == 6) {// 2D Gaussian hill in center
+                float dist = sqrt(pow(xf - 0.5f, 2) + pow(yf - 0.5f, 2));
+				float hill = (dist < 0.1f) ? TERRAIN_SCALE * cos(dist * PI * 5.0f) : 0.f;
+				terrain[i] = TERRAIN_HEIGHT + hill;
+			}
+			// terrain[idx(x, GRIDSIZE-1)] = boundary;
+			// terrain[idx(x, 0)] = boundary;
         }
+		// terrain[idx(GRIDSIZE-1, y)] = boundary;
+		// terrain[idx(0, y)] = boundary;
     }
 	return terrain;
 }
@@ -48,17 +62,26 @@ std::vector<float> Sim::SetWater(std::vector<float>& terrain) {
             float xf = (float)x / (GRIDSIZE - 1);
             float yf = (float)y / (GRIDSIZE - 1);
             int i = idx(x,y);
-            float waterSurface = WATER_LEVEL;
-            if (WATER_TYPE == 0) { // Localized splash (Gaussian pill)
+			float waterSurface = WATER_LEVEL;
+			if (WATER_TYPE == 0) { // Flat
+				// do nothing
+			}
+			else if (WATER_TYPE == 1) { // Step/Dam Break
+                if (xf < 0.3f) 
+					waterSurface += WATER_SCALE;
+            }
+			else if (WATER_TYPE == 2) { // Diagonal slope on 1st half
+				waterSurface += 2 * (1 - xf + yf) * WATER_SCALE; // maybe make this only on upper diagonal later or something
+			}
+            else if (WATER_TYPE == 3) { // Localized splash (Gaussian)
                 float dist = sqrt(pow(xf - 0.5f, 2) + pow(yf - 0.5f, 2));
                 if (dist < 0.1f) 
 					waterSurface += WATER_SCALE * cos(dist * PI * 5.0f);
             }
-            else if (WATER_TYPE == 1) { // Step/Dam Break
-                if (xf < 0.3f) 
-					waterSurface += WATER_SCALE;
-            }
-            else if (WATER_TYPE == 2) { // Basin Flood
+			else if (WATER_TYPE == 4) { // Surface Ripples
+				waterSurface += 0.5f * WATER_SCALE * (cos(2.f * PI * x / 37.f) + cos(2.f * PI * y / 49.f)); // this needs some work
+			}
+            else if (WATER_TYPE == 5) { // Basin Flood
                 // Fill only the left basin (xf < 0.5)
 				if (xf < 0.25f)
                     waterSurface = std::max(WATER_LEVEL, terrain[idx(GRIDSIZE/2, y)] + 2.0f);

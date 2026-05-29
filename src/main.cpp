@@ -16,7 +16,7 @@ extern "C" {
 namespace fs = std::filesystem;
 
 // Parameters
-int numTicks = 5000; // Number of simulation steps to run
+int numTicks = 10000; // Number of simulation steps to run
 bool render = true; // Whether to render the simulation or just run it headless
 
 void SaveToCSV(const std::vector<float>& h, int size, int tick) {
@@ -112,7 +112,7 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
 RenderConstants InitCamera(int gridSize) {
     // These values must match those in the Vertex Shader
     float maxInitialHeight = 0.2f; 
-    float visualScale = 200.f;
+    float visualScale = 50.f;
     float trueMax = maxInitialHeight * visualScale;
 
     // Focus the camera on the center point
@@ -121,7 +121,7 @@ RenderConstants InitCamera(int gridSize) {
 
     // Define camera angles
     float pitch =  25.0f * (DirectX::XM_PI / 180.0f);
-    float yaw   = -30.0f * (DirectX::XM_PI / 180.0f);
+    float yaw   = 30.0f * (DirectX::XM_PI / 180.0f);
 
     // Define the distance to pull the camera back
     float distance = gridSize * 1.5f;
