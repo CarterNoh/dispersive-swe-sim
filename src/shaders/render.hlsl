@@ -47,7 +47,7 @@ float4 PSMain(Pixel input) : SV_TARGET {
     // float3 color = lerp(deepWater, shallowWater, saturate(input.height / 5.0f));
     // if (input.height > 8.0f) color = lerp(color, foam, saturate((input.height - 8.0f) / 2.0f));
 
-    // 1. Normalize the height from 0.0 to 1.0
+    // Normalize the height from 0.0 to 1.0
     // Adjust hMax depending on how high your water level / waves get!
     float hMin = 0.f;
     float hMax = 0.4f; // Adjust based on your wave heights!
@@ -74,7 +74,7 @@ float4 PSMain(Pixel input) : SV_TARGET {
     // (If the lighting looks "inside out", swap dx and dy here)
     float3 normal = normalize(cross(dx, dy));
 
-    // 3. APPLY LIGHTING
+    // Apply Lighting
     float3 lightDir = normalize(float3(-1.0f, -1.5f, 1.0f)); 
     float diffuse = saturate(dot(normal, -lightDir));
     float ambient = 0.4f; 
