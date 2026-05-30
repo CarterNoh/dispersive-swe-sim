@@ -657,11 +657,9 @@ void GPU::Render(ID3D11ShaderResourceView* heightSRV) { //, int gridVertexCount
 
     // Draw 
     context->IASetInputLayout(inputLayout);
-    UINT stride = sizeof(float) * 2; 
+    UINT stride = sizeof(float) * 2;
     UINT offset = 0;
     context->IASetVertexBuffers(0, 1, &vertexBuffer, &stride, &offset);
-    // context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_POINTLIST); // Draw points for now!
-    // context->Draw(gridVertexCount, 0);
     context->IASetIndexBuffer(indexBuffer, DXGI_FORMAT_R32_UINT, 0);
     context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
     context->DrawIndexed(indexCount, 0, 0); // 4. Draw using the Indices, not just raw vertices

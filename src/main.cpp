@@ -16,7 +16,7 @@ extern "C" {
 namespace fs = std::filesystem;
 
 // Parameters
-int numTicks = 5000; // Number of simulation steps to run
+int numTicks = 10000; // Number of simulation steps to run
 bool render = true; // Whether to render the simulation or just run it headless
 
 void SaveToCSV(const std::vector<float>& h, int size, int tick) {
@@ -111,8 +111,8 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
 
 RenderConstants InitCamera(int gridSize) {
     // These values must match those in the Vertex Shader
-    float maxInitialHeight = 20.0f; 
-    float visualScale = 4.f;
+    float maxInitialHeight = 0.2f; 
+    float visualScale = 50.f;
     float trueMax = maxInitialHeight * visualScale;
 
     // Focus the camera on the center point
@@ -121,7 +121,7 @@ RenderConstants InitCamera(int gridSize) {
 
     // Define camera angles
     float pitch =  25.0f * (DirectX::XM_PI / 180.0f);
-    float yaw   = -30.0f * (DirectX::XM_PI / 180.0f);
+    float yaw   = 30.0f * (DirectX::XM_PI / 180.0f);
 
     // Define the distance to pull the camera back
     float distance = gridSize * 1.5f;
@@ -135,17 +135,15 @@ RenderConstants InitCamera(int gridSize) {
     // ...and finally, move it so it orbits around the center of the grid.
     DirectX::XMVECTOR eyePosition = DirectX::XMVectorAdd(focusPoint, rotatedEye);
 
-    // 5. Build the View Matrix
+    // Build the View Matrix
     DirectX::XMVECTOR upDirection = DirectX::XMVectorSet(0.0f, 1.0f, 0.0f, 0.0f);
     DirectX::XMMATRIX view = DirectX::XMMatrixLookAtLH(eyePosition, focusPoint, upDirection);
 
-    // 4. Use an Orthographic Projection for strict mathematical lines (No perspective distortion)
-    // The first two numbers control the "Zoom" level. Making them larger zooms out.
+    // Use an Orthographic Projection for strict mathematical lines (No perspective distortion)
     float gridDiagonal = gridSize * 1.414f;
     float padding = 1.1f;
     float viewWidth = gridDiagonal * padding;
     float tiltedGridHeight = gridDiagonal * sin(pitch);
-    // float viewHeight = gridSize * 1.0f;
     float viewHeight = (tiltedGridHeight + trueMax) * padding;
     DirectX::XMMATRIX projection = DirectX::XMMatrixOrthographicLH(viewWidth, viewHeight, 1.0f, 2000.0f);
 

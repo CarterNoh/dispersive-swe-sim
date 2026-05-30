@@ -24,9 +24,9 @@ Pixel VSMain(Vertex input) {
     Pixel output;
     
     // Convert flat vertex position to texture UV coordinates (0.0 to 1.0)
-    float2 uv = input.position / (gridSize * cellSize);
+    float2 uv = input.position / (gridSize - 1);
     float h = HeightMap.SampleLevel(PointSampler, uv, 0);
-    float scale = 4.f;
+    float scale = 50.f;
     float3 wPos = float3(input.position.x, h * scale, input.position.y);
     
     // Project to the screen
@@ -39,7 +39,7 @@ Pixel VSMain(Vertex input) {
 
 // --- PIXEL SHADER ---
 float4 PSMain(Pixel input) : SV_TARGET {
-    // Simple deep water color gradient based on height
+    // Simple water color gradient based on height
     // float3 deepWater = float3(0.0f, 0.2f, 0.5f);
     // float3 shallowWater = float3(0.0f, 0.6f, 0.8f);
     // float3 foam = float3(1.0f, 1.0f, 1.0f);
@@ -47,10 +47,10 @@ float4 PSMain(Pixel input) : SV_TARGET {
     // float3 color = lerp(deepWater, shallowWater, saturate(input.height / 5.0f));
     // if (input.height > 8.0f) color = lerp(color, foam, saturate((input.height - 8.0f) / 2.0f));
 
-    // 1. Normalize the height from 0.0 to 1.0
+    // Normalize the height from 0.0 to 1.0
     // Adjust hMax depending on how high your water level / waves get!
-    float hMin = 0.0f;
-    float hMax = 20.0f; // Adjust based on your wave heights!
+    float hMin = 0.f;
+    float hMax = 0.4f; // Adjust based on your wave heights!
     float t = saturate((input.height - hMin) / (hMax - hMin));
 
     // "viterbi" color scheme
@@ -74,7 +74,7 @@ float4 PSMain(Pixel input) : SV_TARGET {
     // (If the lighting looks "inside out", swap dx and dy here)
     float3 normal = normalize(cross(dx, dy));
 
-    // 3. APPLY LIGHTING
+    // Apply Lighting
     float3 lightDir = normalize(float3(-1.0f, -1.5f, 1.0f)); 
     float diffuse = saturate(dot(normal, -lightDir));
     float ambient = 0.4f; 
