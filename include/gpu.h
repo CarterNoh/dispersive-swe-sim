@@ -14,7 +14,6 @@ struct SimConstants {
     int gridSize;
     float cellSize;
     float timeStep;
-    int boundaryType;
     float minWaterHeight;
     // Decomposition params
     int diffusionIterations;
@@ -25,8 +24,10 @@ struct SimConstants {
     float gammaTransport;
     // eWave Params
     int depthNum;
+    float surfaceTension;
+    float density;
     // Padding for 16-byte alignment
-    float buffer;
+    // float buffer;
 };
 
 struct FFTConstants {

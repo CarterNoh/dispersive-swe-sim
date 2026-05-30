@@ -34,6 +34,8 @@ public:
 	// eWave Parameters
 	std::vector<float> depths = { 1.0f, 2.0f, 4.0f, 16.0f, 64.0f };
 	int DEPTH_NUM = depths.size(); // number of discrete water depth solutions to compute for eWave dispersion correction
+	static constexpr float SURFACE_TENSION = 0.072f; // surface tension coefficient, N/m
+	static constexpr float DENSITY = 1025.f; // Water dinsity, kg/m^3
 
 	// Transport Parameters
 	static constexpr float CFL_CONDITION = 0.25f;  // max allowed CFL condition for stability of SWE step, can be higher than overall CFL condition since diffusion and transport steps handle stability as well
@@ -92,9 +94,9 @@ private:
 	char* names[13] = {"ApplyBoundaries", "InitDecomp", "CalcDiffusionCoeffs", "DiffusionStep", "DecomposeFields", 
 					   "CalcUbar", "CalcSWE", "UpdateTilde", "CalcQAdvect", "IntegrateH", 
 					   "TransferToFFT", "CalcEWave", "InterpQ"};
-	SimConstants constants = {GRIDSIZE, CELLSIZE, TIMESTEP, BOUNDARY_TYPE, MIN_WATER_HEIGHT,// Sim Params
-							  DIFFUSION_ITERATIONS, DELTA_T, DIFFUSION_PENALTY, 			// Diffusion Params
-							  CFL_CONDITION, GAMMA_TRANSPORT, DEPTH_NUM, 0.0f}; 				// SWE & eWave Params
+	SimConstants constants = {GRIDSIZE, CELLSIZE, TIMESTEP, MIN_WATER_HEIGHT,	// Sim Params
+							  DIFFUSION_ITERATIONS, DELTA_T, DIFFUSION_PENALTY, // Diffusion Params
+							  CFL_CONDITION, GAMMA_TRANSPORT, DEPTH_NUM, SURFACE_TENSION, DENSITY}; // SWE & eWave Params
 	RenderConstants render_constants = {DirectX::XMMatrixIdentity(), (float)GRIDSIZE, CELLSIZE, {0.f, 0.f}};
 
 };

@@ -4,7 +4,6 @@ cbuffer Constants : register(b0) {
     int gridSize; 
     float cellSize;
     float timeStep;
-    int boundaryType;
     float minWaterHeight;
 
     // Decomposition params
@@ -18,9 +17,11 @@ cbuffer Constants : register(b0) {
 
     // eWave params
     int depthNum;
+    float surfaceTension;
+    float density;
 
     // Padding for 16-byte alignment 
-    float buffer;
+    // float buffer;
 };
 
 #define GRAVITY 9.80665
@@ -183,22 +184,26 @@ void ApplyBoundaries(uint3 id : SV_DispatchThreadID){
         src = uint2(x, gridSize-2);
 
     // Apply boundary condition
-    if (boundaryType == 0) { // wall (copy neighbor)
-        out0[id.xy] = out0[src];
-        out1[id.xy] = out1[src];
-        out2[id.xy] = out2[src];
-        out3[id.xy] = out3[src];
-    }
-    else if (boundaryType == 1) {// free (linear interpolation)
-        uint2 dir = uint2(
-            (left ? 1 : right ? -1 : 0),
-            (bottom ? 1 : top ? -1 : 0)
-        );
-        out0[id.xy] = 2.0f * out0[src] - out0[src + dir];
-        out1[id.xy] = 2.0f * out1[src] - out1[src + dir];
-        out2[id.xy] = 2.0f * out2[src] - out2[src + dir];
-        out3[id.xy] = 2.0f * out3[src] - out3[src + dir];
-    }
+    // if (boundaryType == 0) { // wall (copy neighbor)
+    //     out0[id.xy] = out0[src];
+    //     out1[id.xy] = out1[src];
+    //     out2[id.xy] = out2[src];
+    //     out3[id.xy] = out3[src];
+    // }
+    // else if (boundaryType == 1) {// free (linear interpolation)
+    //     uint2 dir = uint2(
+    //         (left ? 1 : right ? -1 : 0),
+    //         (bottom ? 1 : top ? -1 : 0)
+    //     );
+    //     out0[id.xy] = 2.0f * out0[src] - out0[src + dir];
+    //     out1[id.xy] = 2.0f * out1[src] - out1[src + dir];
+    //     out2[id.xy] = 2.0f * out2[src] - out2[src + dir];
+    //     out3[id.xy] = 2.0f * out3[src] - out3[src + dir];
+    // }
+    out0[id.xy] = out0[src];
+    out1[id.xy] = out1[src];
+    out2[id.xy] = out2[src];
+    out3[id.xy] = out3[src];
 }
 
 /////////// Decomposition ///////////
@@ -575,7 +580,7 @@ void CalcEWave(uint3 id : SV_DispatchThreadID) {
     // Angular frequency for dispersion relation
     float kh = k * in8[id.z];
     float tanh_kh = (kh > 20.f) ? 1.0f : tanh(kh);
-    float omega = sqrt(GRAVITY * k * tanh_kh) / beta;
+    float omega = sqrt((GRAVITY * k + pow(k, 3) * surfaceTension / density) * tanh_kh) / beta;
     float S = sin(omega * timeStep) * omega / (k * k);
     float C = cos(omega * timeStep);
     float Cx = 1 + (C-1) * kx2;
