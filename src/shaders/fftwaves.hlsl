@@ -146,9 +146,10 @@ float2 WaveSpectra(float w) {
     // float S = (a * G * G / pow(w, 5)) * exp(-b * pow((wp / w), 4));
     
     // JONSWAP
-    float fetch_bar = (G * fetch) / pow(windSpeed, 2); // dimensionless fetch
-    float wp = 7 * PI * pow(fetch_bar, 1.f/3.f);
-    float a = 0.076f * pow(fetch_bar, -0.22);
+    float F = fetch * 1000 // convert km to m
+    float FBar = (G * F) / pow(windSpeed, 2); // dimensionless fetch
+    float wp = 7 * PI * pow(FBar, 1.f/3.f);
+    float a = 0.076f * pow(FBar, -0.22);
     float gamma = 3.3f;
     float s = (w > wp) ? 0.09f : 0.07f;
     float r = exp(- pow(w - wp, 2) / (2 * pow(s * wp, 2)));
@@ -159,7 +160,7 @@ float2 WaveSpectra(float w) {
     float wh = w * sqrt(depth / G);
     float z = 1.8f * (wh - 1.125f);
     float tanh_z = (z > 20) ? 1 : (z < -20) ? -1 : tanh(z);
-    float Phi = 0.5f + 0.5f * tanh(z); // approx. of kitaigorodskii depth attenuation
+    float Phi = 0.5f + 0.5f * tanh(z); // tanh approx. of kitaigorodskii depth attenuation
     S *= Phi;
     
     return float2(S, wp);
@@ -256,24 +257,40 @@ void PopulateSpectrum(uint3 id : SV_DispatchThreadID) {
     float2 omegaData = Dispersion(k); //(omega, dwdk)
     float omega = omegaData.x; 
     float dwdk = omegaData.y;
-    float theta = atan2(ky_, kx_) - windAngle;
-    float thetaSwell = atan2(ky_, kx_) - swellAngle;
-    theta = (theta + PI) % (2 * PI) - PI; // wrap to [-pi, pi]      // theta = atan2(sin(theta), cos(theta)); 
-    theta_swell = (theta_swell + PI) % (2 * PI) - PI;
+
+    float thetaPos      = atan2( ky_,  kx_) - windAngle;
+    float thetaNeg      = atan2(-ky_, -kx_) - windAngle;
+    float thetaSwellPos = atan2( ky_,  kx_) - swellAngle;
+    float thetaSwellNeg = atan2(-ky_, -kx_) - swellAngle;
+    thetaPos = (thetaPos + PI) % (2 * PI) - PI; // wrap to [-pi, pi]      // theta = atan2(sin(theta), cos(theta)); 
+    thetaNeg = (thetaNeg + PI) % (2 * PI) - PI;
+    thetaSwellPos = (thetaSwellPos + PI) % (2 * PI) - PI;
+    thetaSwellNeg = (thetaSwellNeg + PI) % (2 * PI) - PI;
 
     ///// Get Spectrum /////
-    float S = GetSpectrum(omega, theta, theta_swell);
+    float SPos = GetSpectrum(omega, thetaPos, thetaSwellPos);
+    float SNeg = GetSpectrum(omega, thetaNeg, thetaSwellNeg);
     // Convert S(w,theta) to S(kx, ky)
-    S *= dwdk / k;
+    SPos *= dwdk / k;
+    SNeg *= dwdk / k;
 
     ///// Amplitude /////
-    float amp = GetRandom() * sqrt(2 * S * dk * dk);
+    float2 ampPos = GetRandomAmp() * sqrt(2 * SPos * dk * dk);
+    float2 ampPos = GetRandomAmp() * sqrt(2 * SNeg * dk * dk);
+    float2 phasePos = GetRandomPhase();
+    float2 phasePos = GetRandomPhase();
+
+    // Filter amplitudes outside of user-defined thresholds
+    // // Dampen waves outside user-defined thresholds
+    // S *= exp(-(k * k) * cutoff[0]);
+    // S *= k < cutoff[1] ? 0 : 1;
+
+
+    // need a complex number for positive and negative waves, uniformly sampled for phase and gaussian sampled for amplitude
 
 
     
-    // // Dampen waves outside user-defined threshold
-    // S *= exp(-(k * k) * cutoff[0]);
-    // S *= k < cutoff[1] ? 0 : 1;
+    
     // // Dampen waves not aligned with wind
     // float windAlignment = kx_ * cos(windAngle) + ky_ * sin(windAngle);
     // float windFactor = pow(abs(windAlignment), windTighten);
