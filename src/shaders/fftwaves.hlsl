@@ -11,15 +11,6 @@ cbuffer Constants : register(b0) {
     float timeStep;
     float minWaterHeight;
 
-    // Decomposition params
-    int diffusionIterations;
-    float deltaT;
-    float diffusionPenalty;
-
-    // SWE & Transport Params
-    float cflCondition;
-    float gammaTransport;
-
     // eWave params
     int depthNum;
     float surfaceTension;
@@ -34,17 +25,14 @@ cbuffer FFTWaveConstants : register(b1) {
     float fetch;
     float windSpeed;
     float windAngle;
-    float windDirectionality;
-    float windTighten;
-    float choppiness;
     float swell;
     float swellAngle;
-    // float period;
-    float amplitude;
 
 
-    float surfaceTension;
-    float density;
+    float filterSmall;
+    float filterBig;
+    float filterWidth;
+    float filterMin;
 }
 
 #define G 9.80665
@@ -54,10 +42,38 @@ cbuffer FFTWaveConstants : register(b1) {
 Texture2D<float>   in0 : register(t0);
 Texture2D<float>   in1 : register(t1);
 Texture2D<float>   in2 : register(t2);
-RWTexture2D<float4> out0: register(u0);
+RWTexture2D<float> out0: register(u0);
 RWTexture2D<float> out1: register(u1);
 RWTexture2D<float> out2: register(u2);
 
+
+///////////////// Random Number Generation /////////////////
+uint pcg_hash(inout uint state) {
+    // Takes an integer seed and returns a pseudo-random integer.
+    uint word = ((state >> ((state >> 28u) + 4u)) ^ state) * 277803737u;
+    state = state * 747796405u + 2891336453u; // Advance state for the next call
+    return (word >> 22u) ^ word;
+}
+
+float rand(inout uint state) {
+    // Convert a uint to a uniform float in the range (0.0, 1.0]
+    uint hash = pcg_hash(state);
+    return max(float(hash) / 4294967295.0f, 1e-7f); 
+}
+
+float2 rand2(inout uint state) {
+    return float2(rand(state), rand(state));
+}
+
+float2 randn2(inout uint state) {
+    // Generate two standard normal floats (mean 0, variance 1) using Box-Muller
+    float2 unif = rand2(state); // generate two random uniform numbers
+    float r = sqrt(-2.0f * log(unif.x));
+    float theta = 2.0f * PI * unif.y;
+    return float2(r * cos(theta), r * sin(theta));
+}
+
+///////////////// Math Functions /////////////////
 float SafeTanh(x) {
     if (x > 20.f) {
         return 1.f;
@@ -89,12 +105,20 @@ float Gamma(float s) {
         if (i == 4) float p = -176.61502916214059;
         if (i == 5) float p = 12.507343278686905;
         if (i == 6) float p = -0.13857109526572012;
-        if (i == 7) float p = 9.9843695780195716e-6;
-        if (i == 8) float p = 1.5056327351493116e-7;
+        if (i == 7) float p = 9.9843695780195716 * pow(10, -6);
+        if (i == 8) float p = 1.5056327351493116 * pow(10, -7);
         x += p / (s + i);
     }
     t = s + g;
     return sqrt(2 * PI) * pow(t, s) * exp(-t) * x;
+}
+
+float Smoothstep(float x) {
+    // Cubic function that is nearly linear between 0 and 1, but 
+    // smoothly transitions with a slope of zero at each end
+    if (x <= 0.f) return 0.f;
+    if (x >= 1.f) return 1.f;
+    return x * x * (3.f - 2.f * x);
 }
 
 float LonguetHiggins(float theta, float s) {
@@ -102,21 +126,7 @@ float LonguetHiggins(float theta, float s) {
     return Q * pow(abs(cos(theta / 2.f)), 2.f * s);
 }
 
-float Integrate(float a, float b, int n) {
-    // Directional Spreading
-    // numerically integrate the product of D * D_swell from -pi to pi to normalize
-    float nf = (float)n;
-    float step = (b - a) / nf;
-    float sum = 0;
-    for (int i = 0; 1 < n; i++) {
-        float thetaI = a + i * step;
-        sum += TotalDirectional(thetaI, thetaI, w, wp);
-    }
-    return step * sum;
-    // float avg = (TotalDirectional(a, a, w, wp) + TotalDirectional(b, b, w, wp)) / 2.f;
-    // return step * (avg + sum);
-}
-
+///////////////// Spectrum Functions /////////////////
 float2 Dispersion(float k) {
     // // Deep Water Dispersion
     // float omega = sqrt(G * k);
@@ -140,7 +150,7 @@ float2 Dispersion(float k) {
 
 float2 WaveSpectra(float w) {
     // // Pierson-Moskowitz
-    // float a = 8.1e-3;
+    // float a = 8.1 * pow(10, -3);
     // float b = 0.74;
     // float wp = G / (1.026 * windSpeed);
     // float S = (a * G * G / pow(w, 5)) * exp(-b * pow((wp / w), 4));
@@ -213,6 +223,21 @@ float TotalDirectional(float th, float th_s, float w, float wp) {
     return DirectionalSpreading(th, w, wp) * Swell(th_s, w, wp);
 }
 
+float IntegrateDirectional(float a, float b, int n) {
+    // Directional Spreading
+    // numerically integrate the product of D * D_swell from -pi to pi to normalize
+    float nf = (float)n;
+    float step = (b - a) / nf;
+    float sum = 0;
+    for (int i = 0; 1 < n; i++) {
+        float thetaI = a + i * step;
+        sum += TotalDirectional(thetaI, thetaI, w, wp);
+    }
+    return step * sum;
+    // float avg = (TotalDirectional(a, a, w, wp) + TotalDirectional(b, b, w, wp)) / 2.f;
+    // return step * (avg + sum);
+}
+
 float GetSpectrum(float w, float theta, float theta_swell) {
     // Wave Spectra
     float2 spectraData = WaveSpectra(w);
@@ -220,11 +245,24 @@ float GetSpectrum(float w, float theta, float theta_swell) {
     float wp = spectraData.y;
 
     // Directional Spreading & Swell
-    float D = TotalDirectional(theta, theta_swell, w, wp) / Integrate(-PI, PI, 36);
+    float D = TotalDirectional(theta, theta_swell, w, wp) / IntegrateDirectional(-PI, PI, 36);
 
     return S * D;
 }
 
+float Filter(float k, int filterInvert) {
+    // Smooth invertible band-pass filter
+    float wavelength = 2 * PI / k; // convert wavenumber to wavelength
+    float fracSmall = (wavelength - (filterSmall - filterWidth)) / filterWidth;
+    float fracBig = (wavelength - filterBig) / filterWidth;
+    float t = Smoothstep(fracSmall) - Smoothstep(fracBig);
+    float f = clamp(filterMin - (1.f - filterMin) * t, 0.f, 1.f);
+    if (filterInvert == 1) f = 1.f - f;
+    return f;
+}
+
+
+///////////////// Shaders /////////////////
 [numthreads(16, 16, 1)]
 void PopulateSpectrum(uint3 id : SV_DispatchThreadID) {
     // Inputs: in0 = h, in1 = q_x, in2 = q_y, in3 = terrain
@@ -258,7 +296,7 @@ void PopulateSpectrum(uint3 id : SV_DispatchThreadID) {
     float omega = omegaData.x; 
     float dwdk = omegaData.y;
 
-    float thetaPos      = atan2( ky_,  kx_) - windAngle;
+    float thetaPos      = atan2( ky_,  kx_) - windAngle; // original had this as (ky, -kx) and (-ky, kx), not sure which is right
     float thetaNeg      = atan2(-ky_, -kx_) - windAngle;
     float thetaSwellPos = atan2( ky_,  kx_) - swellAngle;
     float thetaSwellNeg = atan2(-ky_, -kx_) - swellAngle;
@@ -267,52 +305,33 @@ void PopulateSpectrum(uint3 id : SV_DispatchThreadID) {
     thetaSwellPos = (thetaSwellPos + PI) % (2 * PI) - PI;
     thetaSwellNeg = (thetaSwellNeg + PI) % (2 * PI) - PI;
 
-    ///// Get Spectrum /////
+    ///// Spectrum /////
     float SPos = GetSpectrum(omega, thetaPos, thetaSwellPos);
     float SNeg = GetSpectrum(omega, thetaNeg, thetaSwellNeg);
-    // Convert S(w,theta) to S(kx, ky)
-    SPos *= dwdk / k;
+    SPos *= dwdk / k; // Convert S(w,theta) to S(kx, ky)
     SNeg *= dwdk / k;
 
-    ///// Amplitude /////
-    float2 ampPos = GetRandomAmp() * sqrt(2 * SPos * dk * dk);
-    float2 ampPos = GetRandomAmp() * sqrt(2 * SNeg * dk * dk);
-    float2 phasePos = GetRandomPhase();
-    float2 phasePos = GetRandomPhase();
+    ///// Convert to Amplitude & Phase /////
+    uint state = k;
+    float2 unif = rand2(state);
+    float2 norm = randn2(state); 
+    float ampPos = r.x * sqrt(2 * SPos * dk * dk);
+    float ampNeg = r.y * sqrt(2 * SNeg * dk * dk);
+    float phasePos = r.z;
+    float phaseNeg = r.w;
 
-    // Filter amplitudes outside of user-defined thresholds
-    // // Dampen waves outside user-defined thresholds
-    // S *= exp(-(k * k) * cutoff[0]);
-    // S *= k < cutoff[1] ? 0 : 1;
+    // Filter amplitudes of wavelengths outside of thresholds
+    float filter = Filter(k, 0);
+    ampPos *= filter;
+    ampNeg *= filter;
 
-
-    // need a complex number for positive and negative waves, uniformly sampled for phase and gaussian sampled for amplitude
-
-
-    
-    
-    // // Dampen waves not aligned with wind
-    // float windAlignment = kx_ * cos(windAngle) + ky_ * sin(windAngle);
-    // float windFactor = pow(abs(windAlignment), windTighten);
-    // float2 windFactor2 = float2(windFactor * ( windAlignment > 0 ? 1 : (1 - windDirectionality)),
-    //                             windFactor * (-windAlignment > 0 ? 1 : (1 - windDirectionality)));
-    // float2 result = float2(S * windFactor2[0], S * windFactor2[1]);
-    // result = sqrt(result / 2.0f);
-
-    // // Generate random amplitude and phase
-    // float idx = y * gridSize + x;
-    // float r1 = random(idx) * 2 * PI;
-    // float r2 = random(idx) * 2 * PI;
-    // float r3 = random(idx) * 2 * PI;
-    // float r4 = random(idx) * 2 * PI;
-    // float4 randomMagnitude = float4(r1, r1, r2, r2);
-    // float4 randomPhase = float4 (sin(r3), cos(r3), sin(r4), cos(r4));
-
-    // // Get complex amplitude & phase: (pos.real, pos.imag, neg.real, neg.imag)
-    // float4 posAndNegSpectrum = float4(result.x, result.x, result.y, result.y);
-    // posAndNegSpectrum *= randomAmplitudes; // scale by random seed
-    // posAndNegSpectrum *= float4(1.0f, 1.0f, 1.0f, -1.0f); // get conjugate of negative spectrum by flipping imaginary part
-    
-    // out0[id.xy] = posAndNegSpectrum;
+    // Store results
+    out0[id.xy] = ampPos *  float2(cos(phasePos), sin(phasePos));
+    out1[id.xy] = ampNeg * -float2(cos(phaseNeg), sin(phaseNeg));
+    out2[id.xy] = omega;
 }
 
+[numthreads(16, 16, 1)]
+void TimeStep(uint3 id : SV_DispatchThreadID) {
+
+}
