@@ -12,17 +12,17 @@ class Sim
 {
 public:
 	// Simulation parameters
-	static constexpr int GRIDSIZE = 512;	// grid size in one dimension (# cells)
+	static constexpr int GRIDSIZE = 256;	// grid size in one dimension (# cells)
     static constexpr float CELLSIZE = 1.f;	// physical size of each cell (meters)
 	static constexpr float TIMESTEP = 1.f / 30.f;
     static constexpr float SURFACE_TENSION = 0.001f; // minimum water height for stability
     static constexpr float DENSITY = 999.f; // minimum water height for stability
 
-    static constexpr float DEPTH        = 100.f;     // meters
-    static constexpr float FETCH        = 200.f;     // kilometers
-    static constexpr float WIND_SPEED   = 15.f;     // m/s
+    static constexpr float DEPTH        = 2.5f;     // meters
+    static constexpr float FETCH        = 2.f;     // kilometers
+    static constexpr float WIND_SPEED   = 14.f;     // m/s
     static constexpr float WIND_ANGLE   = 0.f;     // degrees from x-axis
-    static constexpr float SWELL        = 0.5f;     // [0, 1]
+    static constexpr float SWELL        = 0.3f;  // [0, 1] // this has issues at 0 but it shouldn't, I can't find the bug, hunt down later
     static constexpr float SWELL_ANGLE  = 0.f;     // degrees from x-axis
     static constexpr float CHOPPINESS   = 0.f;     // 
     static constexpr float FILTER_SMALL = 0.f;    // 

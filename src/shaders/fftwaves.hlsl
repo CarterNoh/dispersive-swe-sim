@@ -33,7 +33,7 @@ cbuffer Constants : register(b0) {
     float filterWidth;
     float filterMin;
 
-    float buffer2;
+    float buffer1;
 };
 
 #define G 9.80665f
@@ -72,6 +72,15 @@ float2 Randn2(inout uint state) {
 }
 
 ///////////////// Math Functions /////////////////
+float WrapAngle(float angle) {
+    // Ensures the angle is perfectly wrapped to the [-PI, PI] range
+    float wrapped = fmod(angle + PI, 2.0f * PI);
+    if (wrapped < 0.f) {
+        wrapped += 2.0f * PI;
+    }
+    return wrapped - PI;
+}
+
 float SafeTanh(float x) {
     if (x > 20.f) {
         return 1.f;
@@ -122,15 +131,11 @@ float Gamma(float z) {
 
     float t = x + GAMMA_LANCZOS_G + 0.5;
 
-    float logG = 0.5 * log(2.0 * PI)
-               + (x + 0.5) * log(t) - t
-               + log(a);
+    float logG = 0.5 * log(2.0 * PI) + (x + 0.5) * log(t) - t + log(a);
 
     [branch]
-    if (reflected) {
-        // log(Gamma(z)) = log(pi) - log(|sin(pi*z)|) - log(Gamma(1-z))
+    if (reflected) 
         logG = log(PI) - log(abs(sin(PI * z))) - logG;
-    }
 
     return exp(logG);
 }
@@ -176,29 +181,26 @@ float2 Dispersion(float k) {
 }
 
 float2 WaveSpectra(float w) {
-    // Pierson-Moskowitz
-    float a = 8.1 * pow(10, -3);
-    float b = 0.74;
-    float wp = G / (1.026 * windSpeed);
-    float S = (a * G * G / pow(w, 5)) * exp(-b * pow((wp / w), 4));
+    // // Pierson-Moskowitz
+    // float a = 8.1 * pow(10, -3);
+    // float b = 0.74;
+    // float wp = G / (1.026 * windSpeed);
+    // float S = (a * G * G / pow(w, 5)) * exp(-b * pow((wp / w), 4));
     
-    // // JONSWAP
-    // float F = fetch * 1000; // convert km to m
-    // float FBar = (G * F) / pow(windSpeed, 2); // dimensionless fetch
-    // float wp = 7 * PI * pow(abs(FBar), 1.f/3.f);
-    // float a = 0.076f * pow(abs(FBar), -0.22);
-    // float gamma = 3.3f;
-    // float s = (w > wp) ? 0.09f : 0.07f;
-    // float r = exp(- pow(w - wp, 2) / (2 * pow(s * wp, 2)));
-    // float b = 5.f / 4.f;
-    // float S = (a * G * G / pow(w, 5)) * exp(-b * pow((wp / w), 4)) * pow(gamma, r);
+    // JONSWAP
+    float FBar = (G * fetch * 1000) / pow(windSpeed, 2); // dimensionless fetch (converted from km to m)
+    float wp = 7 * PI * pow(abs(FBar), -0.3333f) * (G / windSpeed);
+    float a = 0.076f * pow(abs(FBar), -0.22);
+    float s = (w > wp) ? 0.09f : 0.07f;
+    float r = exp(-pow(w - wp, 2) / (2 * pow(s * wp, 2)));
+    float S = (a * G * G / pow(w, 5)) * exp(-1.25f * pow((wp / w), 4)) * pow(3.3f, r);
 
-    // // Texel MARSEN ARSLOE (TMA)
-    // float wh = w * sqrt(depth / G);
-    // float z = 1.8f * (wh - 1.125f);
-    // float tanh_z = (z > 20) ? 1 : (z < -20) ? -1 : tanh(z);
-    // float Phi = 0.5f + 0.5f * tanh_z; // tanh approx. of kitaigorodskii depth attenuation
-    // S *= Phi;
+    // Texel MARSEN ARSLOE (TMA)
+    float wh = w * sqrt(depth / G);
+    float z = 1.8f * (wh - 1.125f);
+    float tanh_z = (z > 20) ? 1 : (z < -20) ? -1 : tanh(z);
+    float Phi = 0.5f + 0.5f * tanh_z; // tanh approx. of kitaigorodskii depth attenuation
+    S *= Phi;
     
     return float2(S, wp);
 }
@@ -207,23 +209,24 @@ float DirectionalSpreading(float theta, float w, float wp) {
     float D = 0.f;
 
     // Positive Cosine-Squared
-    if ((theta <= PI / 2) || (theta >= -PI / 2)) {
-        D = (2.f / PI) * pow(cos(theta), 2);
-    }
+    // if ((theta <= PI / 2) && (theta >= -PI / 2)) {
+    //     D = (2.f / PI) * pow(cos(theta), 2);
+    // }
 
     // Longuet-Higgins
     // // Mitsuyasu
     // float sp = 11.5 * pow(wp * windSpeed / G, -2.5f);
     // float exponent = (w > wp) ? -2.5f : 5.f;
-    // Hasselmann
-    float sp = 6.97f;
-    float exponent = 4.06f;
-    if (w > wp) {
-        exponent = -2.33f - 1.45f * ((wp * windSpeed / G) - 1.17f);
-        sp = 9.77f;
-    }
-    float s = sp * pow(w / wp, exponent);
-    D = LonguetHiggins(theta, s);
+
+    // // Hasselmann
+    // float sp = 6.97f;
+    // float exponent = 4.06f;
+    // if (w > wp) {
+    //     exponent = -2.33f - 1.45f * ((wp * windSpeed / G) - 1.17f);
+    //     sp = 9.77f;
+    // }
+    // float s = sp * pow(w / wp, exponent);
+    // D = LonguetHiggins(theta, s);
 
     // Donelan-Banner
     float w_wp = w / wp;
@@ -241,8 +244,7 @@ float DirectionalSpreading(float theta, float w, float wp) {
 
 float Swell(float theta, float w, float wp) {
     ///// Swell ///// 
-    float safeSwell = clamp(swell, 0, 1);
-    float shape = 16.1f * SafeTanh(wp / w) * pow(safeSwell, 2);
+    float shape = 16.1f * SafeTanh(wp / w) * swell * swell;
     return LonguetHiggins(theta, shape);
 }
 
@@ -250,19 +252,23 @@ float TotalDirectional(float th, float th_s, float w, float wp) {
     return DirectionalSpreading(th, w, wp) * Swell(th_s, w, wp);
 }
 
-float IntegrateDirectional(float a, float b, int n, float w, float wp) {
-    // Directional Spreading
-    // numerically integrate the product of D * D_swell from -pi to pi to normalize
-    float nf = (float)n;
-    float step = (b - a) / nf;
-    float sum = 0;
+// We pass the absolute windAngle and swellAngle from your Constant Buffer
+float IntegrateDirectional(int n, float w, float wp) {
+    float step = (2.f * PI) / (float)n;
+    float sum = 0.f;
+    
+    // Calculate the true physical separation between wind and swell
+    float angleDiff = (windAngle - swellAngle) * PI / 180;
+
     for (int i = 0; i < n; i++) {
-        float thetaI = a + i * step;
-        sum += TotalDirectional(thetaI, thetaI, w, wp);
+        // Sweep the wind-relative angle from -PI to PI
+        float theta_wind = -PI + i * step;
+        
+        // Offset the swell angle by the true difference
+        float theta_swell = WrapAngle(theta_wind + angleDiff);
+        sum += TotalDirectional(theta_wind, theta_swell, w, wp);
     }
     return step * sum;
-    // float avg = (TotalDirectional(a, a, w, wp) + TotalDirectional(b, b, w, wp)) / 2.f;
-    // return step * (avg + sum);
 }
 
 float GetSpectrum(float w, float theta, float theta_swell) {
@@ -272,7 +278,9 @@ float GetSpectrum(float w, float theta, float theta_swell) {
     float wp = spectraData.y;
 
     // Directional Spreading & Swell
-    float D = TotalDirectional(theta, theta_swell, w, wp) / IntegrateDirectional(-PI, PI, 36, w, wp);
+    float integral = IntegrateDirectional(36, w, wp);
+    float D = TotalDirectional(theta, theta_swell, w, wp) / integral;
+    // float D = DirectionalSpreading(theta, w, wp);
 
     return S * D;
 }
@@ -327,14 +335,10 @@ void PopulateSpectrum(uint3 id : SV_DispatchThreadID) {
     float omega = omegaData.x; 
     float dwdk = omegaData.y;
 
-    float thetaPos      = atan2( ky_, -kx_) - windAngle;
-    float thetaNeg      = atan2(-ky_,  kx_) - windAngle;
-    float thetaSwellPos = atan2( ky_, -kx_) - swellAngle;
-    float thetaSwellNeg = atan2(-ky_,  kx_) - swellAngle;
-    thetaPos = (thetaPos + PI) % (2 * PI) - PI; // wrap to [-pi, pi]      // theta = atan2(sin(theta), cos(theta)); 
-    thetaNeg = (thetaNeg + PI) % (2 * PI) - PI;
-    thetaSwellPos = (thetaSwellPos + PI) % (2 * PI) - PI;
-    thetaSwellNeg = (thetaSwellNeg + PI) % (2 * PI) - PI;
+    float thetaPos      = WrapAngle(atan2( ky_, -kx_) - windAngle * PI / 180);
+    float thetaNeg      = WrapAngle(atan2(-ky_,  kx_) - windAngle * PI / 180);
+    float thetaSwellPos = WrapAngle(atan2( ky_, -kx_) - swellAngle * PI / 180);
+    float thetaSwellNeg = WrapAngle(atan2(-ky_,  kx_) - swellAngle * PI / 180);
 
     ///// Spectrum /////
     float SPos = GetSpectrum(omega, thetaPos, thetaSwellPos);
