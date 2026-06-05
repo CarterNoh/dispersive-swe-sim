@@ -59,6 +59,7 @@ bool GPU::BaseInit(int size) {
         std::cerr << "ERROR: Failed to create FFT shaders." << std::endl;
         return false;
     }
+    return true;
 }
 
 bool GPU::Init(int size) {

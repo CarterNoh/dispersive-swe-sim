@@ -6,7 +6,7 @@
 #include <fstream>
 #include <filesystem>
 #include <windows.h>
-#include "Sim2D.h"
+#include "Sim2D_fft.h"
 
 extern "C" {
     __declspec(dllexport) DWORD NvOptimusEnablement = 1;      // For NVIDIA GPUs
@@ -16,7 +16,7 @@ extern "C" {
 namespace fs = std::filesystem;
 
 // Parameters
-int numTicks = 10000; // Number of simulation steps to run
+int numTicks = 5000; // Number of simulation steps to run
 bool render = true; // Whether to render the simulation or just run it headless
 
 void SaveToCSV(const std::vector<float>& h, int size, int tick) {
@@ -177,7 +177,7 @@ int RunWithRender() {
     // Set up a camera looking at the center of the grid
     RenderConstants rConsts = InitCamera(sim.GRIDSIZE);
     sim.gpu->UpdateRenderConstants(rConsts);
-    sim.gpu->Render(sim.H.srv);
+    // sim.gpu->Render(sim.H.srv);
 
     // Loop
     MSG msg = {};
@@ -223,7 +223,7 @@ int RunHeadless() {
     std::vector<float> H(size * size);
     std::vector<std::complex<float>> hHat(size*size);
     std::vector<std::complex<float>> array;
-    sim.gpu->DownloadFromGPU(sim.terrain.tex, terrain, size);
+    // sim.gpu->DownloadFromGPU(sim.terrain.tex, terrain, size);
     // sim.gpu->DownloadFromGPU(sim.H.tex, H, size);
     SaveToCSV(terrain, size, -1); // Save terrain data for reference
     SaveToCSV(H, size, 0); // Save initial water height data
@@ -233,8 +233,8 @@ int RunHeadless() {
     for (int tick = 1; tick < numTicks; ++tick) {
         auto start = std::chrono::high_resolution_clock::now();
         sim.SimStep();
-        sim.gpu->DownloadFromGPU(sim.qtilde_x.tex, H, size);
-        SaveToCSV(H, size, tick);
+        // sim.gpu->DownloadFromGPU(sim.qtilde_x.tex, H, size);
+        // SaveToCSV(H, size, tick);
         // SaveToCSV(hHat, size, tick);
         // sim.gpu->DownloadFromGPU(sim.qHat_x_array.tex, array, size, arraySize);
         // SaveToCSV(array, size, arraySize, tick);

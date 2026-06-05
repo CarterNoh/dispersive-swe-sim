@@ -10,23 +10,31 @@
 
 // The constant buffer must be padded to a multiple of 16 bytes for HLSL
 struct SimConstants {
+    float time;
     // Simulation params
     int gridSize;
     float cellSize;
     float timeStep;
-    int boundaryType;
-    float minWaterHeight;
-    // Decomposition params
-    int diffusionIterations;
-    float deltaT;
-    float diffusionPenalty;
-    // SWE & Transport Params
-    float cflCondition;
-    float gammaTransport;
-    // eWave Params
     int depthNum;
+    float surfaceTension;
+    float density;
     // Padding for 16-byte alignment
     float buffer;
+
+    // fft wave params
+    float depth;
+    float fetch;
+    float windSpeed;
+    float windAngle;
+    float swell;
+    float swellAngle;
+    float choppiness;
+    float filterSmall;
+    float filterBig;
+    float filterWidth;
+    float filterMin;
+     // Padding for 16-byte alignment
+     float buffer1;
 };
 
 struct FFTConstants {

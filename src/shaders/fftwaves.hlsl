@@ -5,11 +5,12 @@ and the paper "Empirical Directional Wave Spectra for Computer Graphics".
 
 
 cbuffer Constants : register(b0) {
+    float time;
+
     // Sim params
     int gridSize; 
     float cellSize;
     float timeStep;
-    float minWaterHeight;
 
     // eWave params
     int depthNum;
@@ -17,34 +18,46 @@ cbuffer Constants : register(b0) {
     float density;
 
     // Padding for 16-byte alignment 
-    // float buffer;
-};
+    float buffer;
 
-cbuffer FFTWaveConstants : register(b1) {
     float depth; 
     float fetch;
     float windSpeed;
     float windAngle;
     float swell;
     float swellAngle;
-
+    float choppiness;
 
     float filterSmall;
     float filterBig;
     float filterWidth;
     float filterMin;
+
+    float buffer2;
+};
+
+cbuffer FFTWaveConstants : register(b2) {
+    
 }
 
-#define G 9.80665
+#define G 9.80665f
 #define PI 3.14159265358979323846f
 
-// Texture Registers
-Texture2D<float>   in0 : register(t0);
-Texture2D<float>   in1 : register(t1);
-Texture2D<float>   in2 : register(t2);
-RWTexture2D<float> out0: register(u0);
-RWTexture2D<float> out1: register(u1);
-RWTexture2D<float> out2: register(u2);
+
+static const float GAMMA_SQRT_2PI = 2.5066282746310002;
+// Lanczos coefficients (g=7, n=9)
+static const float GAMMA_LANCZOS_G = 7.0;
+static const float GAMMA_C[9] = {
+    0.99999999999980993,
+    676.5203681218851,
+    -1259.1392167224028,
+    771.32342877765313,
+    -176.61502916214059,
+    12.507343278686905,
+    -0.13857109526572012,
+    9.9843695780195716e-6,
+    1.5056327351493116e-7
+};
 
 
 ///////////////// Random Number Generation /////////////////
@@ -74,7 +87,7 @@ float2 randn2(inout uint state) {
 }
 
 ///////////////// Math Functions /////////////////
-float SafeTanh(x) {
+float SafeTanh(float x) {
     if (x > 20.f) {
         return 1.f;
     } else if (x < -20.f) {
@@ -84,33 +97,42 @@ float SafeTanh(x) {
     }
 }
 
-float Gamma(float s) {
-    // Euler Gamma function (complex version of a factorial, or something, idk)
-    if s <= 0:
-        return 0.f;
-    
-    // Reflection formula for s < 0.5 to improve accuracy
-    if s < 0.5:
-        return PI / (sin(PI * s) * Gamma(1 - s))
+float Gamma(float z) {
+    float x = z;
+    float reflectOffset = 0.0;
+    bool reflected = false;
 
-    // Lanczos coefficients (g=7, n=9)
-    // Ultra janky because HLSL doesn't have arrays
-    float g = 7;
-    s -= 0.5;
-    float x = 0.99999999999980993;
-    for (int i = 1; i < 9; i++) {
-        if (i == 1) float p = 676.5203681218851;
-        if (i == 2) float p = -1259.1392167224028;
-        if (i == 3) float p = 771.32342877765313;
-        if (i == 4) float p = -176.61502916214059;
-        if (i == 5) float p = 12.507343278686905;
-        if (i == 6) float p = -0.13857109526572012;
-        if (i == 7) float p = 9.9843695780195716 * pow(10, -6);
-        if (i == 8) float p = 1.5056327351493116 * pow(10, -7);
-        x += p / (s + i);
+    [branch]
+    if (x < 0.5) {
+        reflected = true;
+        x = 1.0 - x;
     }
-    t = s + g;
-    return sqrt(2 * PI) * pow(t, s) * exp(-t) * x;
+
+    x -= 1.0;
+
+    float a = GAMMA_C[0]
+            + GAMMA_C[1] / (x + 1.0)
+            + GAMMA_C[2] / (x + 2.0)
+            + GAMMA_C[3] / (x + 3.0)
+            + GAMMA_C[4] / (x + 4.0)
+            + GAMMA_C[5] / (x + 5.0)
+            + GAMMA_C[6] / (x + 6.0)
+            + GAMMA_C[7] / (x + 7.0)
+            + GAMMA_C[8] / (x + 8.0);
+
+    float t = x + GAMMA_LANCZOS_G + 0.5;
+
+    float logG = 0.5 * log(2.0 * PI)
+               + (x + 0.5) * log(t) - t
+               + log(a);
+
+    [branch]
+    if (reflected) {
+        // log(Gamma(z)) = log(pi) - log(|sin(pi*z)|) - log(Gamma(1-z))
+        logG = log(PI) - log(abs(sin(PI * z))) - logG;
+    }
+
+    return exp(logG);
 }
 
 float Smoothstep(float x) {
@@ -124,6 +146,11 @@ float Smoothstep(float x) {
 float LonguetHiggins(float theta, float s) {
     float Q = (pow(2, 2 * s - 1) / PI) * pow(Gamma(s + 1), 2) / Gamma(2 * s + 1);
     return Q * pow(abs(cos(theta / 2.f)), 2.f * s);
+}
+
+float2 ComplexMul(float2 a, float2 b) {
+    return float2(a.x * b.x - a.y * b.y,
+                  a.x * b.y + a.y * b.x);
 }
 
 ///////////////// Spectrum Functions /////////////////
@@ -140,7 +167,7 @@ float2 Dispersion(float k) {
 
     // Capillary Dispersion
     float kh = k * depth;
-    float tanh_kh = (kh > 20.f) ? 1.f : tanh(kh);
+    float tanh_kh = SafeTanh(kh);
     float term = G * k + pow(k, 3) * surfaceTension / density;
     float omega = sqrt((term) * tanh_kh);
     float dwdk = term * (depth * pow(1.f / cosh(kh), 2) + tanh_kh) / (2 * omega);
@@ -156,21 +183,21 @@ float2 WaveSpectra(float w) {
     // float S = (a * G * G / pow(w, 5)) * exp(-b * pow((wp / w), 4));
     
     // JONSWAP
-    float F = fetch * 1000 // convert km to m
+    float F = fetch * 1000; // convert km to m
     float FBar = (G * F) / pow(windSpeed, 2); // dimensionless fetch
-    float wp = 7 * PI * pow(FBar, 1.f/3.f);
-    float a = 0.076f * pow(FBar, -0.22);
+    float wp = 7 * PI * pow(abs(FBar), 1.f/3.f);
+    float a = 0.076f * pow(abs(FBar), -0.22);
     float gamma = 3.3f;
     float s = (w > wp) ? 0.09f : 0.07f;
     float r = exp(- pow(w - wp, 2) / (2 * pow(s * wp, 2)));
     float b = 5.f / 4.f;
-    float S = (a * G * G / pow(w, 5)) * exp(-b * pow((wp / w), 4)) * pow(gamma, r)
+    float S = (a * G * G / pow(w, 5)) * exp(-b * pow((wp / w), 4)) * pow(gamma, r);
 
     // Texel MARSEN ARSLOE (TMA)
     float wh = w * sqrt(depth / G);
     float z = 1.8f * (wh - 1.125f);
     float tanh_z = (z > 20) ? 1 : (z < -20) ? -1 : tanh(z);
-    float Phi = 0.5f + 0.5f * tanh(z); // tanh approx. of kitaigorodskii depth attenuation
+    float Phi = 0.5f + 0.5f * tanh_z; // tanh approx. of kitaigorodskii depth attenuation
     S *= Phi;
     
     return float2(S, wp);
@@ -209,27 +236,27 @@ float DirectionalSpreading(float theta, float w, float wp) {
     }
     D = beta * pow(1.f / cosh(beta * theta), 2) / (2 * SafeTanh(beta * PI));
     
-    return D 
+    return D;
 }
 
 float Swell(float theta, float w, float wp) {
     ///// Swell ///// 
     float safeSwell = clamp(swell, 0, 1);
     float shape = 16.1f * SafeTanh(wp / w) * pow(safeSwell, 2);
-    return = LonguetHiggins(theta, shape)
+    return LonguetHiggins(theta, shape);
 }
 
 float TotalDirectional(float th, float th_s, float w, float wp) {
     return DirectionalSpreading(th, w, wp) * Swell(th_s, w, wp);
 }
 
-float IntegrateDirectional(float a, float b, int n) {
+float IntegrateDirectional(float a, float b, int n, float w, float wp) {
     // Directional Spreading
     // numerically integrate the product of D * D_swell from -pi to pi to normalize
     float nf = (float)n;
     float step = (b - a) / nf;
     float sum = 0;
-    for (int i = 0; 1 < n; i++) {
+    for (int i = 0; i < n; i++) {
         float thetaI = a + i * step;
         sum += TotalDirectional(thetaI, thetaI, w, wp);
     }
@@ -245,7 +272,7 @@ float GetSpectrum(float w, float theta, float theta_swell) {
     float wp = spectraData.y;
 
     // Directional Spreading & Swell
-    float D = TotalDirectional(theta, theta_swell, w, wp) / IntegrateDirectional(-PI, PI, 36);
+    float D = TotalDirectional(theta, theta_swell, w, wp) / IntegrateDirectional(-PI, PI, 36, w, wp);
 
     return S * D;
 }
@@ -263,14 +290,18 @@ float Filter(float k, int filterInvert) {
 
 
 ///////////////// Shaders /////////////////
+RWTexture2D<float>  omegaOut: register(u0);
+RWTexture2D<float2> HPosOut: register(u1);
+RWTexture2D<float2> HNegOut: register(u2);
 [numthreads(16, 16, 1)]
 void PopulateSpectrum(uint3 id : SV_DispatchThreadID) {
-    // Inputs: in0 = h, in1 = q_x, in2 = q_y, in3 = terrain
-    // Outputs: out0 = H, out1 = Q_x, out2 = Q_y
+    // Outputs: omegaOut = omega, HPosOut = HPos, HNegOut = HNeg (complex amplitudes)
     if (id.x >= (uint)(gridSize) || id.y >= (uint)(gridSize)) return;
 
     if (id.x == 0 && id.y == 0) {
-        out0[id.xy] = float4(0.f, 0.f, 0.f, 0.f);
+        omegaOut[id.xy] = 0.f;
+        HPosOut[id.xy] = float2(0.f, 0.f);
+        HNegOut[id.xy] = float2(0.f, 0.f);
         return;
     }
 
@@ -280,8 +311,8 @@ void PopulateSpectrum(uint3 id : SV_DispatchThreadID) {
     float dK = 2.0f * PI / domainSize; 
     float N_2 = (float)gridSize / 2.0f;
     // Calculate the physical 2D wavenumber vector components (signed, handling the Nyquist wrap-around)
-    int freqX = (id.x < N_2) ? (int)id.x : (int)id.x - (int)gridSize;
-    int freqY = (id.y < N_2) ? (int)id.y : (int)id.y - (int)gridSize;
+    int freqX = ((float)id.x < N_2) ? (int)id.x : (int)id.x - (int)gridSize;
+    int freqY = ((float)id.y < N_2) ? (int)id.y : (int)id.y - (int)gridSize;
     float kx = (float)freqX * dK; // spatial frequency: radians per meter
     float ky = (float)freqY * dK;
     float k = sqrt(kx * kx + ky * ky);
@@ -315,10 +346,10 @@ void PopulateSpectrum(uint3 id : SV_DispatchThreadID) {
     uint state = k;
     float2 unif = rand2(state);
     float2 norm = randn2(state); 
-    float ampPos = r.x * sqrt(2 * SPos * dk * dk);
-    float ampNeg = r.y * sqrt(2 * SNeg * dk * dk);
-    float phasePos = r.z;
-    float phaseNeg = r.w;
+    float ampPos = norm.x * sqrt(2 * SPos * dK * dK);
+    float ampNeg = norm.y * sqrt(2 * SNeg * dK * dK);
+    float phasePos = unif.x;
+    float phaseNeg = unif.y;
 
     // Filter amplitudes of wavelengths outside of thresholds
     float filter = Filter(k, 0);
@@ -326,12 +357,52 @@ void PopulateSpectrum(uint3 id : SV_DispatchThreadID) {
     ampNeg *= filter;
 
     // Store results
-    out0[id.xy] = ampPos *  float2(cos(phasePos), sin(phasePos));
-    out1[id.xy] = ampNeg * -float2(cos(phaseNeg), sin(phaseNeg));
-    out2[id.xy] = omega;
+    omegaOut[id.xy] = omega;
+    HPosOut[id.xy] = ampPos *  float2(cos(phasePos), sin(phasePos));
+    HNegOut[id.xy] = ampNeg * -float2(cos(phaseNeg), sin(phaseNeg));
 }
 
+Texture2D<float>    omegaIn : register(t0);
+Texture2D<float2>   HPosIn : register(t1);
+Texture2D<float2>   HNegIn : register(t2);
+RWTexture2D<float2> HPropOut: register(u0);
+RWTexture2D<float2> DxPropOut: register(u1);
+RWTexture2D<float2> DyPropOut: register(u2);
 [numthreads(16, 16, 1)]
-void TimeStep(uint3 id : SV_DispatchThreadID) {
+void PropagateWaves(uint3 id : SV_DispatchThreadID) {
+    // Inputs: omegaIn = omega, HPosIn = HPos, HNegIn = HNeg
+    // Outputs: HPropOut = HProp, DxPropOut = DxProp, DyPropOut = DyProp
 
+    // Calculate Wavevector
+    float domainSize = (float)gridSize * cellSize;
+    float dK = 2.0f * PI / domainSize; 
+    float N_2 = (float)gridSize / 2.0f;
+    int freqX = ((float)id.x < N_2) ? (int)id.x : (int)id.x - (int)gridSize;
+    int freqY = ((float)id.y < N_2) ? (int)id.y : (int)id.y - (int)gridSize;
+    float kx = (float)freqX * dK; // spatial frequency: radians per meter
+    float ky = (float)freqY * dK;
+    float k = sqrt(kx * kx + ky * ky);
+    float kx_ = kx / k;
+    float ky_ = ky / k;
+
+    // Propagate Height H
+    float w = omegaIn[id.xy];
+    // w = floor() * w0; //modify w to be multiple of w0?
+    float S = sin(w * time);
+    float C = cos(w * time);
+    float2 fwd = float2(C, -S); // why is forward the negative one? Try switching if doesn't look right
+    float2 bkwd = float2(C, S);
+    float2 HProp = ComplexMul(HPosIn[id.xy], fwd) + ComplexMul(HNegIn[id.xy], bkwd);
+    HPropOut[id.xy] = HProp;
+    
+    // Calculate Horizontal Displacement Dx, Dy
+    DxPropOut[id.xy] = ComplexMul(HProp, float2(0.f, kx_ * choppiness));
+    DyPropOut[id.xy] = ComplexMul(HProp, float2(0.f, ky_ * choppiness));
+}
+
+Texture2D<float2>  in0 : register(t0);
+RWTexture2D<float> out0: register(u0);
+[numthreads(16, 16, 1)]
+void ComplexToReal(uint3 id : SV_DispatchThreadID) {
+    out0[id.xy] = in0[id.xy].x; // real part of complex number
 }

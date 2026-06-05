@@ -30,12 +30,12 @@ function(add_hlsl_shader SHADER_FILE SHADER_ENTRY SHADER_TARGET)
 endfunction()
 
 # Compile HLSL shader
-add_hlsl_shader(src/fft/fft_gpu.hlsl FFTKernel_1D FFT_SHADER_CSO)
+add_hlsl_shader(src/shaders/fft.hlsl FFTKernel_1D FFT_SHADER_CSO)
 
 # Define the executable and the files needed to build it
 add_executable(Simulator 
     src/main.cpp 
-    src/Sim2D.cpp
+    src/Sim2D_fft.cpp
     src/gpu.cpp
 )
 
