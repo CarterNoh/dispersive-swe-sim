@@ -26,7 +26,7 @@ Pixel VSMain(Vertex input) {
     // Convert flat vertex position to texture UV coordinates (0.0 to 1.0)
     float2 uv = input.position / (gridSize - 1);
     float h = HeightMap.SampleLevel(PointSampler, uv, 0);
-    float scale = 50.f;
+    float scale = 1.f;
     float3 wPos = float3(input.position.x, h * scale, input.position.y);
     
     // Project to the screen
@@ -49,8 +49,8 @@ float4 PSMain(Pixel input) : SV_TARGET {
 
     // Normalize the height from 0.0 to 1.0
     // Adjust hMax depending on how high your water level / waves get!
-    float hMin = 0.f;
-    float hMax = 0.4f; // Adjust based on your wave heights!
+    float hMin = -5.f;
+    float hMax = 5.f; // Adjust based on your wave heights!
     float t = saturate((input.height - hMin) / (hMax - hMin));
 
     // "viterbi" color scheme

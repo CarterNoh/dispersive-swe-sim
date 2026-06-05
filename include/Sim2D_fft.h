@@ -25,7 +25,7 @@ public:
     static constexpr float SWELL        = 0.5f;     // [0, 1]
     static constexpr float SWELL_ANGLE  = 0.f;     // degrees from x-axis
     static constexpr float CHOPPINESS   = 0.f;     // 
-    static constexpr float FILTER_SMALL = 0.01f;    // 
+    static constexpr float FILTER_SMALL = 0.f;    // 
     static constexpr float FILTER_BIG   = 10000.f;  // 
     static constexpr float FILTER_WIDTH = 1.f;      // 
     static constexpr float FILTER_MIN   = 0.01f;    // 

@@ -36,51 +36,36 @@ cbuffer Constants : register(b0) {
     float buffer2;
 };
 
-cbuffer FFTWaveConstants : register(b2) {
-    
-}
-
 #define G 9.80665f
 #define PI 3.14159265358979323846f
 
 
-static const float GAMMA_SQRT_2PI = 2.5066282746310002;
-// Lanczos coefficients (g=7, n=9)
-static const float GAMMA_LANCZOS_G = 7.0;
-static const float GAMMA_C[9] = {
-    0.99999999999980993,
-    676.5203681218851,
-    -1259.1392167224028,
-    771.32342877765313,
-    -176.61502916214059,
-    12.507343278686905,
-    -0.13857109526572012,
-    9.9843695780195716e-6,
-    1.5056327351493116e-7
-};
-
-
 ///////////////// Random Number Generation /////////////////
-uint pcg_hash(inout uint state) {
-    // Takes an integer seed and returns a pseudo-random integer.
-    uint word = ((state >> ((state >> 28u) + 4u)) ^ state) * 277803737u;
-    state = state * 747796405u + 2891336453u; // Advance state for the next call
-    return (word >> 22u) ^ word;
+uint Seed(float kx, float ky, uint seed) {
+    static const uint p1 = 73856093u;
+    static const uint p2 = 19349663u;
+    static const uint p3 = 83492791u;
+    uint hashX = (asuint(kx) ^ p1) * p2;
+    uint hashY = (asuint(ky) ^ p2) * p3;
+    uint hashTime = (seed ^ p3) * p1;
+    return hashX ^ hashY ^ hashTime;
 }
 
-float rand(inout uint state) {
+float Rand(inout uint state) {
     // Convert a uint to a uniform float in the range (0.0, 1.0]
-    uint hash = pcg_hash(state);
+    uint word = ((state >> ((state >> 28u) + 4u)) ^ state) * 277803737u;
+    state = state * 747796405u + 2891336453u; // Advance state for the next call
+    uint hash = (word >> 22u) ^ word;
     return max(float(hash) / 4294967295.0f, 1e-7f); 
 }
 
-float2 rand2(inout uint state) {
-    return float2(rand(state), rand(state));
+float2 Rand2(inout uint state) {
+    return float2(Rand(state), Rand(state));
 }
 
-float2 randn2(inout uint state) {
+float2 Randn2(inout uint state) {
     // Generate two standard normal floats (mean 0, variance 1) using Box-Muller
-    float2 unif = rand2(state); // generate two random uniform numbers
+    float2 unif = Rand2(state); // generate two random uniform numbers
     float r = sqrt(-2.0f * log(unif.x));
     float theta = 2.0f * PI * unif.y;
     return float2(r * cos(theta), r * sin(theta));
@@ -101,6 +86,21 @@ float Gamma(float z) {
     float x = z;
     float reflectOffset = 0.0;
     bool reflected = false;
+
+    static const float GAMMA_SQRT_2PI = 2.5066282746310002;
+    // Lanczos coefficients (g=7, n=9)
+    static const float GAMMA_LANCZOS_G = 7.0;
+    static const float GAMMA_C[9] = {
+        0.99999999999980993,
+        676.5203681218851,
+        -1259.1392167224028,
+        771.32342877765313,
+        -176.61502916214059,
+        12.507343278686905,
+        -0.13857109526572012,
+        9.9843695780195716e-6,
+        1.5056327351493116e-7
+    };
 
     [branch]
     if (x < 0.5) {
@@ -176,29 +176,29 @@ float2 Dispersion(float k) {
 }
 
 float2 WaveSpectra(float w) {
-    // // Pierson-Moskowitz
-    // float a = 8.1 * pow(10, -3);
-    // float b = 0.74;
-    // float wp = G / (1.026 * windSpeed);
-    // float S = (a * G * G / pow(w, 5)) * exp(-b * pow((wp / w), 4));
+    // Pierson-Moskowitz
+    float a = 8.1 * pow(10, -3);
+    float b = 0.74;
+    float wp = G / (1.026 * windSpeed);
+    float S = (a * G * G / pow(w, 5)) * exp(-b * pow((wp / w), 4));
     
-    // JONSWAP
-    float F = fetch * 1000; // convert km to m
-    float FBar = (G * F) / pow(windSpeed, 2); // dimensionless fetch
-    float wp = 7 * PI * pow(abs(FBar), 1.f/3.f);
-    float a = 0.076f * pow(abs(FBar), -0.22);
-    float gamma = 3.3f;
-    float s = (w > wp) ? 0.09f : 0.07f;
-    float r = exp(- pow(w - wp, 2) / (2 * pow(s * wp, 2)));
-    float b = 5.f / 4.f;
-    float S = (a * G * G / pow(w, 5)) * exp(-b * pow((wp / w), 4)) * pow(gamma, r);
+    // // JONSWAP
+    // float F = fetch * 1000; // convert km to m
+    // float FBar = (G * F) / pow(windSpeed, 2); // dimensionless fetch
+    // float wp = 7 * PI * pow(abs(FBar), 1.f/3.f);
+    // float a = 0.076f * pow(abs(FBar), -0.22);
+    // float gamma = 3.3f;
+    // float s = (w > wp) ? 0.09f : 0.07f;
+    // float r = exp(- pow(w - wp, 2) / (2 * pow(s * wp, 2)));
+    // float b = 5.f / 4.f;
+    // float S = (a * G * G / pow(w, 5)) * exp(-b * pow((wp / w), 4)) * pow(gamma, r);
 
-    // Texel MARSEN ARSLOE (TMA)
-    float wh = w * sqrt(depth / G);
-    float z = 1.8f * (wh - 1.125f);
-    float tanh_z = (z > 20) ? 1 : (z < -20) ? -1 : tanh(z);
-    float Phi = 0.5f + 0.5f * tanh_z; // tanh approx. of kitaigorodskii depth attenuation
-    S *= Phi;
+    // // Texel MARSEN ARSLOE (TMA)
+    // float wh = w * sqrt(depth / G);
+    // float z = 1.8f * (wh - 1.125f);
+    // float tanh_z = (z > 20) ? 1 : (z < -20) ? -1 : tanh(z);
+    // float Phi = 0.5f + 0.5f * tanh_z; // tanh approx. of kitaigorodskii depth attenuation
+    // S *= Phi;
     
     return float2(S, wp);
 }
@@ -283,7 +283,7 @@ float Filter(float k, int filterInvert) {
     float fracSmall = (wavelength - (filterSmall - filterWidth)) / filterWidth;
     float fracBig = (wavelength - filterBig) / filterWidth;
     float t = Smoothstep(fracSmall) - Smoothstep(fracBig);
-    float f = clamp(filterMin - (1.f - filterMin) * t, 0.f, 1.f);
+    float f = clamp(filterMin + (1.f - filterMin) * t, 0.f, 1.f);
     if (filterInvert == 1) f = 1.f - f;
     return f;
 }
@@ -327,10 +327,10 @@ void PopulateSpectrum(uint3 id : SV_DispatchThreadID) {
     float omega = omegaData.x; 
     float dwdk = omegaData.y;
 
-    float thetaPos      = atan2( ky_,  kx_) - windAngle; // original had this as (ky, -kx) and (-ky, kx), not sure which is right
-    float thetaNeg      = atan2(-ky_, -kx_) - windAngle;
-    float thetaSwellPos = atan2( ky_,  kx_) - swellAngle;
-    float thetaSwellNeg = atan2(-ky_, -kx_) - swellAngle;
+    float thetaPos      = atan2( ky_, -kx_) - windAngle;
+    float thetaNeg      = atan2(-ky_,  kx_) - windAngle;
+    float thetaSwellPos = atan2( ky_, -kx_) - swellAngle;
+    float thetaSwellNeg = atan2(-ky_,  kx_) - swellAngle;
     thetaPos = (thetaPos + PI) % (2 * PI) - PI; // wrap to [-pi, pi]      // theta = atan2(sin(theta), cos(theta)); 
     thetaNeg = (thetaNeg + PI) % (2 * PI) - PI;
     thetaSwellPos = (thetaSwellPos + PI) % (2 * PI) - PI;
@@ -343,23 +343,27 @@ void PopulateSpectrum(uint3 id : SV_DispatchThreadID) {
     SNeg *= dwdk / k;
 
     ///// Convert to Amplitude & Phase /////
-    uint state = k;
-    float2 unif = rand2(state);
-    float2 norm = randn2(state); 
-    float ampPos = norm.x * sqrt(2 * SPos * dK * dK);
-    float ampNeg = norm.y * sqrt(2 * SNeg * dK * dK);
-    float phasePos = unif.x;
-    float phaseNeg = unif.y;
+    uint seed = Seed(kx, ky, 0);
+    float2 unif = Rand2(seed);
+    float2 norm = Randn2(seed); 
+    float ampPos = norm.x * dK * sqrt(2 * SPos);
+    float ampNeg = norm.y * dK * sqrt(2 * SNeg);
+    float phasePos = unif.x * 2 * PI;
+    float phaseNeg = unif.y * 2 * PI;
 
     // Filter amplitudes of wavelengths outside of thresholds
     float filter = Filter(k, 0);
     ampPos *= filter;
     ampNeg *= filter;
 
+    // Scale by gridSize^2, since iFFT will normalize by this
+    ampPos *= gridSize * gridSize;
+    ampNeg *= gridSize * gridSize;
+
     // Store results
     omegaOut[id.xy] = omega;
-    HPosOut[id.xy] = ampPos *  float2(cos(phasePos), sin(phasePos));
-    HNegOut[id.xy] = ampNeg * -float2(cos(phaseNeg), sin(phaseNeg));
+    HPosOut[id.xy] = ampPos * float2(cos(phasePos), -sin(phasePos));
+    HNegOut[id.xy] = ampNeg * float2(cos(phaseNeg), -sin(phaseNeg));
 }
 
 Texture2D<float>    omegaIn : register(t0);
@@ -396,8 +400,8 @@ void PropagateWaves(uint3 id : SV_DispatchThreadID) {
     HPropOut[id.xy] = HProp;
     
     // Calculate Horizontal Displacement Dx, Dy
-    DxPropOut[id.xy] = ComplexMul(HProp, float2(0.f, kx_ * choppiness));
-    DyPropOut[id.xy] = ComplexMul(HProp, float2(0.f, ky_ * choppiness));
+    DxPropOut[id.xy] = ComplexMul(HProp, float2(0.f, -kx_ * choppiness));
+    DyPropOut[id.xy] = ComplexMul(HProp, float2(0.f, -ky_ * choppiness));
 }
 
 Texture2D<float2>  in0 : register(t0);

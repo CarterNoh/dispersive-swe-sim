@@ -16,7 +16,7 @@ extern "C" {
 namespace fs = std::filesystem;
 
 // Parameters
-int numTicks = 5000; // Number of simulation steps to run
+int numTicks = 200; // Number of simulation steps to run
 bool render = true; // Whether to render the simulation or just run it headless
 
 void SaveToCSV(const std::vector<float>& h, int size, int tick) {
@@ -112,7 +112,7 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
 RenderConstants InitCamera(int gridSize) {
     // These values must match those in the Vertex Shader
     float maxInitialHeight = 0.2f; 
-    float visualScale = 50.f;
+    float visualScale = 1.f;
     float trueMax = maxInitialHeight * visualScale;
 
     // Focus the camera on the center point
@@ -225,16 +225,17 @@ int RunHeadless() {
     std::vector<std::complex<float>> array;
     // sim.gpu->DownloadFromGPU(sim.terrain.tex, terrain, size);
     // sim.gpu->DownloadFromGPU(sim.H.tex, H, size);
-    SaveToCSV(terrain, size, -1); // Save terrain data for reference
-    SaveToCSV(H, size, 0); // Save initial water height data
+    // SaveToCSV(terrain, size, -1); // Save terrain data for reference
+    // SaveToCSV(H, size, 0); // Save initial water height data
 
     std::cout << "Starting simulation loop..." << std::endl;
     auto totalStart = std::chrono::high_resolution_clock::now();
     for (int tick = 1; tick < numTicks; ++tick) {
         auto start = std::chrono::high_resolution_clock::now();
         sim.SimStep();
-        // sim.gpu->DownloadFromGPU(sim.qtilde_x.tex, H, size);
-        // SaveToCSV(H, size, tick);
+        sim.gpu->DownloadFromGPU(sim.H.tex, H, size);
+        SaveToCSV(H, size, tick);
+        // sim.gpu->DownloadFromGPU(sim.HPos.tex, hHat, size);
         // SaveToCSV(hHat, size, tick);
         // sim.gpu->DownloadFromGPU(sim.qHat_x_array.tex, array, size, arraySize);
         // SaveToCSV(array, size, arraySize, tick);
