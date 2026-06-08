@@ -20,7 +20,7 @@ cbuffer Constants : register(b0) {
     // Padding for 16-byte alignment 
     float buffer;
 
-    float depth; 
+    float Depth; 
     float fetch;
     float windSpeed;
     float windAngle;
@@ -159,28 +159,28 @@ float2 ComplexMul(float2 a, float2 b) {
 }
 
 ///////////////// Spectrum Functions /////////////////
-float2 Dispersion(float k) {
+float2 Dispersion(float k, float h) {
     // // Deep Water Dispersion
     // float omega = sqrt(G * k);
     // float dwdk = G / (2 * omega)
     
     // // Depth-Limited Dispersion
-    // float kh = k * depth;
+    // float kh = k * h;
     // float tanh_kh = SafeTanh(kh)
     // float omega = sqrt(G * k * tanh_kh);
     // float dwdk = G * (tanh_kh + kh / (cosh(kh) * cosh(kh))) / (2 * omega);
 
     // Capillary Dispersion
-    float kh = k * depth;
+    float kh = k * Depth;
     float tanh_kh = SafeTanh(kh);
     float term = G * k + pow(k, 3) * surfaceTension / density;
     float omega = sqrt((term) * tanh_kh);
-    float dwdk = term * (depth * pow(1.f / cosh(kh), 2) + tanh_kh) / (2 * omega);
+    float dwdk = term * (h * pow(1.f / cosh(kh), 2) + tanh_kh) / (2 * omega);
 
     return float2(omega, dwdk);
 }
 
-float2 WaveSpectra(float w) {
+float2 WaveSpectra(float w, float h) {
     // // Pierson-Moskowitz
     // float a = 8.1 * pow(10, -3);
     // float b = 0.74;
@@ -196,7 +196,7 @@ float2 WaveSpectra(float w) {
     float S = (a * G * G / pow(w, 5)) * exp(-1.25f * pow((wp / w), 4)) * pow(3.3f, r);
 
     // Texel MARSEN ARSLOE (TMA)
-    float wh = w * sqrt(depth / G);
+    float wh = w * sqrt(Depth / G);
     float z = 1.8f * (wh - 1.125f);
     float tanh_z = (z > 20) ? 1 : (z < -20) ? -1 : tanh(z);
     float Phi = 0.5f + 0.5f * tanh_z; // tanh approx. of kitaigorodskii depth attenuation
@@ -252,7 +252,6 @@ float TotalDirectional(float th, float th_s, float w, float wp) {
     return DirectionalSpreading(th, w, wp) * Swell(th_s, w, wp);
 }
 
-// We pass the absolute windAngle and swellAngle from your Constant Buffer
 float IntegrateDirectional(int n, float w, float wp) {
     float step = (2.f * PI) / (float)n;
     float sum = 0.f;
@@ -271,9 +270,9 @@ float IntegrateDirectional(int n, float w, float wp) {
     return step * sum;
 }
 
-float GetSpectrum(float w, float theta, float theta_swell) {
+float GetSpectrum(float w, float theta, float theta_swell, float h) {
     // Wave Spectra
-    float2 spectraData = WaveSpectra(w);
+    float2 spectraData = WaveSpectra(w, h);
     float S = spectraData.x;
     float wp = spectraData.y;
 
@@ -298,18 +297,20 @@ float Filter(float k, int filterInvert) {
 
 
 ///////////////// Shaders /////////////////
-RWTexture2D<float>  omegaOut: register(u0);
-RWTexture2D<float2> HPosOut: register(u1);
-RWTexture2D<float2> HNegOut: register(u2);
+StructuredBuffer<float> depth : register(t8);
+
+RWTexture2DArray<float>  omegaOut: register(u0);
+RWTexture2DArray<float2> HPosOut: register(u1);
+RWTexture2DArray<float2> HNegOut: register(u2);
 [numthreads(16, 16, 1)]
 void PopulateSpectrum(uint3 id : SV_DispatchThreadID) {
     // Outputs: omegaOut = omega, HPosOut = HPos, HNegOut = HNeg (complex amplitudes)
     if (id.x >= (uint)(gridSize) || id.y >= (uint)(gridSize)) return;
 
     if (id.x == 0 && id.y == 0) {
-        omegaOut[id.xy] = 0.f;
-        HPosOut[id.xy] = float2(0.f, 0.f);
-        HNegOut[id.xy] = float2(0.f, 0.f);
+        omegaOut[id] = 0.f;
+        HPosOut[id] = float2(0.f, 0.f);
+        HNegOut[id] = float2(0.f, 0.f);
         return;
     }
 
@@ -331,8 +332,8 @@ void PopulateSpectrum(uint3 id : SV_DispatchThreadID) {
     float ky2 = ky_ * ky_;
 
     ///// Frequency & Wave Angle /////
-    float2 omegaData = Dispersion(k); //(omega, dwdk)
-    float omega = omegaData.x; 
+    float2 omegaData = Dispersion(k, depth[id.z]);
+    float omega = omegaData.x;
     float dwdk = omegaData.y;
 
     float thetaPos      = WrapAngle(atan2( ky_, -kx_) - windAngle * PI / 180);
@@ -341,8 +342,8 @@ void PopulateSpectrum(uint3 id : SV_DispatchThreadID) {
     float thetaSwellNeg = WrapAngle(atan2(-ky_,  kx_) - swellAngle * PI / 180);
 
     ///// Spectrum /////
-    float SPos = GetSpectrum(omega, thetaPos, thetaSwellPos);
-    float SNeg = GetSpectrum(omega, thetaNeg, thetaSwellNeg);
+    float SPos = GetSpectrum(omega, thetaPos, thetaSwellPos, depth[id.z]);
+    float SNeg = GetSpectrum(omega, thetaNeg, thetaSwellNeg, depth[id.z]); 
     SPos *= dwdk / k; // Convert S(w,theta) to S(kx, ky)
     SNeg *= dwdk / k;
 
@@ -365,22 +366,21 @@ void PopulateSpectrum(uint3 id : SV_DispatchThreadID) {
     ampNeg *= gridSize * gridSize;
 
     // Store results
-    omegaOut[id.xy] = omega;
-    HPosOut[id.xy] = ampPos * float2(cos(phasePos), -sin(phasePos));
-    HNegOut[id.xy] = ampNeg * float2(cos(phaseNeg), -sin(phaseNeg));
+    omegaOut[id] = omega;
+    HPosOut[id] = ampPos * float2(cos(phasePos), -sin(phasePos));
+    HNegOut[id] = ampNeg * float2(cos(phaseNeg), -sin(phaseNeg));
 }
 
-Texture2D<float>    omegaIn : register(t0);
-Texture2D<float2>   HPosIn : register(t1);
-Texture2D<float2>   HNegIn : register(t2);
-RWTexture2D<float2> HPropOut: register(u0);
-RWTexture2D<float2> DxPropOut: register(u1);
-RWTexture2D<float2> DyPropOut: register(u2);
+Texture2DArray<float>    omegaIn : register(t0);
+Texture2DArray<float2>   HPosIn : register(t1);
+Texture2DArray<float2>   HNegIn : register(t2);
+RWTexture2DArray<float2> HPropOut: register(u0);
+RWTexture2DArray<float2> DxPropOut: register(u1);
+RWTexture2DArray<float2> DyPropOut: register(u2);
+RWTexture2DArray<float2> UxPropOut: register(u3);
+RWTexture2DArray<float2> UyPropOut: register(u4);
 [numthreads(16, 16, 1)]
 void PropagateWaves(uint3 id : SV_DispatchThreadID) {
-    // Inputs: omegaIn = omega, HPosIn = HPos, HNegIn = HNeg
-    // Outputs: HPropOut = HProp, DxPropOut = DxProp, DyPropOut = DyProp
-
     // Calculate Wavevector
     float domainSize = (float)gridSize * cellSize;
     float dK = 2.0f * PI / domainSize; 
@@ -392,20 +392,34 @@ void PropagateWaves(uint3 id : SV_DispatchThreadID) {
     float k = sqrt(kx * kx + ky * ky);
     float kx_ = kx / k;
     float ky_ = ky / k;
+    // could possibly store these and see if it is faster? 
 
     // Propagate Height H
-    float w = omegaIn[id.xy];
+    float w = omegaIn[id];
     // w = floor() * w0; //modify w to be multiple of w0?
     float S = sin(w * time);
     float C = cos(w * time);
     float2 fwd = float2(C, -S); // why is forward the negative one? Try switching if doesn't look right
     float2 bkwd = float2(C, S);
-    float2 HProp = ComplexMul(HPosIn[id.xy], fwd) + ComplexMul(HNegIn[id.xy], bkwd);
-    HPropOut[id.xy] = HProp;
+    float2 HPlus = ComplexMul(HPosIn[id], fwd);
+    float2 HMin = ComplexMul(HNegIn[id], bkwd);
+    float2 HProp = HPlus + HMin;
+    HPropOut[id] = HProp;
     
     // Calculate Horizontal Displacement Dx, Dy
-    DxPropOut[id.xy] = ComplexMul(HProp, float2(0.f, -kx_ * choppiness));
-    DyPropOut[id.xy] = ComplexMul(HProp, float2(0.f, -ky_ * choppiness));
+    DxPropOut[id] = ComplexMul(HProp, float2(0.f, -kx_ * choppiness));
+    DyPropOut[id] = ComplexMul(HProp, float2(0.f, -ky_ * choppiness));
+
+    // Calculate Velocities
+    float2 Ux = HProp * w * kx_;
+    float2 Uy = HProp * w * ky_;
+    // Phase shift in X: shift by dx/2 by multiplying by e^(i * shiftX) = cos(shiftX) + i*sin(shiftX)
+    float shiftX = 0.5f * cellSize * kx;
+    float shiftY = 0.5f * cellSize * ky;
+    float2 e_ix = float2(cos(shiftX), sin(shiftX));
+    float2 e_iy = float2(cos(shiftY), sin(shiftY));
+    UxPropOut[id] = ComplexMul(Ux, e_ix);
+    UyPropOut[id] = ComplexMul(Uy, e_iy);
 }
 
 Texture2D<float2>  in0 : register(t0);
@@ -413,4 +427,42 @@ RWTexture2D<float> out0: register(u0);
 [numthreads(16, 16, 1)]
 void ComplexToReal(uint3 id : SV_DispatchThreadID) {
     out0[id.xy] = in0[id.xy].x; // real part of complex number
+}
+
+Texture2DArray<float2> HIn : register(t0);
+Texture2DArray<float2> DxIn: register(t1);
+Texture2DArray<float2> DyIn: register(t2);
+Texture2DArray<float2> UxIn: register(t3);
+Texture2DArray<float2> UyIn: register(t4);
+Texture2D<float>   terrain : register(t5);
+RWTexture2D<float> HOut : register(u0);
+RWTexture2D<float> DxOut: register(u1);
+RWTexture2D<float> DyOut: register(u2);
+RWTexture2D<float> UxOut: register(u3);
+RWTexture2D<float> UyOut: register(u4);
+[numthreads(16, 16, 1)]
+void Interp(uint3 id : SV_DispatchThreadID) {
+    if (id.x >= (uint)(gridSize) || id.y >= (uint)(gridSize)) return;
+
+    float waterDepth = HIn[id] - terrain[id.xy];
+    if (waterDepth < 0.f) {
+        HOut [id.xy] = terrain[id.xy];
+        DxOut[id.xy] = 0.f;
+        DyOut[id.xy] = 0.f;
+        return;
+    }
+    int d1 = 0;
+    for (int d = 0; d < depthNum; d++)
+        if (waterDepth >= depth[d]) d1 = d;
+    int d2 = min(depthNum - 1, d1 + 1);
+    float s = 0.f;
+    if (d1 != d2)
+        s = (depth[d2] - waterDepth) / (depth[d2] - depth[d1]);
+    uint3 id1 = uint3(id.x, id.y, d1);
+    uint3 id2 = uint3(id.x, id.y, d2);
+    HOut [id.xy] = s * HIn [id1].x + (1.f - s) * HIn [id2].x;
+    DxOut[id.xy] = s * DxIn[id1].x + (1.f - s) * DxIn[id2].x;
+    DyOut[id.xy] = s * DyIn[id1].x + (1.f - s) * DyIn[id2].x;
+    UxOut[id.xy] = s * UxIn[id1].x + (1.f - s) * UxIn[id2].x;
+    UyOut[id.xy] = s * UyIn[id1].x + (1.f - s) * UyIn[id2].x;
 }

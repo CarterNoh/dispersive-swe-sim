@@ -589,10 +589,10 @@ void CalcEWave(uint3 id : SV_DispatchThreadID) {
     // Phase shift in X: shift by dx/2 by multiplying by e^(i * shiftX) = cos(shiftX) + i*sin(shiftX)
     float shiftX = 0.5f * cellSize * kx;
     float shiftY = 0.5f * cellSize * ky;
-    float2 e_mix = float2(cos(shiftX), sin(shiftX));
-    float2 e_miy = float2(cos(shiftY), sin(shiftY));
-    dhdx = ComplexMul(dhdx, e_mix);
-    dhdy = ComplexMul(dhdy, e_miy);
+    float2 e_ix = float2(cos(shiftX), sin(shiftX));
+    float2 e_iy = float2(cos(shiftY), sin(shiftY));
+    dhdx = ComplexMul(dhdx, e_ix);
+    dhdy = ComplexMul(dhdy, e_iy);
     
     // Shift the q cross-terms to align with their target faces
     float theta_x = 0.5f * cellSize * (ky - kx);
@@ -635,9 +635,11 @@ void InterpQ(uint3 id : SV_DispatchThreadID) {
     // Inputs: qtilde_x_array, qtilde_y_array, hbar, depth
     // Outputs: qtilde_x, qtilde_y
     if (id.x >= (uint)(gridSize) || id.y >= (uint)(gridSize)) return;
+    uint2 right = uint2(min(id.x + 1, gridSize - 1), id.y);
+    uint2 up    = uint2(id.x, min(id.y + 1, gridSize - 1));
 
-    float waterDepth_x = max(hbar[id.xy], hbar[id.xy + uint2(1, 0)]);
-    float waterDepth_y = max(hbar[id.xy], hbar[id.xy + uint2(0, 1)]);
+    float waterDepth_x = max(hbar[id.xy], hbar[right]);
+    float waterDepth_y = max(hbar[id.xy], hbar[up]);
     int d1_x = 0;
     int d1_y = 0;
     for (int d = 0; d < depthNum; d++) {

@@ -641,7 +641,8 @@ bool GPU::CompilePixelShader(const std::wstring& file, const std::string& entryP
     return true;
 }
 
-void GPU::Render(ID3D11ShaderResourceView* heightSRV) { //, int gridVertexCount
+// void GPU::Render(ID3D11ShaderResourceView* heightSRV) {
+void GPU::Render(const std::vector<ID3D11ShaderResourceView*>& srvs) {
     // Clear the screen
     float clearColor[4] = { 1.0f, 1.0f, 1.0f, 1.0f };
     context->ClearRenderTargetView(renderTargetView, clearColor);
@@ -652,8 +653,9 @@ void GPU::Render(ID3D11ShaderResourceView* heightSRV) { //, int gridVertexCount
     context->VSSetShader(vertexShader, nullptr, 0);
     context->PSSetShader(pixelShader, nullptr, 0);
 
-    // Bind the Fluid Data! (As an SRV, NOT a UAV)
-    context->VSSetShaderResources(0, 1, &heightSRV);
+    // Bind the Fluid Data
+    // context->VSSetShaderResources(0, 1, &heightSRV);
+    context->VSSetShaderResources(0, srvs.size(), srvs.data());
     context->VSSetSamplers(0, 1, &samplerState);
 
     // Draw 

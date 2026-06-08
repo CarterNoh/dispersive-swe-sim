@@ -18,26 +18,38 @@ public:
     static constexpr float SURFACE_TENSION = 0.001f; // minimum water height for stability
     static constexpr float DENSITY = 999.f; // minimum water height for stability
 
+	// FFT Parameters
     static constexpr float DEPTH        = 2.5f;     // meters
-    static constexpr float FETCH        = 2.f;     // kilometers
+    static constexpr float FETCH        = 20.f;     // kilometers
     static constexpr float WIND_SPEED   = 14.f;     // m/s
-    static constexpr float WIND_ANGLE   = 0.f;     // degrees from x-axis
-    static constexpr float SWELL        = 0.3f;  // [0, 1] // this has issues at 0 but it shouldn't, I can't find the bug, hunt down later
-    static constexpr float SWELL_ANGLE  = 0.f;     // degrees from x-axis
-    static constexpr float CHOPPINESS   = 0.f;     // 
-    static constexpr float FILTER_SMALL = 0.f;    // 
+    static constexpr float WIND_ANGLE   = 180.f;     // degrees from x-axis
+    static constexpr float SWELL        = 0.01f;    // [0, 1] // this has issues at 0 but it shouldn't, I can't find the bug, hunt down later
+    static constexpr float SWELL_ANGLE  = 180.f;    // degrees from x-axis
+    static constexpr float CHOPPINESS   = 0.f;      // 
+    static constexpr float FILTER_SMALL = 0.f;      // Set to really wide, not really using this right now 
     static constexpr float FILTER_BIG   = 10000.f;  // 
     static constexpr float FILTER_WIDTH = 1.f;      // 
     static constexpr float FILTER_MIN   = 0.01f;    // 
+
+	// Terrain & Water Parameters
+	static constexpr int TERRAIN_TYPE = 4; 		   // 0 = flat, 1 = ramp, 2 = bumps, 3 = basins, 4 = beach, 5 = 1D hill, 6 = 2D hill
+	static constexpr float TERRAIN_HEIGHT = -15.f; // base height of terrain features (meters)
+	static constexpr float TERRAIN_SCALE = 20.f;    // scale of terrain features (meters)
+	static constexpr int WATER_TYPE   = 2; 		   // 0 = flat, 1 = step/dam break, 2 = diagonal slope, 3 = splash, 4 = ripples, 5 = basin flood
+	static constexpr float WATER_LEVEL = 0.f; 	   // level of water free surface at start (H)
+	static constexpr float WATER_SCALE = 0.1f;     // scale of water height features
 	
 	// eWave Parameters
 	std::vector<float> depths = { 1.0f, 2.0f, 4.0f, 16.0f, 64.0f };
 	int DEPTH_NUM = depths.size(); // number of discrete water depth solutions to compute for eWave dispersion correction
 
 	// Simulation variables
-	GPUField omega, HPos, HNeg, HProp, DxProp, DyProp, H, Dx, Dy;
-	GPUField* fields[4] = {&omega, &H, &Dx, &Dy};
-	GPUField* fields_complex[5] = {&HPos, &HNeg, &HProp, &DxProp, &DyProp};
+	GPUField terrain, omega, HPos, HNeg, HProp, DxProp, DyProp, UxProp, UyProp, H, Dx, Dy, Ux, Uy;
+	GPUField* fields_r[6] = {&terrain, &H, &Dx, &Dy, &Ux, &Uy};
+	GPUField* fields_c[5] = {};
+	GPUField* fields_arrays_r[1] = {&omega};
+	GPUField* fields_arrays_c[7] = {&HPos, &HNeg, &HProp, &DxProp, &DyProp, &UxProp, &UyProp};
+	GPUBuffer depth;
 
 	GPU* gpu;
 
@@ -52,13 +64,16 @@ public:
 private:
 	void Init(GPU* gpu);
 
+	std::vector<float> SetTerrain();
+	std::vector<float> SetWater(std::vector<float>& terrain);
+
 	// Helper functions
 	inline int idx(int x, int y) const {return y * GRIDSIZE + x;}
 
 	// GPU Compute Shaders
-	ID3D11ComputeShader *PopulateSpectrum, *PropagateWaves, *ComplexToReal;
-	ID3D11ComputeShader** shaders[3] = {&PopulateSpectrum, &PropagateWaves, &ComplexToReal};
-	char* names[3] = {"PopulateSpectrum", "PropagateWaves", "ComplexToReal"};
+	ID3D11ComputeShader *PopulateSpectrum, *PropagateWaves, *ComplexToReal, *Interp;
+	ID3D11ComputeShader** shaders[4] = {&PopulateSpectrum, &PropagateWaves, &ComplexToReal, &Interp};
+	char* names[4] = {"PopulateSpectrum", "PropagateWaves", "ComplexToReal", "Interp"};
 	SimConstants constants = {time, GRIDSIZE, CELLSIZE, TIMESTEP, DEPTH_NUM, SURFACE_TENSION, DENSITY, 0.f,
     						  DEPTH, FETCH, WIND_SPEED, WIND_ANGLE, SWELL, SWELL_ANGLE, CHOPPINESS, 
 							  FILTER_SMALL, FILTER_BIG, FILTER_WIDTH, FILTER_MIN, 0.f};			
