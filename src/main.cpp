@@ -16,7 +16,7 @@ extern "C" {
 namespace fs = std::filesystem;
 
 // Parameters
-int numTicks = 200; // Number of simulation steps to run
+int numTicks = 2000; // Number of simulation steps to run
 bool render = true; // Whether to render the simulation or just run it headless
 
 void SaveToCSV(const std::vector<float>& h, int size, int tick) {
@@ -194,7 +194,8 @@ int RunWithRender() {
             DispatchMessage(&msg);
         }
         sim.SimStep();
-        sim.gpu->Render(sim.H.srv);
+        // sim.gpu->Render(sim.H.srv);
+        sim.gpu->Render({sim.H.srv, sim.Dx.srv, sim.Dy.srv});
         tick++;
         if (tick >= numTicks) running = false;
     }

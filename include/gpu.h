@@ -99,7 +99,8 @@ public:
     bool CreateGridMesh(int gridSize);
     bool CompileVertexShader(const std::wstring& file, const std::string& entryPoint);
     bool CompilePixelShader(const std::wstring& file, const std::string& entryPoint);
-    void Render(ID3D11ShaderResourceView* heightSRV);
+    // void Render(ID3D11ShaderResourceView* heightSRV);
+    void Render(const std::vector<ID3D11ShaderResourceView*>& srvs);
     
 
 private:
