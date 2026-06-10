@@ -371,7 +371,6 @@ void PopulateSpectrum(uint3 id : SV_DispatchThreadID) {
     HNegOut[id] = ampNeg * float2(cos(phaseNeg), -sin(phaseNeg));
 }
 
-Texture2DArray<float>    omegaIn : register(t0);
 Texture2DArray<float2>   HPosIn : register(t1);
 Texture2DArray<float2>   HNegIn : register(t2);
 RWTexture2DArray<float2> HPropOut: register(u0);
@@ -379,6 +378,8 @@ RWTexture2DArray<float2> DxPropOut: register(u1);
 RWTexture2DArray<float2> DyPropOut: register(u2);
 RWTexture2DArray<float2> UxPropOut: register(u3);
 RWTexture2DArray<float2> UyPropOut: register(u4);
+RWTexture2DArray<float2> SxPropOut: register(u5);
+RWTexture2DArray<float2> SyPropOut: register(u6);
 [numthreads(16, 16, 1)]
 void PropagateWaves(uint3 id : SV_DispatchThreadID) {
     // Calculate Wavevector
@@ -395,7 +396,8 @@ void PropagateWaves(uint3 id : SV_DispatchThreadID) {
     // could possibly store these and see if it is faster? 
 
     // Propagate Height H
-    float w = omegaIn[id];
+    float2 omegaData = Dispersion(k, depth[id.z]);
+    float w = omegaData.x;
     // w = floor() * w0; //modify w to be multiple of w0?
     float S = sin(w * time);
     float C = cos(w * time);
@@ -420,13 +422,21 @@ void PropagateWaves(uint3 id : SV_DispatchThreadID) {
     float2 e_iy = float2(cos(shiftY), sin(shiftY));
     UxPropOut[id] = ComplexMul(Ux, e_ix);
     UyPropOut[id] = ComplexMul(Uy, e_iy);
-}
 
-Texture2D<float2>  in0 : register(t0);
-RWTexture2D<float> out0: register(u0);
-[numthreads(16, 16, 1)]
-void ComplexToReal(uint3 id : SV_DispatchThreadID) {
-    out0[id.xy] = in0[id.xy].x; // real part of complex number
+    // Radiation stress tensor
+    float groupVel = omegaData.y;
+    float phaseVel = w / k;
+    float E = 0.5f * pow(length(HProp), 2) * G; // wave energy density (divided by rho)
+    // float2 Mw_x = E * kx_ * density / phaseVel;
+    // float2 Mw_y = E * ky_ * density / phaseVel;
+    float vel_ratio = groupVel / phaseVel;
+    float Sxx = E * (vel_ratio * (kx_ * kx_ + 1) - 0.5f);
+    float Syy = E * (vel_ratio * (ky_ * ky_ + 1) - 0.5f);
+    float Sxy = E * vel_ratio * kx_ * ky_;
+    float2 gradS_x = float2(0.f, Sxx * kx + Sxy * ky);
+    float2 gradS_y = float2(0.f, Sxy * kx + Syy * ky);
+    SxPropOut[id] = gradS_x;
+    SyPropOut[id] = gradS_y;
 }
 
 Texture2DArray<float2> HIn : register(t0);
@@ -434,12 +444,16 @@ Texture2DArray<float2> DxIn: register(t1);
 Texture2DArray<float2> DyIn: register(t2);
 Texture2DArray<float2> UxIn: register(t3);
 Texture2DArray<float2> UyIn: register(t4);
-Texture2D<float>   terrain : register(t5);
+Texture2DArray<float2> SxIn: register(t5);
+Texture2DArray<float2> SyIn: register(t6);
+Texture2D<float>   terrain : register(t7);
 RWTexture2D<float> HOut : register(u0);
 RWTexture2D<float> DxOut: register(u1);
 RWTexture2D<float> DyOut: register(u2);
 RWTexture2D<float> UxOut: register(u3);
 RWTexture2D<float> UyOut: register(u4);
+RWTexture2D<float> SxOut: register(u5);
+RWTexture2D<float> SyOut: register(u6);
 [numthreads(16, 16, 1)]
 void Interp(uint3 id : SV_DispatchThreadID) {
     if (id.x >= (uint)(gridSize) || id.y >= (uint)(gridSize)) return;

@@ -116,12 +116,12 @@ void Sim::Init(GPU* gpu) {
 	// 	std::vector<float> temp(GRIDSIZE * GRIDSIZE * 2, 0.0f);
 	// 	gpu->UploadToGPU(fields_c[i]->tex, temp, GRIDSIZE, true);
 	// }
-	// Real Texture Arrays
-	for (int i = 0; i < sizeof(fields_arrays_r) / sizeof(fields_arrays_r[0]); i++) {
-		gpu->CreateGridTexture(fields_arrays_r[i], GRIDSIZE, false, DEPTH_NUM);
-		std::vector<float> temp(GRIDSIZE * GRIDSIZE * DEPTH_NUM, 0.0f);
-		gpu->UploadToGPU(fields_arrays_r[i]->tex, temp, GRIDSIZE, false, DEPTH_NUM);
-	}
+	// // Real Texture Arrays
+	// for (int i = 0; i < sizeof(fields_arrays_r) / sizeof(fields_arrays_r[0]); i++) {
+	// 	gpu->CreateGridTexture(fields_arrays_r[i], GRIDSIZE, false, DEPTH_NUM);
+	// 	std::vector<float> temp(GRIDSIZE * GRIDSIZE * DEPTH_NUM, 0.0f);
+	// 	gpu->UploadToGPU(fields_arrays_r[i]->tex, temp, GRIDSIZE, false, DEPTH_NUM);
+	// }
 	// Complex Texture Arrays
 	for (int i = 0; i < sizeof(fields_arrays_c) / sizeof(fields_arrays_c[0]); i++) {
 		gpu->CreateGridTexture(fields_arrays_c[i], GRIDSIZE, true, DEPTH_NUM);
@@ -138,7 +138,7 @@ void Sim::Init(GPU* gpu) {
 
 	// Initialize FFT Wave Spectrum
     gpu->Dispatch(PopulateSpectrum, {}, 
-		{omega.uav, HPos.uav, HNeg.uav}, DEPTH_NUM);
+		{HPos.uav, HNeg.uav}, DEPTH_NUM);
 }
 
 Sim::Sim() {
@@ -177,16 +177,18 @@ void Sim::SimStep() {
 	
 	// Propagate waves
 	gpu->Dispatch(PropagateWaves, 
-		{omega.srv, HPos.srv, HNeg.srv}, 
-		{HProp.uav, DxProp.uav, DyProp.uav, UxProp.uav, UyProp.uav}, DEPTH_NUM);
+		{HPos.srv, HNeg.srv},
+		{HProp.uav, DxProp.uav, DyProp.uav, UxProp.uav, UyProp.uav, DelSx.uav, DelSy.uav}, DEPTH_NUM);
 	gpu->ExecuteFFT(HProp.uav,  GRIDSIZE, true, DEPTH_NUM);
 	gpu->ExecuteFFT(DxProp.uav, GRIDSIZE, true, DEPTH_NUM);
 	gpu->ExecuteFFT(DyProp.uav, GRIDSIZE, true, DEPTH_NUM);
 	gpu->ExecuteFFT(UxProp.uav, GRIDSIZE, true, DEPTH_NUM);
 	gpu->ExecuteFFT(UyProp.uav, GRIDSIZE, true, DEPTH_NUM);
+	gpu->ExecuteFFT(DelSx.uav,  GRIDSIZE, true, DEPTH_NUM);
+	gpu->ExecuteFFT(DelSy.uav,  GRIDSIZE, true, DEPTH_NUM);
 
 	// Interpolate outputs between depths
 	gpu->Dispatch(Interp, 
-		{HProp.srv, DxProp.srv, DyProp.srv, UxProp.srv, UyProp.srv, terrain.srv}, 
-		{H.uav, Dx.uav, Dy.uav, Ux.uav, Uy.uav});
+		{HProp.srv, DxProp.srv, DyProp.srv, UxProp.srv, UyProp.srv, DelSx.srv, DelSy.srv, terrain.srv}, 
+		{H.uav, Dx.uav, Dy.uav, Ux.uav, Uy.uav, Sx.uav, Sy.uav});
 }

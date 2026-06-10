@@ -20,7 +20,7 @@ public:
 
 	// FFT Parameters
     static constexpr float DEPTH        = 2.5f;     // meters
-    static constexpr float FETCH        = 20.f;     // kilometers
+    static constexpr float FETCH        = 200.f;     // kilometers
     static constexpr float WIND_SPEED   = 14.f;     // m/s
     static constexpr float WIND_ANGLE   = 180.f;     // degrees from x-axis
     static constexpr float SWELL        = 0.01f;    // [0, 1] // this has issues at 0 but it shouldn't, I can't find the bug, hunt down later
@@ -44,11 +44,12 @@ public:
 	int DEPTH_NUM = depths.size(); // number of discrete water depth solutions to compute for eWave dispersion correction
 
 	// Simulation variables
-	GPUField terrain, omega, HPos, HNeg, HProp, DxProp, DyProp, UxProp, UyProp, H, Dx, Dy, Ux, Uy;
-	GPUField* fields_r[6] = {&terrain, &H, &Dx, &Dy, &Ux, &Uy};
+	GPUField terrain, HPos, HNeg, HProp, DxProp, DyProp, UxProp, UyProp, DelSx, DelSy, 
+										H, Dx, Dy, Ux, Uy, Sx, Sy;
+	GPUField* fields_r[8] = {&terrain, &H, &Dx, &Dy, &Ux, &Uy, &Sx, &Sy};
 	GPUField* fields_c[5] = {};
-	GPUField* fields_arrays_r[1] = {&omega};
-	GPUField* fields_arrays_c[7] = {&HPos, &HNeg, &HProp, &DxProp, &DyProp, &UxProp, &UyProp};
+	GPUField* fields_arrays_r[1] = {};
+	GPUField* fields_arrays_c[9] = {&HPos, &HNeg, &HProp, &DxProp, &DyProp, &UxProp, &UyProp, &DelSx, &DelSy};
 	GPUBuffer depth;
 
 	GPU* gpu;
@@ -71,9 +72,9 @@ private:
 	inline int idx(int x, int y) const {return y * GRIDSIZE + x;}
 
 	// GPU Compute Shaders
-	ID3D11ComputeShader *PopulateSpectrum, *PropagateWaves, *ComplexToReal, *Interp;
-	ID3D11ComputeShader** shaders[4] = {&PopulateSpectrum, &PropagateWaves, &ComplexToReal, &Interp};
-	char* names[4] = {"PopulateSpectrum", "PropagateWaves", "ComplexToReal", "Interp"};
+	ID3D11ComputeShader *PopulateSpectrum, *PropagateWaves, *Interp;
+	ID3D11ComputeShader** shaders[3] = {&PopulateSpectrum, &PropagateWaves, &Interp};
+	char* names[3] = {"PopulateSpectrum", "PropagateWaves", "Interp"};
 	SimConstants constants = {time, GRIDSIZE, CELLSIZE, TIMESTEP, DEPTH_NUM, SURFACE_TENSION, DENSITY, 0.f,
     						  DEPTH, FETCH, WIND_SPEED, WIND_ANGLE, SWELL, SWELL_ANGLE, CHOPPINESS, 
 							  FILTER_SMALL, FILTER_BIG, FILTER_WIDTH, FILTER_MIN, 0.f};			
