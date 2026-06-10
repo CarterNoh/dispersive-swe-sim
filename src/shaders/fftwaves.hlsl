@@ -299,16 +299,14 @@ float Filter(float k, int filterInvert) {
 ///////////////// Shaders /////////////////
 StructuredBuffer<float> depth : register(t8);
 
-RWTexture2DArray<float>  omegaOut: register(u0);
-RWTexture2DArray<float2> HPosOut: register(u1);
-RWTexture2DArray<float2> HNegOut: register(u2);
+RWTexture2DArray<float2> HPosOut: register(u0);
+RWTexture2DArray<float2> HNegOut: register(u1);
 [numthreads(16, 16, 1)]
 void PopulateSpectrum(uint3 id : SV_DispatchThreadID) {
-    // Outputs: omegaOut = omega, HPosOut = HPos, HNegOut = HNeg (complex amplitudes)
+    // Outputs: HPosOut = HPos, HNegOut = HNeg (complex amplitudes)
     if (id.x >= (uint)(gridSize) || id.y >= (uint)(gridSize)) return;
 
     if (id.x == 0 && id.y == 0) {
-        omegaOut[id] = 0.f;
         HPosOut[id] = float2(0.f, 0.f);
         HNegOut[id] = float2(0.f, 0.f);
         return;
@@ -366,13 +364,12 @@ void PopulateSpectrum(uint3 id : SV_DispatchThreadID) {
     ampNeg *= gridSize * gridSize;
 
     // Store results
-    omegaOut[id] = omega;
     HPosOut[id] = ampPos * float2(cos(phasePos), -sin(phasePos));
     HNegOut[id] = ampNeg * float2(cos(phaseNeg), -sin(phaseNeg));
 }
 
-Texture2DArray<float2>   HPosIn : register(t1);
-Texture2DArray<float2>   HNegIn : register(t2);
+Texture2DArray<float2>   HPosIn : register(t0);
+Texture2DArray<float2>   HNegIn : register(t1);
 RWTexture2DArray<float2> HPropOut: register(u0);
 RWTexture2DArray<float2> DxPropOut: register(u1);
 RWTexture2DArray<float2> DyPropOut: register(u2);
@@ -382,6 +379,17 @@ RWTexture2DArray<float2> SxPropOut: register(u5);
 RWTexture2DArray<float2> SyPropOut: register(u6);
 [numthreads(16, 16, 1)]
 void PropagateWaves(uint3 id : SV_DispatchThreadID) {
+    if (id.x == 0 && id.y == 0) {
+        HPropOut[id] = float2(0.f, 0.f);
+        DxPropOut[id] = float2(0.f, 0.f);
+        DyPropOut[id] = float2(0.f, 0.f);
+        UxPropOut[id] = float2(0.f, 0.f);
+        UyPropOut[id] = float2(0.f, 0.f);
+        SxPropOut[id] = float2(0.f, 0.f);
+        SyPropOut[id] = float2(0.f, 0.f);
+        return;
+    }
+
     // Calculate Wavevector
     float domainSize = (float)gridSize * cellSize;
     float dK = 2.0f * PI / domainSize; 
@@ -409,8 +417,8 @@ void PropagateWaves(uint3 id : SV_DispatchThreadID) {
     HPropOut[id] = HProp;
     
     // Calculate Horizontal Displacement Dx, Dy
-    DxPropOut[id] = ComplexMul(HProp, float2(0.f, -kx_ * choppiness));
-    DyPropOut[id] = ComplexMul(HProp, float2(0.f, -ky_ * choppiness));
+    DxPropOut[id] = ComplexMul(HProp, float2(0.f, kx_ * choppiness));
+    DyPropOut[id] = ComplexMul(HProp, float2(0.f, ky_ * choppiness));
 
     // Calculate Velocities
     float2 Ux = HProp * w * kx_;

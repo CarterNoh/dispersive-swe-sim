@@ -23,9 +23,9 @@ public:
     static constexpr float FETCH        = 200.f;     // kilometers
     static constexpr float WIND_SPEED   = 14.f;     // m/s
     static constexpr float WIND_ANGLE   = 180.f;     // degrees from x-axis
-    static constexpr float SWELL        = 0.01f;    // [0, 1] // this has issues at 0 but it shouldn't, I can't find the bug, hunt down later
+    static constexpr float SWELL        = 0.9f;    // [0, 1] // this has issues at 0 but it shouldn't, I can't find the bug, hunt down later
     static constexpr float SWELL_ANGLE  = 180.f;    // degrees from x-axis
-    static constexpr float CHOPPINESS   = 0.f;      // 
+    static constexpr float CHOPPINESS   = 1.f;      // 
     static constexpr float FILTER_SMALL = 0.f;      // Set to really wide, not really using this right now 
     static constexpr float FILTER_BIG   = 10000.f;  // 
     static constexpr float FILTER_WIDTH = 1.f;      // 
