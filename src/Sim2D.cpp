@@ -76,7 +76,7 @@ std::vector<float> Sim::SetWater(std::vector<float>& terrain) {
             else if (WATER_TYPE == 3) { // Localized splash (Gaussian)
                 float dist = sqrt(pow(xf - 0.5f, 2) + pow(yf - 0.5f, 2));
                 if (dist < 0.1f) 
-					waterSurface += WATER_SCALE * cos(dist * PI * 5.0f);
+					waterSurface += WATER_SCALE;// * cos(dist * PI * 5.0f);
             }
 			else if (WATER_TYPE == 4) { // Surface Ripples
 				waterSurface += 0.5f * WATER_SCALE * (cos(2.f * PI * x / 37.f) + cos(2.f * PI * y / 49.f)); // this needs some work
@@ -162,6 +162,8 @@ int Sim::Release(void) {
 // Simulation functions
 // ********************************************************************************************************************
 
+
+
 void Sim::SimStep() {
 	DecompositionStep();
 	eWaveStep();
@@ -182,8 +184,11 @@ void Sim::DecompositionStep() {
     gpu->Dispatch(CalcDiffusionCoeffs, 
 		{H.srv, terrain.srv}, 
 		{alpha_H.uav, alpha_Q_x.uav, alpha_Q_y.uav});
-	// gpu->Dispatch(ApplyBoundaries, {},
-	// 	{alpha_H.uav, alpha_Q_x.uav, alpha_Q_y.uav});
+	if (BOUNDARIES) {
+		ApplyBoundaries(0, {alpha_H.uav});
+		ApplyBoundaries(1, {alpha_Q_x.uav});
+		ApplyBoundaries(2, {alpha_Q_y.uav});
+	}
 	
 	// Run diffusion to low-pass filter H and Q
 	for (int j = 0; (j < DIFFUSION_ITERATIONS); j++) {
@@ -196,18 +201,22 @@ void Sim::DecompositionStep() {
 		gpu->Dispatch(DiffusionStep, 
 			{terrain.srv, HPast.srv, QPast_x.srv, QPast_y.srv, alpha_H.srv, alpha_Q_x.srv, alpha_Q_y.srv}, 
 			{H.uav, Q_x.uav, Q_y.uav});
-		// gpu->Dispatch(ApplyBoundaries, {}, 
-		// 	{H.uav, Q_x.uav, Q_y.uav});
+		if (BOUNDARIES) {
+			ApplyBoundaries(0, {H.uav});
+			ApplyBoundaries(1, {Q_x.uav});
+			ApplyBoundaries(2, {Q_y.uav});
+		}
 	}
 
 	// final conversion to individual solver quantities
 	gpu->Dispatch(DecomposeFields, 
 		{H.srv, Q_x.srv, Q_y.srv, h.srv, q_x.srv, q_y.srv, terrain.srv}, 
 		{hbar.uav, qbar_x.uav, qbar_y.uav, htilde.uav, qtilde_x.uav, qtilde_y.uav});
-	// gpu->Dispatch(ApplyBoundaries, {}, 
-	// 	{hbar.uav, qbar_x.uav, qbar_y.uav});
-	// gpu->Dispatch(ApplyBoundaries, {}, 
-	// 	{htilde.uav, qtilde_x.uav, qtilde_y.uav});
+	if (BOUNDARIES) {
+		ApplyBoundaries(0, {hbar.uav, htilde.uav});
+		ApplyBoundaries(1, {qbar_x.uav, qtilde_x.uav});
+		ApplyBoundaries(2, {qbar_y.uav, qtilde_y.uav});
+	}
 
 	gpu->Dispatch(InitDecomp, 
 		{h.srv, nullptr, nullptr, terrain.srv}, 
@@ -216,7 +225,7 @@ void Sim::DecompositionStep() {
 
 void Sim::eWaveStep() {
 	// Copy variables to fourier domain & perform FFT
-	gpu->Dispatch(TransferToFFT, 
+	gpu->Dispatch(TransferToFFT,
 		{htilde.srv, qtilde_x.srv, qtilde_y.srv}, 
 		{htildeOld.uav, hHat.uav, qHat_x.uav, qHat_y.uav});
 	gpu->ExecuteFFT(hHat.uav, GRIDSIZE, false);
@@ -236,8 +245,10 @@ void Sim::eWaveStep() {
 	gpu->Dispatch(InterpQ,
 		{hbar.srv, qHat_x_array.srv, qHat_y_array.srv},
 		{qtilde_x.uav, qtilde_y.uav}, DEPTH_NUM);
-	// gpu->Dispatch(ApplyBoundaries, {}, 
-	// 	{qtilde_x.uav, qtilde_y.uav});
+	if (BOUNDARIES) {
+		ApplyBoundaries(1, {qtilde_x.uav});
+		ApplyBoundaries(2, {qtilde_y.uav});
+	}
 }
 
 void Sim::SWEStep() {
@@ -253,8 +264,10 @@ void Sim::SWEStep() {
 	gpu->Dispatch(CalcSWE,
 		{ubar_x.srv, ubar_y.srv, hbar.srv, H.srv}, 
 		{ubarNew_x.uav, ubarNew_y.uav, qbar_x.uav, qbar_y.uav});
-	// gpu->Dispatch(ApplyBoundaries, {}, 
-	// 	{ubarNew_x.uav, ubarNew_y.uav, qbar_x.uav, qbar_y.uav});
+	if (BOUNDARIES) {
+		ApplyBoundaries(1, {ubarNew_x.uav, qbar_x.uav});
+		ApplyBoundaries(2, {ubarNew_y.uav, qbar_y.uav});
+	}
 
 	// store current hbar for next timestep
 	std::swap(hbar, hbarOld);
@@ -270,9 +283,11 @@ void Sim::TransportStep() {
 		{ubarNew_x.srv, ubar_x.srv, ubarNew_y.srv, ubar_y.srv, 
 			qtildePast_x.srv, qtildePast_y.srv, h.srv, htilde.srv},
 		{htilde.uav, qtilde_x.uav, qtilde_y.uav});	
-	// gpu->Dispatch(ApplyBoundaries, {}, 
-	// 	{htilde.uav, qtilde_x.uav, qtilde_y.uav});
-	
+	if (BOUNDARIES) {
+		ApplyBoundaries(0, {htilde.uav});
+		ApplyBoundaries(1, {qtilde_x.uav});
+		ApplyBoundaries(2, {qtilde_y.uav});
+	}
 	// Advection of h through ubar:
 	// Construct q_advect = ubar * htilde sampled at cell edges using cubic sampling
 	gpu->Dispatch(CalcQAdvect, 
@@ -287,10 +302,24 @@ void Sim::ComputeValues() {
 		{qbar_x.srv, qtilde_x.srv, qAdvect_x.srv, qbar_y.srv, qtilde_y.srv, qAdvect_y.srv, 
 			hPast.srv, terrain.srv}, 
 		{h.uav, q_x.uav, q_y.uav});
-	// gpu->Dispatch(ApplyBoundaries, {}, 
-	// 	{h.uav, q_x.uav, q_y.uav});
-
+	if (BOUNDARIES) {
+		ApplyBoundaries(0, {h.uav});
+		ApplyBoundaries(1, {q_x.uav});
+		ApplyBoundaries(2, {q_y.uav});
+	}
 	gpu->Dispatch(InitDecomp, 
 		{h.srv, nullptr, nullptr, terrain.srv}, 
 		{H.uav});
+}
+
+
+// ********************************************************************************************************************
+// Helper functions
+// ********************************************************************************************************************
+
+void Sim::ApplyBoundaries(int type, std::initializer_list<ID3D11UnorderedAccessView*> uavs) {
+	// type: 0 = cell centers, 1 = x faces, 2 = y faces
+	if 		(type == 0) gpu->Dispatch(ApplyBoundariesCenter, {}, std::vector<ID3D11UnorderedAccessView*>(uavs));
+	else if (type == 1) gpu->Dispatch(ApplyBoundariesXFaces, {h.srv}, std::vector<ID3D11UnorderedAccessView*>(uavs));
+	else if (type == 2) gpu->Dispatch(ApplyBoundariesYFaces, {h.srv}, std::vector<ID3D11UnorderedAccessView*>(uavs));
 }
