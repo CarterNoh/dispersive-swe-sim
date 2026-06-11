@@ -157,6 +157,13 @@ float2 ComplexMul(float2 a, float2 b) {
                   a.x * b.y + a.y * b.x);
 }
 
+float Sponge(uint id) {
+    uint thickness = asuint(floor(0.2f * gridSize)); // cells
+    float alpha = 1.f;
+    uint dist = thickness - min(thickness, (id < gridSize/2) ? id : gridSize-1-id);
+    return 1 - alpha * pow(dist / (thickness+0), 1.2);
+}
+
 uint4 CheckSource(uint2 id, uint type) {
     if (id.x >= (uint)(gridSize) || id.y >= (uint)(gridSize)) return uint4(0, 0, 0, 0);
 
@@ -524,14 +531,10 @@ void IntegrateH(uint3 id : SV_DispatchThreadID) {
         q_ym = 0.f;
 
     // sponge layer: damp q near edges to absorb waves, simulate an open boundary
-    uint thickness = asuint(floor(0.2f * gridSize)); // cells
-    float alpha = 1.f;
-    uint dist_x = thickness - min(thickness, (id.x < gridSize/2) ? id.x : gridSize-1-id.x);
-    uint dist_y = thickness - min(thickness, (id.y < gridSize/2) ? id.y : gridSize-1-id.y);
-    q_x  *= 1 - alpha * pow(dist_x / thickness, 2);
-    q_xm *= 1 - alpha * pow(dist_x / thickness, 2);
-    q_y  *= 1 - alpha * pow(dist_y / thickness, 2);
-    q_ym *= 1 - alpha * pow(dist_y / thickness, 2);
+    q_x  *= Sponge(id.x);
+    q_xm *= Sponge(id.x);
+    q_y  *= Sponge(id.y);
+    q_ym *= Sponge(id.y);
 
     // update h with divergence of q
     float div_q = (q_x - q_xm + q_y - q_ym) / cellSize;
