@@ -6,7 +6,7 @@
 #include <fstream>
 #include <filesystem>
 #include <windows.h>
-#include "Sim2D_fft.h"
+#include "Sim2D.h"
 
 extern "C" {
     __declspec(dllexport) DWORD NvOptimusEnablement = 1;      // For NVIDIA GPUs
@@ -177,7 +177,7 @@ int RunWithRender() {
     // Set up a camera looking at the center of the grid
     RenderConstants rConsts = InitCamera(sim.GRIDSIZE);
     sim.gpu->UpdateRenderConstants(rConsts);
-    // sim.gpu->Render(sim.H.srv);
+    sim.gpu->Render({sim.H.srv, sim.disp_x.srv, sim.disp_y.srv});
 
     // Loop
     MSG msg = {};
@@ -195,7 +195,7 @@ int RunWithRender() {
         }
         sim.SimStep();
         // sim.gpu->Render(sim.H.srv);
-        sim.gpu->Render({sim.H.srv, sim.Dx.srv, sim.Dy.srv});
+        sim.gpu->Render({sim.H.srv, sim.disp_x.srv, sim.disp_y.srv});
         tick++;
         if (tick >= numTicks) running = false;
     }

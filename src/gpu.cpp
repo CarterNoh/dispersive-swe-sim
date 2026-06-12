@@ -184,6 +184,22 @@ void GPU::UpdateConstants(const SimConstants& constants) {
     }
 }
 
+void GPU::UpdateWaveConstants(const FFTWaveConstants& constants) {
+    if (!context || !waveConstantBuffer) {
+        std::cerr << "ERROR: GPU Context or Constant Buffer is null!" << std::endl;
+        return;
+    }
+    D3D11_MAPPED_SUBRESOURCE mapped;
+    HRESULT hr = context->Map(waveConstantBuffer, 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped);
+    if (SUCCEEDED(hr)) {
+        memcpy(mapped.pData, &constants, sizeof(FFTWaveConstants));
+        context->Unmap(waveConstantBuffer, 0);
+        context->CSSetConstantBuffers(1, 1, &waveConstantBuffer); // Wave constants get CS Constants slot 1
+    } else {
+        std::cerr << "ERROR: Failed to map Constant Buffer! HRESULT: " << hr << std::endl;
+    }
+}
+
 bool GPU::CreateGridTexture(GPUField* field, int size, bool isComplex, int arraySize) {
     D3D11_TEXTURE2D_DESC desc = {};
     desc.Width = size;
@@ -438,7 +454,7 @@ void GPU::UpdateFFTConstants(const FFTConstants& constants) {
     if (SUCCEEDED(hr)) {
         memcpy(mapped.pData, &constants, sizeof(FFTConstants));
         context->Unmap(fftConstantBuffer, 0);
-        context->CSSetConstantBuffers(1, 1, &fftConstantBuffer); // Use slot 1 for FFT constants
+        context->CSSetConstantBuffers(2, 1, &fftConstantBuffer); // Use slot 2 for FFT constants
     } else {
         std::cerr << "ERROR: Failed to map FFT Constant Buffer! HRESULT: " << hr << std::endl;
     }

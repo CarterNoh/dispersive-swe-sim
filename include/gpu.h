@@ -10,19 +10,32 @@
 
 // The constant buffer must be padded to a multiple of 16 bytes for HLSL
 struct SimConstants {
-    float time;
-    // Simulation params
-    int gridSize;
+    // Sim Params
+    int gridSize; 
     float cellSize;
     float timeStep;
-    int depthNum;
+    int boundaryType;
+    float minWaterHeight;
     float surfaceTension;
     float density;
+    // Decomposition Params
+    int diffusionIterations;
+    float deltaT;
+    float diffusionPenalty;
+    // SWE & Transport Params
+    float cflCondition;
+    float gammaTransport;
+    // eWave Params
+    int depthNum;
     // Padding for 16-byte alignment
     float buffer;
+    float buffer1;
+    float buffer2;
+};
 
-    // fft wave params
-    float depth;
+struct FFTWaveConstants {
+    float time;
+    // FFT wave params
     float fetch;
     float windSpeed;
     float windAngle;
@@ -33,8 +46,8 @@ struct SimConstants {
     float filterBig;
     float filterWidth;
     float filterMin;
-     // Padding for 16-byte alignment
-     float buffer1;
+    // Padding for 16-byte alignment
+    float buffer;
 };
 
 struct FFTConstants {
@@ -50,6 +63,7 @@ struct RenderConstants {
     float cellSize;                   // 4 bytes
     float buffer[2];                  // 8 bytes (Total = 80 bytes, must be multiple of 16)
 };
+
 
 struct GPUField {
     ID3D11Texture2D* tex;
@@ -74,6 +88,7 @@ public:
 
     // Compute Shaders
     void UpdateConstants(const SimConstants& constants);
+    void UpdateWaveConstants(const FFTWaveConstants& constants);
     bool CreateGridTexture(GPUField* field, int size, bool isComplex = false, int arraySize = 1);
     bool UploadToGPU(ID3D11Texture2D* tex, const std::vector<float>& data, int gridSize, bool isComplex = false, int arraySize = 1);
     bool DownloadFromGPU(ID3D11Texture2D* tex, std::vector<float>& data, int size);
@@ -110,6 +125,7 @@ private:
     ID3D11Device* device = nullptr;
     ID3D11DeviceContext* context = nullptr;
     ID3D11Buffer* constantBuffer = nullptr;
+    ID3D11Buffer* waveConstantBuffer = nullptr;
     ID3D11Texture2D* stagingTex = nullptr; // Used to download data back to CPU
     ID3D11Texture2D* stagingComplexTex = nullptr;
     ID3D11Texture2D* stagingComplexArrayTex = nullptr;

@@ -6,21 +6,21 @@ cbuffer Constants : register(b0) {
     float timeStep;
     int boundaryType;
     float minWaterHeight;
-
+    float surfaceTension;
+    float density;
     // Decomposition params
     int diffusionIterations;
     float deltaT;
     float diffusionPenalty;
-
     // SWE & Transport Params
     float cflCondition;
     float gammaTransport;
-
     // eWave params
     int depthNum;
-
     // Padding for 16-byte alignment 
     float buffer;
+    float buffer1;
+    float buffer2;
 };
 
 #define GRAVITY 9.80665
@@ -293,6 +293,26 @@ void DecomposeFields(uint3 id : SV_DispatchThreadID) {
         out2[id.xy] = 0.f;
         out5[id.xy] = 0.f;
     }
+}
+
+
+/////////// FFT ///////////
+
+[numthreads(16, 16, 1)]
+void CalcQFFT(uint3 id : SV_DispatchThreadID) {
+    // In: hbar, htildeFFT, utildeFFT_x, utildeFFT_y (complex, from iFFT)
+    // Out: qtildeFFT_x, qtildeFFT_y (complex, ready to FFT)
+    // Calculates qFFT (at cell centers) from fft sim's height and velocity
+
+    // Option 1: Interpolate before calculating Q - h, ux, uy are complex, no arrays; output is complex, not array
+    float hFFT  = in0[id.xy]  + in1[id.xy].x; // htildeFFT is only relative to the free surface hbar, need to get total height
+    out0[id.xy] = float2(hFFT * in2[id.xy].x, 0);
+    out1[id.xy] = float2(hFFT * in3[id.xy].x, 0);
+
+    // // Option 2: NOT Interpolate before calculating Q - h, ux, uy are complex arrays, output is complex array
+    // float hFFT = in0[id.xy] + in1[id]; // htildeFFT is only relative to the free surface hbar, need to get total height
+    // out0[id] = float2(hFFT * in1[id].x, 0);
+    // out1[id] = float2(hFFT * in2[id].x, 0);
 }
 
 

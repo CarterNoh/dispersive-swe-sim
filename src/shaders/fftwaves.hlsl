@@ -3,37 +3,46 @@ Implementation of FFT waves. Based on Cougar's FFTWave implementation in HoloOce
 and the paper "Empirical Directional Wave Spectra for Computer Graphics". 
  */
 
-
 cbuffer Constants : register(b0) {
-    float time;
-
     // Sim params
     int gridSize; 
     float cellSize;
     float timeStep;
-
-    // eWave params
-    int depthNum;
+    int boundaryType;
+    float minWaterHeight;
     float surfaceTension;
     float density;
-
+    // Decomposition params
+    int diffusionIterations;
+    float deltaT;
+    float diffusionPenalty;
+    // SWE & Transport Params
+    float cflCondition;
+    float gammaTransport;
+    // eWave params
+    int depthNum;
     // Padding for 16-byte alignment 
     float buffer;
+    float buffer1;
+    float buffer2;
+};
 
-    float Depth; 
+cbuffer ConstantsFFT : register(b1) {
+    float time;
+    // FFT wave params
+    int depthNum;
     float fetch;
     float windSpeed;
     float windAngle;
     float swell;
     float swellAngle;
     float choppiness;
-
     float filterSmall;
     float filterBig;
     float filterWidth;
     float filterMin;
-
-    float buffer1;
+    // Padding for 16-byte alignment 
+    float buffer;
 };
 
 #define G 9.80665f
@@ -284,7 +293,7 @@ float GetSpectrum(float w, float theta, float theta_swell, float h) {
     return S * D;
 }
 
-float Filter(float k, int filterInvert) {
+float AmpFilter(float k, int filterInvert) {
     // Smooth invertible band-pass filter
     float wavelength = 2 * PI / k; // convert wavenumber to wavelength
     float fracSmall = (wavelength - (filterSmall - filterWidth)) / filterWidth;
@@ -355,7 +364,7 @@ void PopulateSpectrum(uint3 id : SV_DispatchThreadID) {
     float phaseNeg = unif.y * 2 * PI;
 
     // Filter amplitudes of wavelengths outside of thresholds
-    float filter = Filter(k, 0);
+    float filter = AmpFilter(k, 0);
     ampPos *= filter;
     ampNeg *= filter;
 
@@ -370,19 +379,15 @@ void PopulateSpectrum(uint3 id : SV_DispatchThreadID) {
 
 Texture2DArray<float2>   HPosIn : register(t0);
 Texture2DArray<float2>   HNegIn : register(t1);
-RWTexture2DArray<float2> HPropOut: register(u0);
-RWTexture2DArray<float2> DxPropOut: register(u1);
-RWTexture2DArray<float2> DyPropOut: register(u2);
-RWTexture2DArray<float2> UxPropOut: register(u3);
-RWTexture2DArray<float2> UyPropOut: register(u4);
-RWTexture2DArray<float2> SxPropOut: register(u5);
-RWTexture2DArray<float2> SyPropOut: register(u6);
+RWTexture2DArray<float2> HHighOut : register(u0);
+RWTexture2DArray<float2> UxHighOut: register(u1);
+RWTexture2DArray<float2> UyHighOut: register(u2);
+RWTexture2DArray<float2> SxPropOut: register(u3);
+RWTexture2DArray<float2> SyPropOut: register(u4);
 [numthreads(16, 16, 1)]
 void PropagateWaves(uint3 id : SV_DispatchThreadID) {
     if (id.x == 0 && id.y == 0) {
         HPropOut[id] = float2(0.f, 0.f);
-        DxPropOut[id] = float2(0.f, 0.f);
-        DyPropOut[id] = float2(0.f, 0.f);
         UxPropOut[id] = float2(0.f, 0.f);
         UyPropOut[id] = float2(0.f, 0.f);
         SxPropOut[id] = float2(0.f, 0.f);
@@ -401,7 +406,6 @@ void PropagateWaves(uint3 id : SV_DispatchThreadID) {
     float k = sqrt(kx * kx + ky * ky);
     float kx_ = kx / k;
     float ky_ = ky / k;
-    // could possibly store these and see if it is faster? 
 
     // Propagate Height H
     float2 omegaData = Dispersion(k, depth[id.z]);
@@ -415,26 +419,30 @@ void PropagateWaves(uint3 id : SV_DispatchThreadID) {
     float2 HMin = ComplexMul(HNegIn[id], bkwd);
     float2 HProp = HPlus + HMin;
     HPropOut[id] = HProp;
+
+    // // Calculate Horizontal Displacement Dx, Dy
+    // DxPropOut[id] = ComplexMul(HProp, float2(0.f, kx_ * choppiness));
+    // DyPropOut[id] = ComplexMul(HProp, float2(0.f, ky_ * choppiness));
+
     
-    // Calculate Horizontal Displacement Dx, Dy
-    DxPropOut[id] = ComplexMul(HProp, float2(0.f, kx_ * choppiness));
-    DyPropOut[id] = ComplexMul(HProp, float2(0.f, ky_ * choppiness));
+    // Filter into high and low frequency - high goes to Airy, low goes to SWE
+    float kCrossover = N_2 * dK // =PI/cellSize, midpoint of range of k in one direction, revisit later
+    float kWidth = kCrossover / 4.f; // one eigth of domain size of k, idk this is starting guess
+    float kFilter = 1 + SafeTanh((k - kCrossover)/kWidth);
+    float2 HHigh = HProp * kFilter;
+    float2 HLow = HProp - HHigh;
+    
+    ///// High Frequency /////
+    HHighOut[id]  = HHigh;
+    UxHighOut[id] = HHigh * w * kx_; // keep these on cell centers for accurate calculation of Q
+    UyHighOut[id] = HHigh * w * ky_;
+    // Next step: iFFT these, calculate Q, FFT it, shift it, store it for Airy
 
-    // Calculate Velocities
-    float2 Ux = HProp * w * kx_;
-    float2 Uy = HProp * w * ky_;
-    // Phase shift in X: shift by dx/2 by multiplying by e^(i * shiftX) = cos(shiftX) + i*sin(shiftX)
-    float shiftX = 0.5f * cellSize * kx;
-    float shiftY = 0.5f * cellSize * ky;
-    float2 e_ix = float2(cos(shiftX), sin(shiftX));
-    float2 e_iy = float2(cos(shiftY), sin(shiftY));
-    UxPropOut[id] = ComplexMul(Ux, e_ix);
-    UyPropOut[id] = ComplexMul(Uy, e_iy);
-
+    ///// Low Frequency /////
     // Radiation stress tensor
     float groupVel = omegaData.y;
     float phaseVel = w / k;
-    float E = 0.5f * pow(length(HProp), 2) * G; // wave energy density (divided by rho)
+    float E = 0.5f * pow(length(HLow), 2) * G; // wave energy density, per mass
     // float2 Mw_x = E * kx_ * density / phaseVel;
     // float2 Mw_y = E * ky_ * density / phaseVel;
     float vel_ratio = groupVel / phaseVel;
@@ -443,21 +451,26 @@ void PropagateWaves(uint3 id : SV_DispatchThreadID) {
     float Sxy = E * vel_ratio * kx_ * ky_;
     float2 gradS_x = float2(0.f, Sxx * kx + Sxy * ky);
     float2 gradS_y = float2(0.f, Sxy * kx + Syy * ky);
-    SxPropOut[id] = gradS_x;
-    SyPropOut[id] = gradS_y;
+    SxOut[id] = gradS_x;
+    SyOut[id] = gradS_y;
+
+    // Phase shift in X: shift by dx/2 by multiplying by e^(i * shiftX) = cos(shiftX) + i*sin(shiftX)
+    // float shiftX = 0.5f * cellSize * kx;
+    // float shiftY = 0.5f * cellSize * ky;
+    // float2 e_ix = float2(cos(shiftX), sin(shiftX));
+    // float2 e_iy = float2(cos(shiftY), sin(shiftY));
+    // UxPropOut[id] = ComplexMul(Ux, e_ix);
+    // UyPropOut[id] = ComplexMul(Uy, e_iy);
+    
 }
 
 Texture2DArray<float2> HIn : register(t0);
-Texture2DArray<float2> DxIn: register(t1);
-Texture2DArray<float2> DyIn: register(t2);
 Texture2DArray<float2> UxIn: register(t3);
 Texture2DArray<float2> UyIn: register(t4);
 Texture2DArray<float2> SxIn: register(t5);
 Texture2DArray<float2> SyIn: register(t6);
-Texture2D<float>   terrain : register(t7);
+Texture2D<float>       hbar: register(t7);
 RWTexture2D<float> HOut : register(u0);
-RWTexture2D<float> DxOut: register(u1);
-RWTexture2D<float> DyOut: register(u2);
 RWTexture2D<float> UxOut: register(u3);
 RWTexture2D<float> UyOut: register(u4);
 RWTexture2D<float> SxOut: register(u5);
@@ -466,7 +479,7 @@ RWTexture2D<float> SyOut: register(u6);
 void Interp(uint3 id : SV_DispatchThreadID) {
     if (id.x >= (uint)(gridSize) || id.y >= (uint)(gridSize)) return;
 
-    float waterDepth = HIn[id] - terrain[id.xy];
+    float waterDepth = HIn[id] + hbar[id.xy];
     if (waterDepth < 0.f) {
         HOut [id.xy] = terrain[id.xy];
         DxOut[id.xy] = 0.f;
@@ -483,8 +496,8 @@ void Interp(uint3 id : SV_DispatchThreadID) {
     uint3 id1 = uint3(id.x, id.y, d1);
     uint3 id2 = uint3(id.x, id.y, d2);
     HOut [id.xy] = s * HIn [id1].x + (1.f - s) * HIn [id2].x;
-    DxOut[id.xy] = s * DxIn[id1].x + (1.f - s) * DxIn[id2].x;
-    DyOut[id.xy] = s * DyIn[id1].x + (1.f - s) * DyIn[id2].x;
     UxOut[id.xy] = s * UxIn[id1].x + (1.f - s) * UxIn[id2].x;
     UyOut[id.xy] = s * UyIn[id1].x + (1.f - s) * UyIn[id2].x;
+    SxOut[id.xy] = s * SxIn[id1].x + (1.f - s) * SxIn[id2].x;
+    SyOut[id.xy] = s * SyIn[id1].x + (1.f - s) * SyIn[id2].x;
 }
