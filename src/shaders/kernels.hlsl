@@ -305,9 +305,9 @@ void CalcQFFT(uint3 id : SV_DispatchThreadID) {
     // Calculates qFFT (at cell centers) from fft sim's height and velocity
 
     // Option 1: Interpolate before calculating Q - h, ux, uy are complex, no arrays; output is complex, not array
-    float hFFT  = in0[id.xy]  + in1[id.xy].x; // htildeFFT is only relative to the free surface hbar, need to get total height
-    out0[id.xy] = float2(hFFT * in2[id.xy].x, 0);
-    out1[id.xy] = float2(hFFT * in3[id.xy].x, 0);
+    // float hFFT  = in0[id.xy]  + in1[id.xy].x; // htildeFFT is only relative to the free surface hbar, need to get total height
+    // out0[id.xy] = float2(hFFT * in2[id.xy].x, 0);
+    // out1[id.xy] = float2(hFFT * in3[id.xy].x, 0);
 
     // // Option 2: NOT Interpolate before calculating Q - h, ux, uy are complex arrays, output is complex array
     // float hFFT = in0[id.xy] + in1[id]; // htildeFFT is only relative to the free surface hbar, need to get total height

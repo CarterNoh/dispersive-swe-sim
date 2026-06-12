@@ -125,7 +125,7 @@ private:
     ID3D11Device* device = nullptr;
     ID3D11DeviceContext* context = nullptr;
     ID3D11Buffer* constantBuffer = nullptr;
-    ID3D11Buffer* waveConstantBuffer = nullptr;
+    // ID3D11Buffer* waveConstantBuffer = nullptr;
     ID3D11Texture2D* stagingTex = nullptr; // Used to download data back to CPU
     ID3D11Texture2D* stagingComplexTex = nullptr;
     ID3D11Texture2D* stagingComplexArrayTex = nullptr;

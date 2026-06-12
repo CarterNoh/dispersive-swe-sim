@@ -30,7 +30,6 @@ cbuffer Constants : register(b0) {
 cbuffer ConstantsFFT : register(b1) {
     float time;
     // FFT wave params
-    int depthNum;
     float fetch;
     float windSpeed;
     float windAngle;
@@ -42,7 +41,7 @@ cbuffer ConstantsFFT : register(b1) {
     float filterWidth;
     float filterMin;
     // Padding for 16-byte alignment 
-    float buffer;
+    float buffer3;
 };
 
 #define G 9.80665f
@@ -180,7 +179,7 @@ float2 Dispersion(float k, float h) {
     // float dwdk = G * (tanh_kh + kh / (cosh(kh) * cosh(kh))) / (2 * omega);
 
     // Capillary Dispersion
-    float kh = k * Depth;
+    float kh = k * h;
     float tanh_kh = SafeTanh(kh);
     float term = G * k + pow(k, 3) * surfaceTension / density;
     float omega = sqrt((term) * tanh_kh);
@@ -205,7 +204,7 @@ float2 WaveSpectra(float w, float h) {
     float S = (a * G * G / pow(w, 5)) * exp(-1.25f * pow((wp / w), 4)) * pow(3.3f, r);
 
     // Texel MARSEN ARSLOE (TMA)
-    float wh = w * sqrt(Depth / G);
+    float wh = w * sqrt(h / G);
     float z = 1.8f * (wh - 1.125f);
     float tanh_z = (z > 20) ? 1 : (z < -20) ? -1 : tanh(z);
     float Phi = 0.5f + 0.5f * tanh_z; // tanh approx. of kitaigorodskii depth attenuation
@@ -387,9 +386,9 @@ RWTexture2DArray<float2> SyPropOut: register(u4);
 [numthreads(16, 16, 1)]
 void PropagateWaves(uint3 id : SV_DispatchThreadID) {
     if (id.x == 0 && id.y == 0) {
-        HPropOut[id] = float2(0.f, 0.f);
-        UxPropOut[id] = float2(0.f, 0.f);
-        UyPropOut[id] = float2(0.f, 0.f);
+        HHighOut[id] = float2(0.f, 0.f);
+        UxHighOut[id] = float2(0.f, 0.f);
+        UyHighOut[id] = float2(0.f, 0.f);
         SxPropOut[id] = float2(0.f, 0.f);
         SyPropOut[id] = float2(0.f, 0.f);
         return;
@@ -418,7 +417,6 @@ void PropagateWaves(uint3 id : SV_DispatchThreadID) {
     float2 HPlus = ComplexMul(HPosIn[id], fwd);
     float2 HMin = ComplexMul(HNegIn[id], bkwd);
     float2 HProp = HPlus + HMin;
-    HPropOut[id] = HProp;
 
     // // Calculate Horizontal Displacement Dx, Dy
     // DxPropOut[id] = ComplexMul(HProp, float2(0.f, kx_ * choppiness));
@@ -426,9 +424,9 @@ void PropagateWaves(uint3 id : SV_DispatchThreadID) {
 
     
     // Filter into high and low frequency - high goes to Airy, low goes to SWE
-    float kCrossover = N_2 * dK // =PI/cellSize, midpoint of range of k in one direction, revisit later
+    float kCrossover = N_2 * dK; // =PI/cellSize, midpoint of range of k in one direction, revisit later
     float kWidth = kCrossover / 4.f; // one eigth of domain size of k, idk this is starting guess
-    float kFilter = 1 + SafeTanh((k - kCrossover)/kWidth);
+    float kFilter = 1 + SafeTanh((k - kCrossover) / kWidth);
     float2 HHigh = HProp * kFilter;
     float2 HLow = HProp - HHigh;
     
@@ -451,8 +449,8 @@ void PropagateWaves(uint3 id : SV_DispatchThreadID) {
     float Sxy = E * vel_ratio * kx_ * ky_;
     float2 gradS_x = float2(0.f, Sxx * kx + Sxy * ky);
     float2 gradS_y = float2(0.f, Sxy * kx + Syy * ky);
-    SxOut[id] = gradS_x;
-    SyOut[id] = gradS_y;
+    SxPropOut[id] = gradS_x;
+    SyPropOut[id] = gradS_y;
 
     // Phase shift in X: shift by dx/2 by multiplying by e^(i * shiftX) = cos(shiftX) + i*sin(shiftX)
     // float shiftX = 0.5f * cellSize * kx;
@@ -481,9 +479,11 @@ void Interp(uint3 id : SV_DispatchThreadID) {
 
     float waterDepth = HIn[id] + hbar[id.xy];
     if (waterDepth < 0.f) {
-        HOut [id.xy] = terrain[id.xy];
-        DxOut[id.xy] = 0.f;
-        DyOut[id.xy] = 0.f;
+        HOut [id.xy] = hbar[id.xy];
+        UxOut[id.xy] = 0.f;
+        UyOut[id.xy] = 0.f;
+        SxOut[id.xy] = 0.f;
+        SyOut[id.xy] = 0.f;
         return;
     }
     int d1 = 0;

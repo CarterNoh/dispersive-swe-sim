@@ -185,16 +185,16 @@ void GPU::UpdateConstants(const SimConstants& constants) {
 }
 
 void GPU::UpdateWaveConstants(const FFTWaveConstants& constants) {
-    if (!context || !waveConstantBuffer) {
-        std::cerr << "ERROR: GPU Context or Constant Buffer is null!" << std::endl;
+    if (!context || !constantBuffer) { //waveConstantBuffer
+        std::cerr << "ERROR: GPU Context or WaveConstant Buffer is null!" << std::endl;
         return;
     }
     D3D11_MAPPED_SUBRESOURCE mapped;
-    HRESULT hr = context->Map(waveConstantBuffer, 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped);
+    HRESULT hr = context->Map(constantBuffer, 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped);
     if (SUCCEEDED(hr)) {
         memcpy(mapped.pData, &constants, sizeof(FFTWaveConstants));
-        context->Unmap(waveConstantBuffer, 0);
-        context->CSSetConstantBuffers(1, 1, &waveConstantBuffer); // Wave constants get CS Constants slot 1
+        context->Unmap(constantBuffer, 0);
+        context->CSSetConstantBuffers(1, 1, &constantBuffer); // Wave constants get CS Constants slot 1
     } else {
         std::cerr << "ERROR: Failed to map Constant Buffer! HRESULT: " << hr << std::endl;
     }

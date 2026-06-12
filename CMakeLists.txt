@@ -35,7 +35,7 @@ add_hlsl_shader(src/shaders/fft.hlsl FFTKernel_1D FFT_SHADER_CSO)
 # Define the executable and the files needed to build it
 add_executable(Simulator 
     src/main.cpp 
-    src/Sim2D_fft.cpp
+    src/Sim2D.cpp
     src/gpu.cpp
 )
 
