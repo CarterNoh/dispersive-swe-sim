@@ -101,9 +101,9 @@ void Sim::Init(GPU* gpu) {
 	for (int i=0; i < sizeof(shaders) / sizeof(shaders[0]); i++) {
 		gpu->CompileComputeShader(L"shaders/kernels.hlsl", names[i], shaders[i]);
 	}
-    // for (int i=0; i < sizeof(shaders_fft) / sizeof(shaders_fft[0]); i++) {
-	// 	gpu->CompileComputeShader(L"shaders/fftwaves.hlsl", names_fft[i], shaders_fft[i]);
-	// }
+    for (int i=0; i < sizeof(shaders_fft) / sizeof(shaders_fft[0]); i++) {
+		gpu->CompileComputeShader(L"shaders/fftwaves.hlsl", names_fft[i], shaders_fft[i]);
+	}
     gpu->UpdateConstants(constants);
 
 	// Create GPU Textures and Upload Initial Data
@@ -137,8 +137,8 @@ void Sim::Init(GPU* gpu) {
 	gpu->UploadToGPU(hbarOld.tex, h_temp, GRIDSIZE);
 
     // // Initialize FFT Wave Spectrum
-    // time = 0.f;
-	// waveConstants.time = time;
+    time = 0.f;
+	waveConstants.time = time;
 	// gpu->UpdateWaveConstants(waveConstants);
     // gpu->Dispatch(PopulateSpectrum, {}, 
 	// 	{HPos.uav, HNeg.uav}, DEPTH_NUM);
@@ -173,8 +173,8 @@ int Sim::Release(void) {
 // ********************************************************************************************************************
 
 void Sim::SimStep() {
-    // time += TIMESTEP;
-    // waveConstants.time = time;
+    time += TIMESTEP;
+    waveConstants.time = time;
 	// gpu->UpdateWaveConstants(waveConstants);
 
 	DecompositionStep();
@@ -229,29 +229,29 @@ void Sim::DecompositionStep() {
 		{H.uav});
 }
 
-// void Sim::FFTStep() {
-//     // Propagate waves
-// 	gpu->Dispatch(PropagateWaves, 
-// 		{HPos.srv, HNeg.srv},
-// 		{HHigh.uav, UHigh_x.uav, UHigh_y.uav, DelS_x.uav, DelS_y.uav}, DEPTH_NUM);
-// 	gpu->ExecuteFFT(HHigh.uav,   GRIDSIZE, true, DEPTH_NUM);
-// 	gpu->ExecuteFFT(UHigh_x.uav, GRIDSIZE, true, DEPTH_NUM);
-// 	gpu->ExecuteFFT(UHigh_y.uav, GRIDSIZE, true, DEPTH_NUM);
-// 	gpu->ExecuteFFT(DelS_x.uav,  GRIDSIZE, true, DEPTH_NUM);
-// 	gpu->ExecuteFFT(DelS_y.uav,  GRIDSIZE, true, DEPTH_NUM);
+void Sim::FFTStep() {
+    // Propagate waves
+	gpu->Dispatch(PropagateWaves, 
+		{HPos.srv, HNeg.srv},
+		{HHigh.uav, UHigh_x.uav, UHigh_y.uav, DelS_x.uav, DelS_y.uav}, DEPTH_NUM);
+	gpu->ExecuteFFT(HHigh.uav,   GRIDSIZE, true, DEPTH_NUM);
+	gpu->ExecuteFFT(UHigh_x.uav, GRIDSIZE, true, DEPTH_NUM);
+	gpu->ExecuteFFT(UHigh_y.uav, GRIDSIZE, true, DEPTH_NUM);
+	gpu->ExecuteFFT(DelS_x.uav,  GRIDSIZE, true, DEPTH_NUM);
+	gpu->ExecuteFFT(DelS_y.uav,  GRIDSIZE, true, DEPTH_NUM);
 
-// 	// Interpolate outputs between depths
-// 	gpu->Dispatch(Interp, 
-// 		{HHigh.srv, UHigh_x.srv, UHigh_y.srv, DelS_x.srv, DelS_y.srv, hbar.srv}, 
-// 		{htildeFFT.uav, utildeFFT_x.uav, utildeFFT_y.uav, delS_x.uav, delS_y.uav});
+	// Interpolate outputs between depths
+	gpu->Dispatch(Interp, 
+		{HHigh.srv, UHigh_x.srv, UHigh_y.srv, DelS_x.srv, DelS_y.srv, hbar.srv}, 
+		{htildeFFT.uav, utildeFFT_x.uav, utildeFFT_y.uav, delS_x.uav, delS_y.uav});
 
-//     // Calculate qtildeFFT
-//     gpu->Dispatch(CalcQFFT, 
-// 		{hbar.srv, htildeFFT.srv, utildeFFT_x.srv, utildeFFT_y.srv}, 
-// 		{qHatFFT_x.uav, qHatFFT_y.uav});
-//     gpu->ExecuteFFT(qHatFFT_x.uav, GRIDSIZE, false);
-//     gpu->ExecuteFFT(qHatFFT_y.uav, GRIDSIZE, false);
-// }
+    // Calculate qtildeFFT
+    gpu->Dispatch(CalcQFFT, 
+		{hbar.srv, htildeFFT.srv, utildeFFT_x.srv, utildeFFT_y.srv}, 
+		{qHatFFT_x.uav, qHatFFT_y.uav});
+    gpu->ExecuteFFT(qHatFFT_x.uav, GRIDSIZE, false);
+    gpu->ExecuteFFT(qHatFFT_y.uav, GRIDSIZE, false);
+}
 
 void Sim::eWaveStep() {
 	// Copy variables to fourier domain & perform FFT

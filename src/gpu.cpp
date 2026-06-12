@@ -194,7 +194,7 @@ void GPU::UpdateWaveConstants(const FFTWaveConstants& constants) {
     if (SUCCEEDED(hr)) {
         memcpy(mapped.pData, &constants, sizeof(FFTWaveConstants));
         context->Unmap(constantBuffer, 0);
-        context->CSSetConstantBuffers(1, 1, &constantBuffer); // Wave constants get CS Constants slot 1
+        context->CSSetConstantBuffers(2, 1, &constantBuffer); // Wave constants get CS Constants slot 1
     } else {
         std::cerr << "ERROR: Failed to map Constant Buffer! HRESULT: " << hr << std::endl;
     }
@@ -454,7 +454,7 @@ void GPU::UpdateFFTConstants(const FFTConstants& constants) {
     if (SUCCEEDED(hr)) {
         memcpy(mapped.pData, &constants, sizeof(FFTConstants));
         context->Unmap(fftConstantBuffer, 0);
-        context->CSSetConstantBuffers(2, 1, &fftConstantBuffer); // Use slot 2 for FFT constants
+        context->CSSetConstantBuffers(1, 1, &fftConstantBuffer); // Use slot 2 for FFT constants
     } else {
         std::cerr << "ERROR: Failed to map FFT Constant Buffer! HRESULT: " << hr << std::endl;
     }
