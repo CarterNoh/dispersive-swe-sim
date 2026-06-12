@@ -12,20 +12,20 @@ class Sim {
 public:
 	// Simulation parameters
 	static constexpr int GRIDSIZE = 256;	// grid size in one dimension (# cells)
-	static constexpr float CELLSIZE = 0.2f;	// cell size in one dimension (meters/cell)
-	static constexpr float TIMESTEP = 1.f / 30.f;
+	static constexpr float CELLSIZE = 1.f;	// cell size in one dimension (meters/cell)
+	static constexpr float TIMESTEP = 1.f / 60.f;
 	static constexpr int BOUNDARY_TYPE = 0; // not in use any more, need to remove probably
 	static constexpr float MIN_WATER_HEIGHT = 0.001f; // minimum water height for stability
     static constexpr float SURFACE_TENSION = 0.001f;
     static constexpr float DENSITY = 999.f;
 
 	// Terrain & Water Parameters
-	static constexpr int TERRAIN_TYPE = 1; 		   // 0 = flat, 1 = ramp, 2 = bumps, 3 = basins, 4 = beach, 5 = 1D hill, 6 = 2D hill
+	static constexpr int TERRAIN_TYPE = 4; 		   // 0 = flat, 1 = ramp, 2 = bumps, 3 = basins, 4 = beach, 5 = 1D hill, 6 = 2D hill
 	static constexpr int WATER_TYPE   = 1; 		   // 0 = flat, 1 = step/dam break, 2 = diagonal slope, 3 = splash, 4 = ripples, 5 = basin flood
-	static constexpr float TERRAIN_HEIGHT = 0.6f; // base height of terrain features (meters)
-	static constexpr float TERRAIN_SCALE = 1.f;    // scale of terrain features (meters)
+	static constexpr float TERRAIN_HEIGHT = -7.f; // base height of terrain features (meters)
+	static constexpr float TERRAIN_SCALE = 15.f;    // scale of terrain features (meters)
 	static constexpr float WATER_LEVEL = 0.f; 	   // level of water free surface at start (H)
-	static constexpr float WATER_SCALE = 1.f;     // scale of water height features
+	static constexpr float WATER_SCALE = 2.f;     // scale of water height features
 	
 	// Decomposition Parameters
 	static constexpr int DIFFUSION_ITERATIONS = 128;  // number of iterations for diffusion step, more iterations means more stable but also more expensive

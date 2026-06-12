@@ -657,8 +657,8 @@ bool GPU::CompilePixelShader(const std::wstring& file, const std::string& entryP
     return true;
 }
 
-// void GPU::Render(ID3D11ShaderResourceView* heightSRV) {
-void GPU::Render(const std::vector<ID3D11ShaderResourceView*>& srvs) {
+void GPU::Render(ID3D11ShaderResourceView* heightSRV) {
+// void GPU::Render(const std::vector<ID3D11ShaderResourceView*>& srvs) {
     // Clear the screen
     float clearColor[4] = { 1.0f, 1.0f, 1.0f, 1.0f };
     context->ClearRenderTargetView(renderTargetView, clearColor);
@@ -670,8 +670,8 @@ void GPU::Render(const std::vector<ID3D11ShaderResourceView*>& srvs) {
     context->PSSetShader(pixelShader, nullptr, 0);
 
     // Bind the Fluid Data
-    // context->VSSetShaderResources(0, 1, &heightSRV);
-    context->VSSetShaderResources(0, srvs.size(), srvs.data());
+    context->VSSetShaderResources(0, 1, &heightSRV);
+    // context->VSSetShaderResources(0, srvs.size(), srvs.data());
     context->VSSetSamplers(0, 1, &samplerState);
 
     // Draw 
@@ -688,5 +688,5 @@ void GPU::Render(const std::vector<ID3D11ShaderResourceView*>& srvs) {
     context->VSSetShaderResources(0, 1, &nullSRV);
 
     // Present the frame to the Window
-    swapChain->Present(1, 0); // (1, 0) = VSync on
+    swapChain->Present(0, 0); // (1, 0) = VSync on
 }
