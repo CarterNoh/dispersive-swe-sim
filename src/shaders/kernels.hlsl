@@ -1,5 +1,6 @@
 // Constant buffer matching the C++ struct
 cbuffer Constants : register(b0) {
+    float time;
     // Sim params
     int gridSize; 
     float cellSize;
@@ -17,10 +18,17 @@ cbuffer Constants : register(b0) {
     float gammaTransport;
     // eWave params
     int depthNum;
-    // Padding for 16-byte alignment 
-    float buffer;
-    float buffer1;
-    float buffer2;
+    // FFT wave params
+    float fetch;
+    float windSpeed;
+    float windAngle;
+    float swell;
+    float swellAngle;
+    float choppiness;
+    float filterSmall;
+    float filterBig;
+    float filterWidth;
+    float filterMin;
 };
 
 #define GRAVITY 9.80665

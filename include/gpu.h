@@ -9,7 +9,8 @@
 #include <DirectXMath.h> // For the ViewProjection matrix
 
 // The constant buffer must be padded to a multiple of 16 bytes for HLSL
-struct SimConstants {
+struct alignas(16) SimConstants {
+    float time;
     // Sim Params
     int gridSize; 
     float cellSize;
@@ -27,14 +28,6 @@ struct SimConstants {
     float gammaTransport;
     // eWave Params
     int depthNum;
-    // Padding for 16-byte alignment
-    float buffer;
-    float buffer1;
-    float buffer2;
-};
-
-struct FFTWaveConstants {
-    float time;
     // FFT wave params
     float fetch;
     float windSpeed;
@@ -46,24 +39,22 @@ struct FFTWaveConstants {
     float filterBig;
     float filterWidth;
     float filterMin;
-    // Padding for 16-byte alignment
-    float buffer;
+
 };
 
-struct FFTConstants {
+struct alignas(16) FFTConstants {
     int N;         // Transform size (gridsize) (must be power of two)
     int Bits;      // log2(N)  
     int Inverse;   // 0 = forward DFT, 1 = inverse DFT
     int Row;       // Row = 1. Col = 0
 };
 
-struct RenderConstants {
+struct alignas(16) RenderConstants {
     DirectX::XMMATRIX viewProjection; // 64 bytes
     float gridSize;                   // 4 bytes
     float cellSize;                   // 4 bytes
     float buffer[2];                  // 8 bytes (Total = 80 bytes, must be multiple of 16)
 };
-
 
 struct GPUField {
     ID3D11Texture2D* tex;
@@ -86,9 +77,8 @@ public:
     bool Init(int size); // For headless compute
     bool Init(int size, HWND hwnd); // For rendering
 
-    // Compute Shaders
+    // Compute Shaders    
     void UpdateConstants(const SimConstants& constants);
-    void UpdateWaveConstants(const FFTWaveConstants& constants);
     bool CreateGridTexture(GPUField* field, int size, bool isComplex = false, int arraySize = 1);
     bool UploadToGPU(ID3D11Texture2D* tex, const std::vector<float>& data, int gridSize, bool isComplex = false, int arraySize = 1);
     bool DownloadFromGPU(ID3D11Texture2D* tex, std::vector<float>& data, int size);
@@ -125,7 +115,6 @@ private:
     ID3D11Device* device = nullptr;
     ID3D11DeviceContext* context = nullptr;
     ID3D11Buffer* constantBuffer = nullptr;
-    // ID3D11Buffer* waveConstantBuffer = nullptr;
     ID3D11Texture2D* stagingTex = nullptr; // Used to download data back to CPU
     ID3D11Texture2D* stagingComplexTex = nullptr;
     ID3D11Texture2D* stagingComplexArrayTex = nullptr;

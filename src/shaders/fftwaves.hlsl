@@ -4,6 +4,7 @@ and the paper "Empirical Directional Wave Spectra for Computer Graphics".
  */
 
 cbuffer Constants : register(b0) {
+    float time;
     // Sim params
     int gridSize; 
     float cellSize;
@@ -21,14 +22,6 @@ cbuffer Constants : register(b0) {
     float gammaTransport;
     // eWave params
     int depthNum;
-    // Padding for 16-byte alignment 
-    float buffer;
-    float buffer1;
-    float buffer2;
-};
-
-cbuffer ConstantsFFT : register(b1) {
-    float time;
     // FFT wave params
     float fetch;
     float windSpeed;
@@ -40,8 +33,6 @@ cbuffer ConstantsFFT : register(b1) {
     float filterBig;
     float filterWidth;
     float filterMin;
-    // Padding for 16-byte alignment 
-    float buffer3;
 };
 
 #define G 9.80665f

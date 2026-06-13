@@ -22,8 +22,8 @@ public:
 	// Terrain & Water Parameters
 	static constexpr int TERRAIN_TYPE = 4; 		   // 0 = flat, 1 = ramp, 2 = bumps, 3 = basins, 4 = beach, 5 = 1D hill, 6 = 2D hill
 	static constexpr int WATER_TYPE   = 1; 		   // 0 = flat, 1 = step/dam break, 2 = diagonal slope, 3 = splash, 4 = ripples, 5 = basin flood
-	static constexpr float TERRAIN_HEIGHT = -7.f; // base height of terrain features (meters)
-	static constexpr float TERRAIN_SCALE = 15.f;    // scale of terrain features (meters)
+	static constexpr float TERRAIN_HEIGHT = -12.f; // base height of terrain features (meters)
+	static constexpr float TERRAIN_SCALE = 20.f;    // scale of terrain features (meters)
 	static constexpr float WATER_LEVEL = 0.f; 	   // level of water free surface at start (H)
 	static constexpr float WATER_SCALE = 2.f;     // scale of water height features
 	
@@ -41,7 +41,7 @@ public:
 	static constexpr float GAMMA_TRANSPORT = 0.25f; // blending factor for transport step, higher means more stable but also more damping of waves
 
     // FFT Parameters
-    float time;
+    float time = 0.f;
     // static constexpr float DEPTH        = 2.5f;     // meters
     static constexpr float FETCH        = 200.f;     // kilometers
     static constexpr float WIND_SPEED   = 14.f;     // m/s
@@ -109,7 +109,7 @@ private:
 	// Helper functions
 	inline int idx(int x, int y) const {return y * GRIDSIZE + x;}
 
-	// SWE/Airy Compute Shaders
+	// Compute Shaders
 	ID3D11ComputeShader *ApplyBoundaries, *InitDecomp, *CalcDiffusionCoeffs, *DiffusionStep, *DecomposeFields, 
 						*CalcQFFT, *CalcUbar, *CalcSWE, *UpdateTilde, *CalcQAdvect, *IntegrateH, 
 						*TransferToFFT, *CalcEWave, *InterpQ;
@@ -120,15 +120,15 @@ private:
 	char* names[14] = {"ApplyBoundaries", "InitDecomp", "CalcDiffusionCoeffs", "DiffusionStep", "DecomposeFields", 
 					   "CalcQFFT", "CalcUbar", "CalcSWE", "UpdateTilde", "CalcQAdvect", "IntegrateH", 
 					   "TransferToFFT", "CalcEWave", "InterpQ"};
-	SimConstants constants = {GRIDSIZE, CELLSIZE, TIMESTEP, BOUNDARY_TYPE, MIN_WATER_HEIGHT, SURFACE_TENSION, DENSITY, // Sim Params
-							  DIFFUSION_ITERATIONS, DELTA_T, DIFFUSION_PENALTY, 		    // Diffusion Params
-							  CFL_CONDITION, GAMMA_TRANSPORT, DEPTH_NUM, 0.f, 0.f, 0.f};    // SWE & eWave Params
     // FFT Wave Compute Shaders
 	ID3D11ComputeShader *PopulateSpectrum, *PropagateWaves, *Interp;
-	ID3D11ComputeShader** shaders_fft[3] = {&PopulateSpectrum, &PropagateWaves, &Interp};
-	char* names_fft[3] = {"PopulateSpectrum", "PropagateWaves", "Interp"};
-    FFTWaveConstants waveConstants = {0.f, FETCH, WIND_SPEED, WIND_ANGLE, SWELL, SWELL_ANGLE, CHOPPINESS, 
-                                  FILTER_SMALL, FILTER_BIG, FILTER_WIDTH, FILTER_MIN, 0.f,};	
-    // Render Shaders
+	ID3D11ComputeShader** waveShaders[3] = {&PopulateSpectrum, &PropagateWaves, &Interp};
+	char* waveNames[3] = {"PopulateSpectrum", "PropagateWaves", "Interp"};
+    // Constants
+	SimConstants constants = {time, GRIDSIZE, CELLSIZE, TIMESTEP, BOUNDARY_TYPE, MIN_WATER_HEIGHT, SURFACE_TENSION, DENSITY, // Sim Params
+							  DIFFUSION_ITERATIONS, DELTA_T, DIFFUSION_PENALTY, 		    // Diffusion Params
+							  CFL_CONDITION, GAMMA_TRANSPORT, DEPTH_NUM,
+							  FETCH, WIND_SPEED, WIND_ANGLE, SWELL, SWELL_ANGLE, CHOPPINESS,
+							  FILTER_SMALL, FILTER_BIG, FILTER_WIDTH, FILTER_MIN};    // SWE & eWave Params , 0.f, 0.f, 0.f
 	RenderConstants render_constants = {DirectX::XMMatrixIdentity(), (float)GRIDSIZE, CELLSIZE, {0.f, 0.f}};
 };

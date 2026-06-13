@@ -101,10 +101,10 @@ void Sim::Init(GPU* gpu) {
 	for (int i=0; i < sizeof(shaders) / sizeof(shaders[0]); i++) {
 		gpu->CompileComputeShader(L"shaders/kernels.hlsl", names[i], shaders[i]);
 	}
-    for (int i=0; i < sizeof(shaders_fft) / sizeof(shaders_fft[0]); i++) {
-		gpu->CompileComputeShader(L"shaders/fftwaves.hlsl", names_fft[i], shaders_fft[i]);
+    for (int i=0; i < sizeof(waveShaders) / sizeof(waveShaders[0]); i++) {
+		gpu->CompileComputeShader(L"shaders/fftwaves.hlsl", waveNames[i], waveShaders[i]);
 	}
-    gpu->UpdateConstants(constants);
+	gpu->UpdateConstants(constants);
 
 	// Create GPU Textures and Upload Initial Data
 	for (int i=0; i < sizeof(fields) / sizeof(fields[0]); i++) {
@@ -136,12 +136,9 @@ void Sim::Init(GPU* gpu) {
 	gpu->UploadToGPU(hbar.tex, h_temp, GRIDSIZE);
 	gpu->UploadToGPU(hbarOld.tex, h_temp, GRIDSIZE);
 
-    // // Initialize FFT Wave Spectrum
-    time = 0.f;
-	waveConstants.time = time;
-	// gpu->UpdateWaveConstants(waveConstants);
-    // gpu->Dispatch(PopulateSpectrum, {}, 
-	// 	{HPos.uav, HNeg.uav}, DEPTH_NUM);
+    // Initialize FFT Wave Spectrum
+    gpu->Dispatch(PopulateSpectrum, {}, 
+		{HPos.uav, HNeg.uav}, DEPTH_NUM);
 }
 
 Sim::Sim() {
@@ -174,8 +171,8 @@ int Sim::Release(void) {
 
 void Sim::SimStep() {
     time += TIMESTEP;
-    waveConstants.time = time;
-	// gpu->UpdateWaveConstants(waveConstants);
+    constants.time = time;
+	gpu->UpdateConstants(constants);
 
 	DecompositionStep();
     // FFTStep();
