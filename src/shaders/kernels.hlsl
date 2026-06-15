@@ -398,39 +398,34 @@ void UpdateTilde(uint3 id : SV_DispatchThreadID) {
     uint2 rdown = uint2(min(id.x + 1, gridSize - 1), max(id.y - 1, 0));
     uint2 uleft = uint2(max(id.x - 1, 0), min(id.y + 1, gridSize - 1));
 
-    // ubar is on same timestep as h, need to get back to timestep of q 
+    // integrate at midpoint of timestep 
     float ubar_x_avg = 0.5f * (in0[curr] + in1[curr]); 
-    float ubar_x_m1  = 0.5f * (in0[left] + in1[left]);
-    float ubar_x_p1  = 0.5f * (in0[right] + in1[right]);
     float ubar_y_avg = 0.5f * (in2[curr] + in3[curr]);
-    float ubar_y_m1  = 0.5f * (in2[down] + in3[down]);
-    float ubar_y_p1  = 0.5f * (in2[up] + in3[up]);
+    float ubar_x_left  = 0.5f * (in0[left] + in1[left]);
+    float ubar_x_right  = 0.5f * (in0[right] + in1[right]);
+    float ubar_y_right  = 0.5f * (in2[right] + in3[right]);
+    float ubar_y_down  = 0.5f * (in2[down] + in3[down]);
+    float ubar_x_up  = 0.5f * (in0[up] + in1[up]);
+    float ubar_y_up  = 0.5f * (in2[up] + in3[up]);
+    float ubar_y_rdown = 0.5f * (in2[rdown] + in3[rdown]);
+    float ubar_x_uleft = 0.5f * (in0[uleft] + in1[uleft]);
 
     // ubar divergence
-    float div_ubar  = (in0[curr]  - in0[left] + in2[curr]  - in2[down])  / cellSize;  // at cell center
-    float div_right = (in0[right] - in0[curr] + in2[right] - in2[rdown]) / cellSize; // at center of right cell
-    float div_up    = (in0[up]    - in0[uleft] + in2[up]   - in2[curr])  / cellSize;  // at center of up cell
+    float div_ubar  = (ubar_x_avg   - ubar_x_left  + ubar_y_avg   - ubar_y_down)  / cellSize;  // at cell center
+    float div_right = (ubar_x_right - ubar_x_avg   + ubar_y_right - ubar_y_rdown) / cellSize; // at center of right cell
+    float div_up    = (ubar_x_up    - ubar_x_uleft + ubar_y_up    - ubar_y_avg)   / cellSize;  // at center of up cell
     float div_ux = 0.5f * (div_ubar + div_right); // at right boundary
     float div_uy = 0.5f * (div_ubar + div_up); // at up boundary
     div_ubar *= (div_ubar < 0.f) ? gammaTransport : 1; // Dampen if converging to avoid breaking waves
     div_ux   *= (div_ux   < 0.f) ? gammaTransport : 1;
     div_uy   *= (div_uy   < 0.f) ? gammaTransport : 1;
+
     // Update qtilde using bulk flow and ubar divergence: dq/dt = -q * div(ubar)
     float step_x = - ubar_x_avg * timeStep / cellSize; // unitless (cells)
     float step_y = - ubar_y_avg * timeStep / cellSize; // unitless (cells)
     float2 samplePos = float2(id.x + step_x, id.y + step_y);
     out1[curr] = SampleCubicClamped2D(in4, samplePos) * exp(-div_ux * timeStep);
     out2[curr] = SampleCubicClamped2D(in5, samplePos) * exp(-div_uy * timeStep);
-
-    // // ubar divergence using central difference
-    // float div_ubar = (ubar_x_p1 - ubar_x_m1 + ubar_y_p1  - ubar_y_m1) / (2.f * cellSize);
-    // div_ubar *= (div_ubar < 0.f) ? gammaTransport : 1; // dampen if converging to avoid breaking waves
-    // // Update qtilde using bulk flow and ubar divergence: dq/dt = -q * div(ubar)
-    // float step_x = - ubar_x_avg * timeStep / cellSize; // unitless (cells)
-    // float step_y = - ubar_y_avg * timeStep / cellSize; // unitless (cells)
-    // float2 samplePos = float2(id.x + step_x, id.y + step_y);
-    // out1[curr] = SampleCubicClamped2D(in4, samplePos) * exp(-div_ubar * timeStep);
-    // out2[curr] = SampleCubicClamped2D(in5, samplePos) * exp(-div_ubar * timeStep);
 
     // Limit flow to prevent negative water heights and enforce terrain boundaries
     out1[curr] = LimitFlowRate(out1[curr], in6[curr], in6[right]); 
@@ -440,11 +435,11 @@ void UpdateTilde(uint3 id : SV_DispatchThreadID) {
         out1[curr] = 0.f;
     if (((ubar_y_avg >= 0.f) && (in6[curr] <= minWaterHeight)) ||
         ((ubar_y_avg < 0.f)  && (in6[up] <= minWaterHeight)))
-        out2[curr] = 0.f;        
-
-    // Update htilde using ubar divergence
-    // div_ubar  = (in0[curr] - in0[left] + in2[curr] - in2[down]) / cellSize;
-    // div_ubar *= (div_ubar < 0.f) ? gammaTransport : 1; // dampen if converging to avoid breaking waves
+        out2[curr] = 0.f;   
+      
+    // Update htilde using ubar divergence (not at middle of timestep)
+    div_ubar  = (in0[curr] - in0[left] + in2[curr] - in2[down]) / cellSize;
+    div_ubar *= (div_ubar < 0.f) ? gammaTransport : 1; // dampen if converging to avoid breaking waves
     out0[curr] = in7[curr] * exp(-div_ubar * timeStep);
 }
 
