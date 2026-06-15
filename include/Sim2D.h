@@ -11,7 +11,7 @@
 class Sim {
 public:
 	// Simulation parameters
-	static constexpr int GRIDSIZE = 256;	// grid size in one dimension (# cells)
+	static constexpr int GRIDSIZE = 512;	// grid size in one dimension (# cells)
 	static constexpr float CELLSIZE = 1.f;	// cell size in one dimension (meters/cell)
 	static constexpr float TIMESTEP = 1.f / 60.f;
 	static constexpr int BOUNDARY_TYPE = 0; // not in use any more, need to remove probably
@@ -22,10 +22,10 @@ public:
 	// Terrain & Water Parameters
 	static constexpr int TERRAIN_TYPE = 4; 		   // 0 = flat, 1 = ramp, 2 = bumps, 3 = basins, 4 = beach, 5 = 1D hill, 6 = 2D hill
 	static constexpr int WATER_TYPE   = 1; 		   // 0 = flat, 1 = step/dam break, 2 = diagonal slope, 3 = splash, 4 = ripples, 5 = basin flood
-	static constexpr float TERRAIN_HEIGHT = -12.f; // base height of terrain features (meters)
+	static constexpr float TERRAIN_HEIGHT = -13.f; // base height of terrain features (meters)
 	static constexpr float TERRAIN_SCALE = 20.f;    // scale of terrain features (meters)
 	static constexpr float WATER_LEVEL = 0.f; 	   // level of water free surface at start (H)
-	static constexpr float WATER_SCALE = 2.f;     // scale of water height features
+	static constexpr float WATER_SCALE = 1.f;     // scale of water height features
 	
 	// Decomposition Parameters
 	static constexpr int DIFFUSION_ITERATIONS = 128;  // number of iterations for diffusion step, more iterations means more stable but also more expensive
@@ -42,11 +42,11 @@ public:
 
     // FFT Parameters
     float time = 0.f;
-    // static constexpr float DEPTH        = 2.5f;     // meters
-    static constexpr float FETCH        = 200.f;     // kilometers
+    // static constexpr float DEPTH        = 2.5f;    // meters
+    static constexpr float FETCH        = 200.f;    // kilometers
     static constexpr float WIND_SPEED   = 14.f;     // m/s
-    static constexpr float WIND_ANGLE   = 180.f;     // degrees from x-axis
-    static constexpr float SWELL        = 0.9f;    // [0, 1] // this has issues at 0 but it shouldn't, I can't find the bug, hunt down later
+    static constexpr float WIND_ANGLE   = 180.f;    // degrees from x-axis
+    static constexpr float SWELL        = 0.9f;     // [0, 1] // this has issues at 0 but it shouldn't, I can't find the bug, hunt down later
     static constexpr float SWELL_ANGLE  = 180.f;    // degrees from x-axis
     static constexpr float CHOPPINESS   = 1.f;      // 
     static constexpr float FILTER_SMALL = 0.f;      // Set to really wide, not really using this right now 
@@ -61,14 +61,14 @@ public:
 			 ubar_x, ubar_y, ubarNew_x, ubarNew_y,
 			 qtildePast_x, qtildePast_y, qAdvect_x, qAdvect_y, 
 			 hPast, hbarOld, htildeOld, 
-			 hHat, qHat_x, qHat_y, qHat_x_array, qHat_y_array,
-             HPos, HNeg, HHigh, UHigh_x, UHigh_y, DelS_x, DelS_y, // Outputs of PopulateSpectrum, PropagateWaves (complex arrays)
+			 hHat, qHat_x, qHat_y, qHat_x_array, qHat_y_array;
+    GPUField HPos, HNeg, HHigh, UHigh_x, UHigh_y, DelS_x, DelS_y, // Outputs of PopulateSpectrum, PropagateWaves (complex arrays)
              htildeFFT, utildeFFT_x, utildeFFT_y, delS_x, delS_y, // iFFT'd variables after interpolation
+			 qHatFFT_x, qHatFFT_y, qHatFFT_x_array, qHatFFT_y_array, disp_x, disp_y; // clean this up later to remove the one I don't use
             // two options: can interpolate then feed back in, or not interpolate before feeding in. For now just gonna not interpolate, see how it works. 
             // if interpolate: output of Propagate is complex array, iFFT in place, interpolate to real, mult real to make complex, FFT back
             // if NOT interp : output of Propagate is complex array, iFFT in place, mult (use real parts) to make complex array, FFT back
-             qHatFFT_x, qHatFFT_y, qHatFFT_x_array, qHatFFT_y_array, disp_x, disp_y
-			 ; // clean this up later to remove the one I don't use
+             
 	GPUField* fields[37] = {
 		&terrain, &H, &Q_x, &Q_y, &h, &q_x, &q_y,
 		&HPast, &QPast_x, &QPast_y, &alpha_H, &alpha_Q_x, &alpha_Q_y,
@@ -126,9 +126,9 @@ private:
 	char* waveNames[3] = {"PopulateSpectrum", "PropagateWaves", "Interp"};
     // Constants
 	SimConstants constants = {time, GRIDSIZE, CELLSIZE, TIMESTEP, BOUNDARY_TYPE, MIN_WATER_HEIGHT, SURFACE_TENSION, DENSITY, // Sim Params
-							  DIFFUSION_ITERATIONS, DELTA_T, DIFFUSION_PENALTY, 		    // Diffusion Params
+							  DIFFUSION_ITERATIONS, DELTA_T, DIFFUSION_PENALTY, // Diffusion Params
 							  CFL_CONDITION, GAMMA_TRANSPORT, DEPTH_NUM,
 							  FETCH, WIND_SPEED, WIND_ANGLE, SWELL, SWELL_ANGLE, CHOPPINESS,
-							  FILTER_SMALL, FILTER_BIG, FILTER_WIDTH, FILTER_MIN};    // SWE & eWave Params , 0.f, 0.f, 0.f
-	RenderConstants render_constants = {DirectX::XMMatrixIdentity(), (float)GRIDSIZE, CELLSIZE, {0.f, 0.f}};
+							  FILTER_SMALL, FILTER_BIG, FILTER_WIDTH, FILTER_MIN};    // SWE & eWave Params
+	RenderConstants render_constants = {DirectX::XMMatrixIdentity(), (float)GRIDSIZE, CELLSIZE};
 };

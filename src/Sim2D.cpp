@@ -98,12 +98,10 @@ std::vector<float> Sim::SetWater(std::vector<float>& terrain) {
 
 void Sim::Init(GPU* gpu) {
 	// Set up GPU Shaders
-	for (int i=0; i < sizeof(shaders) / sizeof(shaders[0]); i++) {
+	for (int i=0; i < sizeof(shaders) / sizeof(shaders[0]); i++)
 		gpu->CompileComputeShader(L"shaders/kernels.hlsl", names[i], shaders[i]);
-	}
-    for (int i=0; i < sizeof(waveShaders) / sizeof(waveShaders[0]); i++) {
+    for (int i=0; i < sizeof(waveShaders) / sizeof(waveShaders[0]); i++)
 		gpu->CompileComputeShader(L"shaders/fftwaves.hlsl", waveNames[i], waveShaders[i]);
-	}
 	gpu->UpdateConstants(constants);
 
 	// Create GPU Textures and Upload Initial Data
@@ -117,7 +115,7 @@ void Sim::Init(GPU* gpu) {
 		std::vector<float> temp(GRIDSIZE * GRIDSIZE * 2, 0.0f);
 		gpu->UploadToGPU(fields_complex[i]->tex, temp, GRIDSIZE, true);
 	}
-	for (int i = 0; i < 2; i++) {
+	for (int i = 0; i < sizeof(fields_arrays) / sizeof(fields_arrays[0]); i++) {
 		gpu->CreateGridTexture(fields_arrays[i], GRIDSIZE, true, DEPTH_NUM);
 		std::vector<float> temp(GRIDSIZE * GRIDSIZE * DEPTH_NUM * 2, 0.0f);
 		gpu->UploadToGPU(fields_arrays[i]->tex, temp, GRIDSIZE, true, DEPTH_NUM);
@@ -175,7 +173,7 @@ void Sim::SimStep() {
 	gpu->UpdateConstants(constants);
 
 	DecompositionStep();
-    // FFTStep();
+    FFTStep();
 	eWaveStep();
 	SWEStep();
 	TransportStep();
@@ -253,7 +251,7 @@ void Sim::FFTStep() {
 void Sim::eWaveStep() {
 	// Copy variables to fourier domain & perform FFT
 	gpu->Dispatch(TransferToFFT, 
-		{htilde.srv, qtilde_x.srv, qtilde_y.srv}, 
+		{htilde.srv, qtilde_x.srv, qtilde_y.srv},
 		{htildeOld.uav, hHat.uav, qHat_x.uav, qHat_y.uav});
 	gpu->ExecuteFFT(hHat.uav, GRIDSIZE, false);
 	gpu->ExecuteFFT(qHat_x.uav, GRIDSIZE, false);
@@ -261,7 +259,7 @@ void Sim::eWaveStep() {
 
 	// Compute eWave
 	gpu->Dispatch(CalcEWave, 
-		{hHat.srv, qHat_x.srv, qHat_y.srv},
+		{hHat.srv, qHat_x.srv, qHat_y.srv, qHatFFT_x.srv, qHatFFT_y.srv},
 		{qHat_x_array.uav, qHat_y_array.uav}, DEPTH_NUM);
 
 	// Inverse FFT fourier variables

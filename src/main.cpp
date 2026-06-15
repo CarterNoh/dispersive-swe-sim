@@ -78,8 +78,6 @@ void SaveToCSV(const std::vector<std::complex<float>>& data, int size, int array
     }
     std::ofstream file(filename);
     if (!file.is_open()) return;
-    // // Header optimized for Python / Pandas DataFrames
-    // file << "x,y,layer,real,imag,magnitude\n";
     for (int layer = 0; layer < arraySize; ++layer) {
         int sliceOffset = layer * (size * size);
         for (int y = 0; y < size; ++y) {
@@ -229,38 +227,35 @@ int RunHeadless() {
     // sim.gpu->DownloadFromGPU(sim.H.tex, H, size);
     // SaveToCSV(terrain, size, -1); // Save terrain data for reference
     // SaveToCSV(H, size, 0); // Save initial water height data
+    sim.gpu->DownloadFromGPU(sim.HPos.tex, array, size, arraySize);
+    SaveToCSV(array, size, arraySize, 0);
 
-    std::cout << "Starting simulation loop..." << std::endl;
-    auto totalStart = std::chrono::high_resolution_clock::now();
-    for (int tick = 1; tick < numTicks; ++tick) {
-        auto start = std::chrono::high_resolution_clock::now();
-        sim.SimStep();
-        sim.gpu->DownloadFromGPU(sim.H.tex, H, size);
-        SaveToCSV(H, size, tick);
-        // sim.gpu->DownloadFromGPU(sim.HPos.tex, hHat, size);
-        // SaveToCSV(hHat, size, tick);
-        // sim.gpu->DownloadFromGPU(sim.qHat_x_array.tex, array, size, arraySize);
-        // SaveToCSV(array, size, arraySize, tick);
+    // std::cout << "Starting simulation loop..." << std::endl;
+    // auto totalStart = std::chrono::high_resolution_clock::now();
+    // for (int tick = 1; tick < numTicks; ++tick) {
+    //     auto start = std::chrono::high_resolution_clock::now();
+    //     sim.SimStep();
+    //     sim.gpu->DownloadFromGPU(sim.H.tex, H, size);
+    //     SaveToCSV(H, size, tick);
+    //     // sim.gpu->DownloadFromGPU(sim.H.tex, hHat, size);
+    //     // SaveToCSV(hHat, size, tick);
+    //     // sim.gpu->DownloadFromGPU(sim.qHat_x_array.tex, array, size, arraySize);
+    //     // SaveToCSV(array, size, arraySize, tick);
 
-        auto sim_time = std::chrono::high_resolution_clock::now();
-        std::chrono::duration<double, std::milli> elapsed = sim_time - start;
-        std::cout << "Tick: " << tick << " | Simulation Time: " << elapsed.count() << "ms" << std::endl;
-    }
-    auto totalEnd = std::chrono::high_resolution_clock::now();
-    std::chrono::duration<double, std::milli> totalElapsed = totalEnd - totalStart;
-    std::cout << "Total Simulation Time for " << numTicks << " ticks: " << totalElapsed.count() << "ms" << std::endl;
-    std::cout << "Average Speed: " << ((totalElapsed.count() / 1000 / numTicks)) << " sec/tick" << std::endl;
-    std::cout << "FPS: " << (1000.0 / (totalElapsed.count() / numTicks)) << " frames/sec" << std::endl;
+    //     auto sim_time = std::chrono::high_resolution_clock::now();
+    //     std::chrono::duration<double, std::milli> elapsed = sim_time - start;
+    //     std::cout << "Tick: " << tick << " | Simulation Time: " << elapsed.count() << "ms" << std::endl;
+    // }
+    // auto totalEnd = std::chrono::high_resolution_clock::now();
+    // std::chrono::duration<double, std::milli> totalElapsed = totalEnd - totalStart;
+    // std::cout << "Total Simulation Time for " << numTicks << " ticks: " << totalElapsed.count() << "ms" << std::endl;
+    // std::cout << "Average Speed: " << ((totalElapsed.count() / 1000 / numTicks)) << " sec/tick" << std::endl;
+    // std::cout << "FPS: " << (1000.0 / (totalElapsed.count() / numTicks)) << " frames/sec" << std::endl;
 
     return 0;
 }
 
 int main() {
-
-    if (render) {
-        return RunWithRender();
-    }
-    else {
-        return RunHeadless();
-    }
+    if (render) return RunWithRender();
+    else        return RunHeadless();
 }

@@ -5,7 +5,7 @@ and the paper "Empirical Directional Wave Spectra for Computer Graphics".
 
 cbuffer Constants : register(b0) {
     float time;
-    // Sim params
+    // Sim Params
     int gridSize; 
     float cellSize;
     float timeStep;
@@ -13,16 +13,16 @@ cbuffer Constants : register(b0) {
     float minWaterHeight;
     float surfaceTension;
     float density;
-    // Decomposition params
+    // Decomposition Params
     int diffusionIterations;
     float deltaT;
     float diffusionPenalty;
     // SWE & Transport Params
     float cflCondition;
     float gammaTransport;
-    // eWave params
+    // eWave Params
     int depthNum;
-    // FFT wave params
+    // FFT Wave Params
     float fetch;
     float windSpeed;
     float windAngle;
@@ -81,13 +81,9 @@ float WrapAngle(float angle) {
 }
 
 float SafeTanh(float x) {
-    if (x > 20.f) {
-        return 1.f;
-    } else if (x < -20.f) {
-        return -1.f;
-    } else {
-        return tanh(x);
-    }
+    if (x > 20.f)       return 1.f;
+    else if (x < -20.f) return -1.f;
+    else                return tanh(x);
 }
 
 float Gamma(float z) {
@@ -415,7 +411,7 @@ void PropagateWaves(uint3 id : SV_DispatchThreadID) {
 
     
     // Filter into high and low frequency - high goes to Airy, low goes to SWE
-    float kCrossover = N_2 * dK; // =PI/cellSize, midpoint of range of k in one direction, revisit later
+    float kCrossover = N_2 * dK / 2; // =PI/(2*cellSize), midpoint of range of k in one direction, revisit later
     float kWidth = kCrossover / 4.f; // one eigth of domain size of k, idk this is starting guess
     float kFilter = 1 + SafeTanh((k - kCrossover) / kWidth);
     float2 HHigh = HProp * kFilter;

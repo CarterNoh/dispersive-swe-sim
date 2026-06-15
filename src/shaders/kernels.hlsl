@@ -1,7 +1,8 @@
-// Constant buffer matching the C++ struct
+// Shaders executing steps of algorithm outlined in "Generalizing Shallow Water Simulations with Dispersive Surface Waves"
+
 cbuffer Constants : register(b0) {
     float time;
-    // Sim params
+    // Sim Params
     int gridSize; 
     float cellSize;
     float timeStep;
@@ -9,16 +10,16 @@ cbuffer Constants : register(b0) {
     float minWaterHeight;
     float surfaceTension;
     float density;
-    // Decomposition params
+    // Decomposition Params
     int diffusionIterations;
     float deltaT;
     float diffusionPenalty;
     // SWE & Transport Params
     float cflCondition;
     float gammaTransport;
-    // eWave params
+    // eWave Params
     int depthNum;
-    // FFT wave params
+    // FFT Wave Params
     float fetch;
     float windSpeed;
     float windAngle;
@@ -154,6 +155,12 @@ float SampleCubicClamped2D(Texture2D<float> dataField, float2 samplePos) {
 float2 ComplexMul(float2 a, float2 b) {
     return float2(a.x * b.x - a.y * b.y,
                   a.x * b.y + a.y * b.x);
+}
+
+float SafeTanh(float x) {
+    if (x > 20.f)       return 1.f;
+    else if (x < -20.f) return -1.f;
+    else                return tanh(x);
 }
 
 //////////////////// COMPUTE SHADERS /////////////////////////
@@ -563,6 +570,8 @@ void TransferToFFT(uint3 id : SV_DispatchThreadID) {
 Texture2D<float2> hhat   : register(t0);
 Texture2D<float2> qhat_x : register(t1);
 Texture2D<float2> qhat_y : register(t2);
+Texture2D<float2> qhatFFT_x : register(t3);
+Texture2D<float2> qhatFFT_y : register(t4);
 RWTexture2DArray<float2> qhat_x_array: register(u0);
 RWTexture2DArray<float2> qhat_y_array: register(u1);
 [numthreads(16, 16, 1)]
@@ -601,9 +610,7 @@ void CalcEWave(uint3 id : SV_DispatchThreadID) {
     float beta = sqrt((2.0 / (k * cellSize)) * sin(k * cellSize / 2.0)); // From their 1D code, but different from paper
     // float beta = sqrt((2.0 * k / cellSize) * sin(k * cellSize / 2.0)); // correct formula from paper, but not stable?
     // Angular frequency for dispersion relation
-    float kh = k * in8[id.z];
-    float tanh_kh = (kh > 20.f) ? 1.0f : tanh(kh);
-    float omega = sqrt(GRAVITY * k * tanh_kh) / beta;
+    float omega = sqrt(GRAVITY * k * SafeTanh(k * in8[id.z])) / beta;
     float S = sin(omega * timeStep) * omega / (k * k);
     float C = cos(omega * timeStep);
     float Cx = 1 + (C-1) * kx2;
@@ -651,6 +658,14 @@ void CalcEWave(uint3 id : SV_DispatchThreadID) {
         qhat_x_array[id] = float2(qhat_x_array[id].x, 0.0f);
         qhat_y_array[id] = float2(qhat_y_array[id].x, 0.0f);
     }
+
+    // Nummrical relaxation to incorporate FFT flow
+    float kCrossover = N_2 * dK; // =PI/cellSize, midpoint of range of k in one direction, revisit later
+    float kWidth = kCrossover / 4.f; // one eigth of domain size of k, idk this is starting guess
+    float kFilter = 1 + SafeTanh((k - kCrossover) / kWidth);
+    float lambda = 0.f;
+    qhat_x_array[id] += lambda * kFilter * (qhatFFT_x[id.xy] - qhat_x_array[id]);
+    qhat_y_array[id] += lambda * kFilter * (qhatFFT_y[id.xy] - qhat_y_array[id]);
 }
 
 Texture2D<float>       hbar        : register(t0);

@@ -39,7 +39,6 @@ struct alignas(16) SimConstants {
     float filterBig;
     float filterWidth;
     float filterMin;
-
 };
 
 struct alignas(16) FFTConstants {
@@ -50,10 +49,9 @@ struct alignas(16) FFTConstants {
 };
 
 struct alignas(16) RenderConstants {
-    DirectX::XMMATRIX viewProjection; // 64 bytes
-    float gridSize;                   // 4 bytes
-    float cellSize;                   // 4 bytes
-    float buffer[2];                  // 8 bytes (Total = 80 bytes, must be multiple of 16)
+    DirectX::XMMATRIX viewProjection;
+    float gridSize;
+    float cellSize;
 };
 
 struct GPUField {
