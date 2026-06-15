@@ -33,7 +33,7 @@ cbuffer Constants : register(b0) {
     float filterBig;
     float filterWidth;
     float filterMin;
-    float lambda;
+    float lambdaHigh;
 };
 
 #define G 9.80665f
@@ -451,7 +451,7 @@ void PropagateWaves(uint3 id : SV_DispatchThreadID) {
     // UyPropOut[id] = ComplexMul(Uy, e_iy);
     
 }
-Texture2DArray<float2> HPIn : register(t0);
+Texture2DArray<float2> HPIn: register(t0);
 Texture2DArray<float2> HIn : register(t1);
 Texture2DArray<float2> UxIn: register(t2);
 Texture2DArray<float2> UyIn: register(t3);
@@ -468,9 +468,10 @@ RWTexture2D<float> SyOut: register(u5);
 void Interp(uint3 id : SV_DispatchThreadID) {
     if (id.x >= (uint)(gridSize) || id.y >= (uint)(gridSize)) return;
 
-    float waterDepth = HIn[id] + hbar[id.xy];
-    if (waterDepth < 0.f) {
-        HOut [id.xy] = hbar[id.xy];
+    float waterDepth = hbar[id.xy];
+    if (waterDepth <= minWaterHeight) {
+        HPOut[id.xy] = 0.f;
+        HOut [id.xy] = 0.f;
         UxOut[id.xy] = 0.f;
         UyOut[id.xy] = 0.f;
         SxOut[id.xy] = 0.f;
@@ -486,7 +487,7 @@ void Interp(uint3 id : SV_DispatchThreadID) {
         s = (depth[d2] - waterDepth) / (depth[d2] - depth[d1]);
     uint3 id1 = uint3(id.x, id.y, d1);
     uint3 id2 = uint3(id.x, id.y, d2);
-    HPOut [id.xy] = s * HPIn [id1].x + (1.f - s) * HPIn [id2].x;
+    HPOut[id.xy] = s * HPIn[id1].x + (1.f - s) * HPIn[id2].x;
     HOut [id.xy] = s * HIn [id1].x + (1.f - s) * HIn [id2].x;
     UxOut[id.xy] = s * UxIn[id1].x + (1.f - s) * UxIn[id2].x;
     UyOut[id.xy] = s * UyIn[id1].x + (1.f - s) * UyIn[id2].x;

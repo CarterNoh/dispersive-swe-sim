@@ -30,7 +30,7 @@ cbuffer Constants : register(b0) {
     float filterBig;
     float filterWidth;
     float filterMin;
-    float lambda;
+    float lambdaHIgh;
 };
 
 #define GRAVITY 9.80665
@@ -396,7 +396,16 @@ void CalcSWE(uint3 id : SV_DispatchThreadID) {
     float u_star_x_0 = (q_x_0 >= 0.f) ? in0[left] : in0[curr];
     float u_star_x_1 = (q_x_1 >= 0.f) ? in0[curr] : in0[right]; 
     float u_star_y_0 = (q_y_0 >= 0.f) ? in1[down] : in1[curr];
-    float u_star_y_1 = (q_y_1 >= 0.f) ? in1[curr] : in1[up];       
+    float u_star_y_1 = (q_y_1 >= 0.f) ? in1[curr] : in1[up];   
+
+    // Calculate FFT forcing
+    float depth_weight = 0.5 * (1 + SafeTanh((in2[curr] - lambdaLow) / (lambdaLow / 2))); 
+    float rad_stress_x = in4[id.xy] / h_x_p05; // radiation stress (input is S)
+    float rad_stress_y = in5[id.xy] / h_y_p05;
+    float press_grad_x = -GRAVITY * (in4[right] - in4[curr]) / cellSize; // wave pressure gradient (input is hbarFFT)
+    float press_grad_y = -GRAVITY * (in4[up]    - in4[curr]) / cellSize;
+    float fft_force_x = depth_weight * rad_stress_x; 
+    float fft_force_y = depth_weight * rad_stress_y;
 
     // Compute dux_dt and duy_dt
     // float dux_dt = - (1/cellSize) * ((q_x_0/h_x_p05) * (in0[curr] - in0[left]) + (q_y_m05/h_x_p05) * (in0[curr] - in0[down]));
@@ -405,6 +414,9 @@ void CalcSWE(uint3 id : SV_DispatchThreadID) {
     float duy_dt = - (1/(cellSize * h_y_p05)) * ((q_y_1 * u_star_y_1 - q_y_0 * u_star_y_0) - in1[curr] * (q_y_1 - q_y_0));
     dux_dt -= (1/cellSize) * GRAVITY * (in3[right] - in3[curr]);
     duy_dt -= (1/cellSize) * GRAVITY * (in3[up]    - in3[curr]);
+    dux_dt -= fft_force_x;
+    dux_dt -= fft_force_y;
+
     float ubarNew_x = LimitVelocity(in0[curr] + timeStep * dux_dt);
     float ubarNew_y = LimitVelocity(in1[curr] + timeStep * duy_dt);
     
@@ -477,7 +489,7 @@ void UpdateTilde(uint3 id : SV_DispatchThreadID) {
     out0[curr] = in7[curr] * exp(-div_ubar * timeStep);
 
     // Numerical relaxation to incorporate FFT waves
-    out0[curr] += lambda * (in8[curr] - out0[curr]);
+    out0[curr] += lambdaHigh * (in8[curr] - out0[curr]);
 }
 
 [numthreads(16, 16, 1)]
@@ -655,8 +667,8 @@ void CalcEWave(uint3 id : SV_DispatchThreadID) {
     float kCrossover = N_2 * dK / 4.f; // =PI/cellSize, midpoint of range of k in one direction, revisit later
     float kWidth = kCrossover / 4.f;
     float kFilter = 0.5f * (1 + SafeTanh((abs(k) - kCrossover) / kWidth)); // injection strength, based off decomposition 
-    qhat_x_array[id] += lambda * kFilter * (qhatFFT_x[id.xy] - qhat_x_array[id]);
-    qhat_y_array[id] += lambda * kFilter * (qhatFFT_y[id.xy] - qhat_y_array[id]);
+    qhat_x_array[id] += lambdaHigh * kFilter * (qhatFFT_x[id.xy] - qhat_x_array[id]);
+    qhat_y_array[id] += lambdaHigh * kFilter * (qhatFFT_y[id.xy] - qhat_y_array[id]);
 }
 
 Texture2D<float>       hbar        : register(t0);

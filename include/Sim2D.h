@@ -12,7 +12,7 @@ class Sim {
 public:
 	// Simulation parameters
 	static constexpr int GRIDSIZE = 256;	// grid size in one dimension (# cells)
-	static constexpr float CELLSIZE = 0.35f;	// cell size in one dimension (meters/cell)
+	static constexpr float CELLSIZE = 1.f;	// cell size in one dimension (meters/cell)
 	static constexpr float TIMESTEP = 1.f / 60.f;
 	static constexpr int BOUNDARY_TYPE = 0; // not in use any more, need to remove probably
 	static constexpr float MIN_WATER_HEIGHT = 0.001f; // minimum water height for stability
@@ -42,7 +42,6 @@ public:
 
     // FFT Parameters
     float time = 0.f;
-    // static constexpr float DEPTH        = 2.5f;    // meters
     static constexpr float FETCH        = 200.f;    // kilometers
     static constexpr float WIND_SPEED   = 14.f;     // m/s
     static constexpr float WIND_ANGLE   = 90.f;    // degrees from x-axis
@@ -53,7 +52,8 @@ public:
     static constexpr float FILTER_BIG   = 10000.f;  // 
     static constexpr float FILTER_WIDTH = 1.f;      // 
     static constexpr float FILTER_MIN   = 0.01f;    // 
-	static constexpr float LAMBDA	    = 0.5f;     // relaxation strength for high-freq FFT injection 
+	static constexpr float LAMBDA_HIGH  = 0.f;     // relaxation strength for high-freq FFT injection 
+	static constexpr float LAMBDA_LOW   = TERRAIN_HEIGHT/2;     // relaxation strength for low-freq FFT injection 
 
 	// Simulation variables
 	GPUField terrain, H, Q_x, Q_y, h, q_x, q_y, 
@@ -127,6 +127,6 @@ private:
 							  DIFFUSION_ITERATIONS, DELTA_T, DIFFUSION_PENALTY, // Diffusion Params
 							  CFL_CONDITION, GAMMA_TRANSPORT, DEPTH_NUM,// SWE & eWave Params
 							  FETCH, WIND_SPEED, WIND_ANGLE, SWELL, SWELL_ANGLE, CHOPPINESS, // FFT Params
-							  FILTER_SMALL, FILTER_BIG, FILTER_WIDTH, FILTER_MIN, LAMBDA};    
+							  FILTER_SMALL, FILTER_BIG, FILTER_WIDTH, FILTER_MIN, LAMBDA_HIGH, LAMBDA_LOW};    
 	RenderConstants render_constants = {DirectX::XMMatrixIdentity(), (float)GRIDSIZE, CELLSIZE};
 };

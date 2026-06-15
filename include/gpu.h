@@ -39,7 +39,8 @@ struct alignas(16) SimConstants {
     float filterBig;
     float filterWidth;
     float filterMin;
-    float lambda;
+    float lambdaHigh;
+    float lambdaLow;
 };
 
 struct alignas(16) FFTConstants {
