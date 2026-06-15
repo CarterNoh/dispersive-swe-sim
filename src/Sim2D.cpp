@@ -243,10 +243,10 @@ void Sim::FFTStep() {
 
     // Calculate qtildeFFT
     gpu->Dispatch(CalcQFFT, 
-		{hbar.srv, htildeFFT.srv, utildeFFT_x.srv, utildeFFT_y.srv}, 
+		{htildeFFT.srv, utildeFFT_x.srv, utildeFFT_y.srv}, 
 		{qHatFFT_x.uav, qHatFFT_y.uav});
-    // gpu->ExecuteFFT(qHatFFT_x.uav, GRIDSIZE, false);
-    // gpu->ExecuteFFT(qHatFFT_y.uav, GRIDSIZE, false);
+    gpu->ExecuteFFT(qHatFFT_x.uav, GRIDSIZE, false);
+    gpu->ExecuteFFT(qHatFFT_y.uav, GRIDSIZE, false);
 }
 
 void Sim::eWaveStep() {
