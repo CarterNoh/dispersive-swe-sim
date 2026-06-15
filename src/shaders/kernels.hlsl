@@ -44,7 +44,10 @@ Texture2D<float>   in4 : register(t4);
 Texture2D<float>   in5 : register(t5);
 Texture2D<float>   in6 : register(t6);
 Texture2D<float>   in7 : register(t7);
-StructuredBuffer<float> in8 : register(t8);
+Texture2D<float>   in8 : register(t8);
+Texture2D<float>   in9 : register(t9);
+Texture2D<float>   in10: register(t10);
+StructuredBuffer<float> in11 : register(t11);
 RWTexture2D<float> out0: register(u0);
 RWTexture2D<float> out1: register(u1);
 RWTexture2D<float> out2: register(u2);
@@ -320,9 +323,11 @@ void CalcQFFT(uint3 id : SV_DispatchThreadID) {
     // Calculates qFFT (at cell centers) from fft sim's height and velocity
 
     // Option 1: Interpolate before calculating Q - h, ux, uy are complex, no arrays; output is complex, not array
-    // float hFFT  = in0[id.xy]  + in1[id.xy].x; // htildeFFT is only relative to the free surface hbar, need to get total height
+    float hFFT  = in1[id.xy].x;// + in0[id.xy]; 
     // out0[id.xy] = float2(hFFT * in2[id.xy].x, 0);
     // out1[id.xy] = float2(hFFT * in3[id.xy].x, 0);
+    out0[id.xy] = hFFT * in2[id.xy].x;
+    out1[id.xy] = hFFT * in3[id.xy].x;
 
     // // Option 2: NOT Interpolate before calculating Q - h, ux, uy are complex arrays, output is complex array
     // float hFFT = in0[id.xy] + in1[id]; // htildeFFT is only relative to the free surface hbar, need to get total height
@@ -426,7 +431,7 @@ void CalcSWE(uint3 id : SV_DispatchThreadID) {
 [numthreads(16, 16, 1)]
 void UpdateTilde(uint3 id : SV_DispatchThreadID) {
     // Inputs: in0 = ubarNew_x, in1 = ubar_x, in2 = ubarNew_y, in3 = ubar_y, 
-    //         in4 = qtildePast_x, in5 = qtildePast_y, in6 = h, in7 = htilde
+    //         in4 = qtildePast_x, in5 = qtildePast_y, in6 = h, in7 = htilde, in8 = htildeFFT
     // Outputs: out0 = htilde, out1 = qtilde_x, out2 = qtilde_y
     if (id.x >= (uint)(gridSize) || id.y >= (uint)(gridSize)) return;
 
@@ -438,14 +443,6 @@ void UpdateTilde(uint3 id : SV_DispatchThreadID) {
     uint2 rdown = uint2(min(id.x + 1, gridSize - 1), max(id.y - 1, 0));
     uint2 uleft = uint2(max(id.x - 1, 0), min(id.y + 1, gridSize - 1));
 
-    // ubar is on same timestep as h, need to get back to timestep of q 
-    float ubar_x_avg = 0.5f * (in0[curr] + in1[curr]); 
-    float ubar_x_m1  = 0.5f * (in0[left] + in1[left]);
-    float ubar_x_p1  = 0.5f * (in0[right] + in1[right]);
-    float ubar_y_avg = 0.5f * (in2[curr] + in3[curr]);
-    float ubar_y_m1  = 0.5f * (in2[down] + in3[down]);
-    float ubar_y_p1  = 0.5f * (in2[up] + in3[up]);
-
     // ubar divergence
     float div_ubar  = (in0[curr]  - in0[left] + in2[curr]  - in2[down])  / cellSize;  // at cell center
     float div_right = (in0[right] - in0[curr] + in2[right] - in2[rdown]) / cellSize; // at center of right cell
@@ -456,13 +453,20 @@ void UpdateTilde(uint3 id : SV_DispatchThreadID) {
     div_ux   *= (div_ux   < 0.f) ? gammaTransport : 1;
     div_uy   *= (div_uy   < 0.f) ? gammaTransport : 1;
     // Update qtilde using bulk flow and ubar divergence: dq/dt = -q * div(ubar)
-    float step_x = - ubar_x_avg * timeStep / cellSize; // unitless (cells)
-    float step_y = - ubar_y_avg * timeStep / cellSize; // unitless (cells)
+    float step_x = - in0[curr] * timeStep / cellSize; // unitless (cells)
+    float step_y = - in2[curr] * timeStep / cellSize; // unitless (cells)
     float2 samplePos = float2(id.x + step_x, id.y + step_y);
     out1[curr] = SampleCubicClamped2D(in4, samplePos) * exp(-div_ux * timeStep);
     out2[curr] = SampleCubicClamped2D(in5, samplePos) * exp(-div_uy * timeStep);
 
     // // ubar divergence using central difference
+    // ubar is on same timestep as h, need to get back to timestep of q 
+    // float ubar_x_avg = 0.5f * (in0[curr] + in1[curr]); 
+    // float ubar_x_m1  = 0.5f * (in0[left] + in1[left]);
+    // float ubar_x_p1  = 0.5f * (in0[right] + in1[right]);
+    // float ubar_y_avg = 0.5f * (in2[curr] + in3[curr]);
+    // float ubar_y_m1  = 0.5f * (in2[down] + in3[down]);
+    // float ubar_y_p1  = 0.5f * (in2[up] + in3[up]);
     // float div_ubar = (ubar_x_p1 - ubar_x_m1 + ubar_y_p1  - ubar_y_m1) / (2.f * cellSize);
     // div_ubar *= (div_ubar < 0.f) ? gammaTransport : 1; // dampen if converging to avoid breaking waves
     // // Update qtilde using bulk flow and ubar divergence: dq/dt = -q * div(ubar)
@@ -486,6 +490,14 @@ void UpdateTilde(uint3 id : SV_DispatchThreadID) {
     // div_ubar  = (in0[curr] - in0[left] + in2[curr] - in2[down]) / cellSize;
     // div_ubar *= (div_ubar < 0.f) ? gammaTransport : 1; // dampen if converging to avoid breaking waves
     out0[curr] = in7[curr] * exp(-div_ubar * timeStep);
+
+    // Numerical relaxation to incorporate FFT waves
+    float lambda = 0.5f;
+    out0[curr] += lambda * (out0[curr] - in8[curr]);
+    // out1[curr] += lambda * (out1[curr] - in9[curr]);
+    // out2[curr] += lambda * (out2[curr] - in10[curr]);
+    // out1[curr] = LimitFlowRate(out1[curr], in6[curr], in6[right]); 
+    // out2[curr] = LimitFlowRate(out2[curr], in6[curr], in6[up]);
 }
 
 [numthreads(16, 16, 1)]
@@ -610,7 +622,7 @@ void CalcEWave(uint3 id : SV_DispatchThreadID) {
     float beta = sqrt((2.0 / (k * cellSize)) * sin(k * cellSize / 2.0)); // From their 1D code, but different from paper
     // float beta = sqrt((2.0 * k / cellSize) * sin(k * cellSize / 2.0)); // correct formula from paper, but not stable?
     // Angular frequency for dispersion relation
-    float omega = sqrt(GRAVITY * k * SafeTanh(k * in8[id.z])) / beta;
+    float omega = sqrt(GRAVITY * k * SafeTanh(k * in11[id.z])) / beta;
     float S = sin(omega * timeStep) * omega / (k * k);
     float C = cos(omega * timeStep);
     float Cx = 1 + (C-1) * kx2;
@@ -659,11 +671,11 @@ void CalcEWave(uint3 id : SV_DispatchThreadID) {
         qhat_y_array[id] = float2(qhat_y_array[id].x, 0.0f);
     }
 
-    // Nummrical relaxation to incorporate FFT flow
-    float kCrossover = N_2 * dK; // =PI/cellSize, midpoint of range of k in one direction, revisit later
+    // Numerical relaxation to incorporate FFT flow
+    float kCrossover = N_2 * dK / 2.f; // =PI/cellSize, midpoint of range of k in one direction, revisit later
     float kWidth = kCrossover / 4.f; // one eigth of domain size of k, idk this is starting guess
-    float kFilter = 1 + SafeTanh((k - kCrossover) / kWidth);
-    float lambda = 0.f;
+    float kFilter = 1.f;//0.5f * (1 + SafeTanh((abs(k) - kCrossover) / kWidth)); // injection strength, based off decomposition 
+    float lambda = 1.f;
     qhat_x_array[id] += lambda * kFilter * (qhatFFT_x[id.xy] - qhat_x_array[id]);
     qhat_y_array[id] += lambda * kFilter * (qhatFFT_y[id.xy] - qhat_y_array[id]);
 }
@@ -686,17 +698,17 @@ void InterpQ(uint3 id : SV_DispatchThreadID) {
     int d1_x = 0;
     int d1_y = 0;
     for (int d = 0; d < depthNum; d++) {
-        if (waterDepth_x >= in8[d]) d1_x = d;
-        if (waterDepth_y >= in8[d]) d1_y = d;
+        if (waterDepth_x >= in11[d]) d1_x = d;
+        if (waterDepth_y >= in11[d]) d1_y = d;
     }
     int d2_x = min(depthNum - 1, d1_x + 1);
     int d2_y = min(depthNum - 1, d1_y + 1);
     float sx = 0.f;
     float sy = 0.f;
     if (d1_x != d2_x)
-        sx = (in8[d2_x] - waterDepth_x) / (in8[d2_x] - in8[d1_x]);
+        sx = (in11[d2_x] - waterDepth_x) / (in11[d2_x] - in11[d1_x]);
     if (d1_y != d2_y)
-        sy = (in8[d2_y] - waterDepth_y) / (in8[d2_y] - in8[d1_y]);
+        sy = (in11[d2_y] - waterDepth_y) / (in11[d2_y] - in11[d1_y]);
     qtilde_x[id.xy] = sx * qHat_x_array[uint3(id.x, id.y, d1_x)].x + (1.f - sx) * qHat_x_array[uint3(id.x, id.y, d2_x)].x;
     qtilde_y[id.xy] = sy * qHat_y_array[uint3(id.x, id.y, d1_y)].x + (1.f - sy) * qHat_y_array[uint3(id.x, id.y, d2_y)].x;
 }

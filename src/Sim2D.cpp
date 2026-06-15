@@ -121,7 +121,7 @@ void Sim::Init(GPU* gpu) {
 		gpu->UploadToGPU(fields_arrays[i]->tex, temp, GRIDSIZE, true, DEPTH_NUM);
 	}
 	gpu->CreateBuffer(&depth, depths.data(), DEPTH_NUM);
-	gpu->BindSRV(8, depth.srv);
+	gpu->BindSRV(11, depth.srv);
 	std::vector<float> terrain_temp = SetTerrain();
 	std::vector<float> h_temp = SetWater(terrain_temp);
 	std::vector<float> H_temp(GRIDSIZE*GRIDSIZE, 0.0f);
@@ -228,7 +228,8 @@ void Sim::FFTStep() {
     // Propagate waves
 	gpu->Dispatch(PropagateWaves, 
 		{HPos.srv, HNeg.srv},
-		{HHigh.uav, UHigh_x.uav, UHigh_y.uav, DelS_x.uav, DelS_y.uav}, DEPTH_NUM);
+		{HHigh.uav, UHigh_x.uav, UHigh_y.uav, DelS_x.uav, DelS_y.uav, HProp.uav}, DEPTH_NUM);
+	gpu->ExecuteFFT(HProp.uav,   GRIDSIZE, true, DEPTH_NUM);
 	gpu->ExecuteFFT(HHigh.uav,   GRIDSIZE, true, DEPTH_NUM);
 	gpu->ExecuteFFT(UHigh_x.uav, GRIDSIZE, true, DEPTH_NUM);
 	gpu->ExecuteFFT(UHigh_y.uav, GRIDSIZE, true, DEPTH_NUM);
@@ -237,15 +238,15 @@ void Sim::FFTStep() {
 
 	// Interpolate outputs between depths
 	gpu->Dispatch(Interp, 
-		{HHigh.srv, UHigh_x.srv, UHigh_y.srv, DelS_x.srv, DelS_y.srv, hbar.srv}, 
-		{htildeFFT.uav, utildeFFT_x.uav, utildeFFT_y.uav, delS_x.uav, delS_y.uav});
+		{HProp.srv, HHigh.srv, UHigh_x.srv, UHigh_y.srv, DelS_x.srv, DelS_y.srv, hbar.srv}, 
+		{hFFT.uav, htildeFFT.uav, utildeFFT_x.uav, utildeFFT_y.uav, delS_x.uav, delS_y.uav});
 
     // Calculate qtildeFFT
     gpu->Dispatch(CalcQFFT, 
 		{hbar.srv, htildeFFT.srv, utildeFFT_x.srv, utildeFFT_y.srv}, 
 		{qHatFFT_x.uav, qHatFFT_y.uav});
-    gpu->ExecuteFFT(qHatFFT_x.uav, GRIDSIZE, false);
-    gpu->ExecuteFFT(qHatFFT_y.uav, GRIDSIZE, false);
+    // gpu->ExecuteFFT(qHatFFT_x.uav, GRIDSIZE, false);
+    // gpu->ExecuteFFT(qHatFFT_y.uav, GRIDSIZE, false);
 }
 
 void Sim::eWaveStep() {
@@ -259,7 +260,7 @@ void Sim::eWaveStep() {
 
 	// Compute eWave
 	gpu->Dispatch(CalcEWave, 
-		{hHat.srv, qHat_x.srv, qHat_y.srv, qHatFFT_x.srv, qHatFFT_y.srv},
+		{hHat.srv, qHat_x.srv, qHat_y.srv},// , qHatFFT_x.srv, qHatFFT_y.srv
 		{qHat_x_array.uav, qHat_y_array.uav}, DEPTH_NUM);
 
 	// Inverse FFT fourier variables
@@ -302,7 +303,8 @@ void Sim::TransportStep() {
 	std::swap(qtilde_y, qtildePast_y);
 	gpu->Dispatch(UpdateTilde, 
 		{ubarNew_x.srv, ubar_x.srv, ubarNew_y.srv, ubar_y.srv, 
-			qtildePast_x.srv, qtildePast_y.srv, h.srv, htilde.srv},
+			qtildePast_x.srv, qtildePast_y.srv, h.srv, htilde.srv, 
+			htildeFFT.srv, qHatFFT_x.srv, qHatFFT_y.srv},
 		{htilde.uav, qtilde_x.uav, qtilde_y.uav});	
 	// gpu->Dispatch(ApplyBoundaries, {}, 
 	// 	{htilde.uav, qtilde_x.uav, qtilde_y.uav});

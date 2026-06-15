@@ -292,7 +292,7 @@ float AmpFilter(float k, int filterInvert) {
 
 
 ///////////////// Shaders /////////////////
-StructuredBuffer<float> depth : register(t8);
+StructuredBuffer<float> depth : register(t11);
 
 RWTexture2DArray<float2> HPosOut: register(u0);
 RWTexture2DArray<float2> HNegOut: register(u1);
@@ -370,6 +370,7 @@ RWTexture2DArray<float2> UxHighOut: register(u1);
 RWTexture2DArray<float2> UyHighOut: register(u2);
 RWTexture2DArray<float2> SxPropOut: register(u3);
 RWTexture2DArray<float2> SyPropOut: register(u4);
+RWTexture2DArray<float2> HPropOut : register(u5);
 [numthreads(16, 16, 1)]
 void PropagateWaves(uint3 id : SV_DispatchThreadID) {
     if (id.x == 0 && id.y == 0) {
@@ -404,6 +405,7 @@ void PropagateWaves(uint3 id : SV_DispatchThreadID) {
     float2 HPlus = ComplexMul(HPosIn[id], fwd);
     float2 HMin = ComplexMul(HNegIn[id], bkwd);
     float2 HProp = HPlus + HMin;
+    HPropOut[id]  = HProp;
 
     // // Calculate Horizontal Displacement Dx, Dy
     // DxPropOut[id] = ComplexMul(HProp, float2(0.f, kx_ * choppiness));
@@ -411,9 +413,9 @@ void PropagateWaves(uint3 id : SV_DispatchThreadID) {
 
     
     // Filter into high and low frequency - high goes to Airy, low goes to SWE
-    float kCrossover = N_2 * dK / 2; // =PI/(2*cellSize), midpoint of range of k in one direction, revisit later
+    float kCrossover = N_2 * dK / 2.f; // =PI/(2*cellSize), midpoint of range of k in one direction, revisit later
     float kWidth = kCrossover / 4.f; // one eigth of domain size of k, idk this is starting guess
-    float kFilter = 1 + SafeTanh((k - kCrossover) / kWidth);
+    float kFilter = 0.5f * (1 + SafeTanh((abs(k) - kCrossover) / kWidth));
     float2 HHigh = HProp * kFilter;
     float2 HLow = HProp - HHigh;
     
@@ -448,18 +450,19 @@ void PropagateWaves(uint3 id : SV_DispatchThreadID) {
     // UyPropOut[id] = ComplexMul(Uy, e_iy);
     
 }
-
-Texture2DArray<float2> HIn : register(t0);
-Texture2DArray<float2> UxIn: register(t3);
-Texture2DArray<float2> UyIn: register(t4);
-Texture2DArray<float2> SxIn: register(t5);
-Texture2DArray<float2> SyIn: register(t6);
-Texture2D<float>       hbar: register(t7);
-RWTexture2D<float> HOut : register(u0);
-RWTexture2D<float> UxOut: register(u3);
-RWTexture2D<float> UyOut: register(u4);
-RWTexture2D<float> SxOut: register(u5);
-RWTexture2D<float> SyOut: register(u6);
+Texture2DArray<float2> HPIn : register(t0);
+Texture2DArray<float2> HIn : register(t1);
+Texture2DArray<float2> UxIn: register(t2);
+Texture2DArray<float2> UyIn: register(t3);
+Texture2DArray<float2> SxIn: register(t4);
+Texture2DArray<float2> SyIn: register(t5);
+Texture2D<float>       hbar: register(t6);
+RWTexture2D<float> HPOut : register(u0);
+RWTexture2D<float> HOut : register(u1);
+RWTexture2D<float> UxOut: register(u2);
+RWTexture2D<float> UyOut: register(u3);
+RWTexture2D<float> SxOut: register(u4);
+RWTexture2D<float> SyOut: register(u5);
 [numthreads(16, 16, 1)]
 void Interp(uint3 id : SV_DispatchThreadID) {
     if (id.x >= (uint)(gridSize) || id.y >= (uint)(gridSize)) return;
@@ -482,6 +485,7 @@ void Interp(uint3 id : SV_DispatchThreadID) {
         s = (depth[d2] - waterDepth) / (depth[d2] - depth[d1]);
     uint3 id1 = uint3(id.x, id.y, d1);
     uint3 id2 = uint3(id.x, id.y, d2);
+    HPOut [id.xy] = s * HPIn [id1].x + (1.f - s) * HPIn [id2].x;
     HOut [id.xy] = s * HIn [id1].x + (1.f - s) * HIn [id2].x;
     UxOut[id.xy] = s * UxIn[id1].x + (1.f - s) * UxIn[id2].x;
     UyOut[id.xy] = s * UyIn[id1].x + (1.f - s) * UyIn[id2].x;

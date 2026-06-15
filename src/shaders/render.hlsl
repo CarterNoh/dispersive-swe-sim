@@ -30,7 +30,7 @@ Pixel VSMain(Vertex input) {
     float h = HeightMap.SampleLevel(PointSampler, uv, 0);
     // float dx = DispXMap.SampleLevel(PointSampler, uv, 0);
     // float dy = DispYMap.SampleLevel(PointSampler, uv, 0);
-    float scale = 1.f;
+    float scale = 10.f;
     float3 wPos = float3(input.position.x, h * scale, input.position.y);
     // float3 wPos = float3(input.position.x + dx, h * scale, input.position.y + dy);
     

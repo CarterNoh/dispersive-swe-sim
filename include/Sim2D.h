@@ -11,7 +11,7 @@
 class Sim {
 public:
 	// Simulation parameters
-	static constexpr int GRIDSIZE = 512;	// grid size in one dimension (# cells)
+	static constexpr int GRIDSIZE = 256;	// grid size in one dimension (# cells)
 	static constexpr float CELLSIZE = 1.f;	// cell size in one dimension (meters/cell)
 	static constexpr float TIMESTEP = 1.f / 60.f;
 	static constexpr int BOUNDARY_TYPE = 0; // not in use any more, need to remove probably
@@ -20,12 +20,12 @@ public:
     static constexpr float DENSITY = 999.f;
 
 	// Terrain & Water Parameters
-	static constexpr int TERRAIN_TYPE = 4; 		   // 0 = flat, 1 = ramp, 2 = bumps, 3 = basins, 4 = beach, 5 = 1D hill, 6 = 2D hill
-	static constexpr int WATER_TYPE   = 1; 		   // 0 = flat, 1 = step/dam break, 2 = diagonal slope, 3 = splash, 4 = ripples, 5 = basin flood
+	static constexpr int TERRAIN_TYPE = 0; 		   // 0 = flat, 1 = ramp, 2 = bumps, 3 = basins, 4 = beach, 5 = 1D hill, 6 = 2D hill
+	static constexpr int WATER_TYPE   = 0; 		   // 0 = flat, 1 = step/dam break, 2 = diagonal slope, 3 = splash, 4 = ripples, 5 = basin flood
 	static constexpr float TERRAIN_HEIGHT = -13.f; // base height of terrain features (meters)
 	static constexpr float TERRAIN_SCALE = 20.f;    // scale of terrain features (meters)
 	static constexpr float WATER_LEVEL = 0.f; 	   // level of water free surface at start (H)
-	static constexpr float WATER_SCALE = 1.f;     // scale of water height features
+	static constexpr float WATER_SCALE = 4.f;     // scale of water height features
 	
 	// Decomposition Parameters
 	static constexpr int DIFFUSION_ITERATIONS = 128;  // number of iterations for diffusion step, more iterations means more stable but also more expensive
@@ -45,9 +45,9 @@ public:
     // static constexpr float DEPTH        = 2.5f;    // meters
     static constexpr float FETCH        = 200.f;    // kilometers
     static constexpr float WIND_SPEED   = 14.f;     // m/s
-    static constexpr float WIND_ANGLE   = 180.f;    // degrees from x-axis
-    static constexpr float SWELL        = 0.9f;     // [0, 1] // this has issues at 0 but it shouldn't, I can't find the bug, hunt down later
-    static constexpr float SWELL_ANGLE  = 180.f;    // degrees from x-axis
+    static constexpr float WIND_ANGLE   = 90.f;    // degrees from x-axis
+    static constexpr float SWELL        = 0.5f;     // [0, 1] // this has issues at 0 but it shouldn't, I can't find the bug, hunt down later
+    static constexpr float SWELL_ANGLE  = 90.f;    // degrees from x-axis
     static constexpr float CHOPPINESS   = 1.f;      // 
     static constexpr float FILTER_SMALL = 0.f;      // Set to really wide, not really using this right now 
     static constexpr float FILTER_BIG   = 10000.f;  // 
@@ -62,27 +62,27 @@ public:
 			 qtildePast_x, qtildePast_y, qAdvect_x, qAdvect_y, 
 			 hPast, hbarOld, htildeOld, 
 			 hHat, qHat_x, qHat_y, qHat_x_array, qHat_y_array;
-    GPUField HPos, HNeg, HHigh, UHigh_x, UHigh_y, DelS_x, DelS_y, // Outputs of PopulateSpectrum, PropagateWaves (complex arrays)
-             htildeFFT, utildeFFT_x, utildeFFT_y, delS_x, delS_y, // iFFT'd variables after interpolation
+    GPUField HPos, HNeg, HProp, HHigh, UHigh_x, UHigh_y, DelS_x, DelS_y, // Outputs of PopulateSpectrum, PropagateWaves (complex arrays)
+             hFFT, htildeFFT, utildeFFT_x, utildeFFT_y, delS_x, delS_y, // iFFT'd variables after interpolation
 			 qHatFFT_x, qHatFFT_y, qHatFFT_x_array, qHatFFT_y_array, disp_x, disp_y; // clean this up later to remove the one I don't use
             // two options: can interpolate then feed back in, or not interpolate before feeding in. For now just gonna not interpolate, see how it works. 
             // if interpolate: output of Propagate is complex array, iFFT in place, interpolate to real, mult real to make complex, FFT back
             // if NOT interp : output of Propagate is complex array, iFFT in place, mult (use real parts) to make complex array, FFT back
              
-	GPUField* fields[37] = {
+	GPUField* fields[40] = {
 		&terrain, &H, &Q_x, &Q_y, &h, &q_x, &q_y,
 		&HPast, &QPast_x, &QPast_y, &alpha_H, &alpha_Q_x, &alpha_Q_y,
 		&hbar, &qbar_x, &qbar_y, &htilde, &qtilde_x, &qtilde_y,
 		&ubar_x, &ubar_y, &ubarNew_x, &ubarNew_y,
 		&qtildePast_x, &qtildePast_y, &qAdvect_x, &qAdvect_y,
 		&hPast, &hbarOld, &htildeOld, 
-        &htildeFFT, &utildeFFT_x, &utildeFFT_y, &delS_x, &delS_y, &disp_x, &disp_y
+        &hFFT, &htildeFFT, &utildeFFT_x, &utildeFFT_y, &delS_x, &delS_y, &disp_x, &disp_y, &qHatFFT_x, &qHatFFT_y
         };
-	GPUField* fields_complex[5] = {&hHat, &qHat_x, &qHat_y, 
-		&qHatFFT_x, &qHatFFT_y
+	GPUField* fields_complex[3] = {&hHat, &qHat_x, &qHat_y, 
+		
 	};
-	GPUField* fields_arrays[11] = {&qHat_x_array, &qHat_y_array, 
-        &HPos, &HNeg, &HHigh, &UHigh_x, &UHigh_y, &DelS_x, &DelS_y, &qHatFFT_x_array, &qHatFFT_y_array
+	GPUField* fields_arrays[12] = {&qHat_x_array, &qHat_y_array, 
+        &HPos, &HNeg, &HProp, &HHigh, &UHigh_x, &UHigh_y, &DelS_x, &DelS_y, &qHatFFT_x_array, &qHatFFT_y_array
 	};
 	GPUBuffer depth;
 
