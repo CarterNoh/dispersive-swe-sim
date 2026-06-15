@@ -33,6 +33,7 @@ cbuffer Constants : register(b0) {
     float filterBig;
     float filterWidth;
     float filterMin;
+    float lambda;
 };
 
 #define G 9.80665f
@@ -292,7 +293,7 @@ float AmpFilter(float k, int filterInvert) {
 
 
 ///////////////// Shaders /////////////////
-StructuredBuffer<float> depth : register(t11);
+StructuredBuffer<float> depth : register(t9);
 
 RWTexture2DArray<float2> HPosOut: register(u0);
 RWTexture2DArray<float2> HNegOut: register(u1);
@@ -413,8 +414,8 @@ void PropagateWaves(uint3 id : SV_DispatchThreadID) {
 
     
     // Filter into high and low frequency - high goes to Airy, low goes to SWE
-    float kCrossover = N_2 * dK / 2.f; // =PI/(2*cellSize), midpoint of range of k in one direction, revisit later
-    float kWidth = kCrossover / 4.f; // one eigth of domain size of k, idk this is starting guess
+    float kCrossover = N_2 * dK / 3.f; // =PI/(2*cellSize), midpoint of range of k in one direction, revisit later
+    float kWidth = kCrossover / 3.f; // one eigth of domain size of k, idk this is starting guess
     float kFilter = 0.5f * (1 + SafeTanh((abs(k) - kCrossover) / kWidth));
     float2 HHigh = HProp * kFilter;
     float2 HLow = HProp - HHigh;

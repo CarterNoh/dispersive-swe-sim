@@ -121,7 +121,7 @@ void Sim::Init(GPU* gpu) {
 		gpu->UploadToGPU(fields_arrays[i]->tex, temp, GRIDSIZE, true, DEPTH_NUM);
 	}
 	gpu->CreateBuffer(&depth, depths.data(), DEPTH_NUM);
-	gpu->BindSRV(11, depth.srv);
+	gpu->BindSRV(9, depth.srv);
 	std::vector<float> terrain_temp = SetTerrain();
 	std::vector<float> h_temp = SetWater(terrain_temp);
 	std::vector<float> H_temp(GRIDSIZE*GRIDSIZE, 0.0f);
@@ -245,6 +245,7 @@ void Sim::FFTStep() {
     gpu->Dispatch(CalcQFFT, 
 		{htildeFFT.srv, utildeFFT_x.srv, utildeFFT_y.srv}, 
 		{qHatFFT_x.uav, qHatFFT_y.uav});
+	
     gpu->ExecuteFFT(qHatFFT_x.uav, GRIDSIZE, false);
     gpu->ExecuteFFT(qHatFFT_y.uav, GRIDSIZE, false);
 }
@@ -260,7 +261,7 @@ void Sim::eWaveStep() {
 
 	// Compute eWave
 	gpu->Dispatch(CalcEWave, 
-		{hHat.srv, qHat_x.srv, qHat_y.srv},// , qHatFFT_x.srv, qHatFFT_y.srv
+		{hHat.srv, qHat_x.srv, qHat_y.srv, qHatFFT_x.srv, qHatFFT_y.srv},// 
 		{qHat_x_array.uav, qHat_y_array.uav}, DEPTH_NUM);
 
 	// Inverse FFT fourier variables
@@ -273,6 +274,7 @@ void Sim::eWaveStep() {
 		{qtilde_x.uav, qtilde_y.uav}, DEPTH_NUM);
 	// gpu->Dispatch(ApplyBoundaries, {}, 
 	// 	{qtilde_x.uav, qtilde_y.uav});
+	
 }
 
 void Sim::SWEStep() {
@@ -286,7 +288,7 @@ void Sim::SWEStep() {
 	// Compute time derivative of u_bar and integrate to get new u_bar, then 
 	// transfer back to flow rate using upwinding on most recent hbar
 	gpu->Dispatch(CalcSWE,
-		{ubar_x.srv, ubar_y.srv, hbar.srv, H.srv}, 
+		{ubar_x.srv, ubar_y.srv, hbar.srv, H.srv, delS_x.srv, delS_y.srv}, 
 		{ubarNew_x.uav, ubarNew_y.uav, qbar_x.uav, qbar_y.uav});
 	// gpu->Dispatch(ApplyBoundaries, {}, 
 	// 	{ubarNew_x.uav, ubarNew_y.uav, qbar_x.uav, qbar_y.uav});
@@ -303,8 +305,7 @@ void Sim::TransportStep() {
 	std::swap(qtilde_y, qtildePast_y);
 	gpu->Dispatch(UpdateTilde, 
 		{ubarNew_x.srv, ubar_x.srv, ubarNew_y.srv, ubar_y.srv, 
-			qtildePast_x.srv, qtildePast_y.srv, h.srv, htilde.srv, 
-			htildeFFT.srv, qHatFFT_x.srv, qHatFFT_y.srv},
+			qtildePast_x.srv, qtildePast_y.srv, h.srv, htilde.srv, htildeFFT.srv},
 		{htilde.uav, qtilde_x.uav, qtilde_y.uav});	
 	// gpu->Dispatch(ApplyBoundaries, {}, 
 	// 	{htilde.uav, qtilde_x.uav, qtilde_y.uav});

@@ -30,6 +30,7 @@ cbuffer Constants : register(b0) {
     float filterBig;
     float filterWidth;
     float filterMin;
+    float lambda;
 };
 
 #define GRAVITY 9.80665
@@ -45,9 +46,7 @@ Texture2D<float>   in5 : register(t5);
 Texture2D<float>   in6 : register(t6);
 Texture2D<float>   in7 : register(t7);
 Texture2D<float>   in8 : register(t8);
-Texture2D<float>   in9 : register(t9);
-Texture2D<float>   in10: register(t10);
-StructuredBuffer<float> in11 : register(t11);
+StructuredBuffer<float> in9 : register(t9);
 RWTexture2D<float> out0: register(u0);
 RWTexture2D<float> out1: register(u1);
 RWTexture2D<float> out2: register(u2);
@@ -321,16 +320,8 @@ void CalcQFFT(uint3 id : SV_DispatchThreadID) {
     // In: htildeFFT, utildeFFT_x, utildeFFT_y (complex, from iFFT)
     // Out: qtildeFFT_x, qtildeFFT_y (complex, ready to FFT)
     // Calculates qFFT (at cell centers) from fft sim's height and velocity
-
-    // Option 1: Interpolate before calculating Q - h, ux, uy are complex, no arrays; output is complex, not array
     out0[id.xy] = float2(in0[id.xy].x * in1[id.xy].x, 0);
     out1[id.xy] = float2(in0[id.xy].x * in2[id.xy].x, 0);
-    // out0[id.xy] = in0[id.xy].x * in1[id.xy].x;
-    // out1[id.xy] = in0[id.xy].x * in2[id.xy].x;
-
-    // // Option 2: NOT Interpolate before calculating Q - h, ux, uy are complex arrays, output is complex array
-    // out0[id] = float2(in0[id.xy].x * in1[id].x, 0);
-    // out1[id] = float2(in0[id.xy].x * in2[id].x, 0);
 }
 
 
@@ -486,12 +477,7 @@ void UpdateTilde(uint3 id : SV_DispatchThreadID) {
     out0[curr] = in7[curr] * exp(-div_ubar * timeStep);
 
     // Numerical relaxation to incorporate FFT waves
-    // float lambda = 0.5f;
-    // out0[curr] += lambda * (out0[curr] - in8[curr]);
-    // out1[curr] += lambda * (out1[curr] - in9[curr]);
-    // out2[curr] += lambda * (out2[curr] - in10[curr]);
-    // out1[curr] = LimitFlowRate(out1[curr], in6[curr], in6[right]); 
-    // out2[curr] = LimitFlowRate(out2[curr], in6[curr], in6[up]);
+    out0[curr] += lambda * (in8[curr] - out0[curr]);
 }
 
 [numthreads(16, 16, 1)]
@@ -616,7 +602,7 @@ void CalcEWave(uint3 id : SV_DispatchThreadID) {
     float beta = sqrt((2.0 / (k * cellSize)) * sin(k * cellSize / 2.0)); // From their 1D code, but different from paper
     // float beta = sqrt((2.0 * k / cellSize) * sin(k * cellSize / 2.0)); // correct formula from paper, but not stable?
     // Angular frequency for dispersion relation
-    float omega = sqrt(GRAVITY * k * SafeTanh(k * in11[id.z])) / beta;
+    float omega = sqrt(GRAVITY * k * SafeTanh(k * in9[id.z])) / beta;
     float S = sin(omega * timeStep) * omega / (k * k);
     float C = cos(omega * timeStep);
     float Cx = 1 + (C-1) * kx2;
@@ -665,15 +651,12 @@ void CalcEWave(uint3 id : SV_DispatchThreadID) {
         qhat_y_array[id] = float2(qhat_y_array[id].x, 0.0f);
     }
 
-    // // Numerical relaxation to incorporate FFT flow
-    // float kCrossover = N_2 * dK / 2.f; // =PI/cellSize, midpoint of range of k in one direction, revisit later
-    // float kWidth = kCrossover / 4.f; // one eigth of domain size of k, idk this is starting guess
-    // float kFilter = 1.f;//0.5f * (1 + SafeTanh((abs(k) - kCrossover) / kWidth)); // injection strength, based off decomposition 
-    // float lambda = 1.f;
-    // qhat_x_array[id] += lambda * kFilter * (qhatFFT_x[id.xy] - qhat_x_array[id]);
-    // qhat_y_array[id] += lambda * kFilter * (qhatFFT_y[id.xy] - qhat_y_array[id]);
-    qhat_x_array[id] = qhatFFT_x[id.xy];
-    qhat_y_array[id] = qhatFFT_y[id.xy];
+    // Numerical relaxation to incorporate FFT flow
+    float kCrossover = N_2 * dK / 4.f; // =PI/cellSize, midpoint of range of k in one direction, revisit later
+    float kWidth = kCrossover / 4.f;
+    float kFilter = 0.5f * (1 + SafeTanh((abs(k) - kCrossover) / kWidth)); // injection strength, based off decomposition 
+    qhat_x_array[id] += lambda * kFilter * (qhatFFT_x[id.xy] - qhat_x_array[id]);
+    qhat_y_array[id] += lambda * kFilter * (qhatFFT_y[id.xy] - qhat_y_array[id]);
 }
 
 Texture2D<float>       hbar        : register(t0);
@@ -694,17 +677,17 @@ void InterpQ(uint3 id : SV_DispatchThreadID) {
     int d1_x = 0;
     int d1_y = 0;
     for (int d = 0; d < depthNum; d++) {
-        if (waterDepth_x >= in11[d]) d1_x = d;
-        if (waterDepth_y >= in11[d]) d1_y = d;
+        if (waterDepth_x >= in9[d]) d1_x = d;
+        if (waterDepth_y >= in9[d]) d1_y = d;
     }
     int d2_x = min(depthNum - 1, d1_x + 1);
     int d2_y = min(depthNum - 1, d1_y + 1);
     float sx = 0.f;
     float sy = 0.f;
     if (d1_x != d2_x)
-        sx = (in11[d2_x] - waterDepth_x) / (in11[d2_x] - in11[d1_x]);
+        sx = (in9[d2_x] - waterDepth_x) / (in9[d2_x] - in9[d1_x]);
     if (d1_y != d2_y)
-        sy = (in11[d2_y] - waterDepth_y) / (in11[d2_y] - in11[d1_y]);
+        sy = (in9[d2_y] - waterDepth_y) / (in9[d2_y] - in9[d1_y]);
     qtilde_x[id.xy] = sx * qHat_x_array[uint3(id.x, id.y, d1_x)].x + (1.f - sx) * qHat_x_array[uint3(id.x, id.y, d2_x)].x;
     qtilde_y[id.xy] = sy * qHat_y_array[uint3(id.x, id.y, d1_y)].x + (1.f - sy) * qHat_y_array[uint3(id.x, id.y, d2_y)].x;
 }
