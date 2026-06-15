@@ -308,8 +308,8 @@ void CalcUbar(uint3 id : SV_DispatchThreadID) {
     uint2 up    = uint2(id.x, min(id.y + 1, gridSize - 1));
 
     // First-Order Up-Winding
-    float hx = (ubar_x >= 0.f || id.x == gridSize-1) ? in2[id.xy] : in2[right];
-    float hy = (ubar_y >= 0.f || id.y == gridSize-1) ? in2[id.xy] : in2[up];
+    float hx = (in0[id.xy] >= 0.f || id.x == gridSize-1) ? in2[id.xy] : in2[right];
+    float hy = (in1[id.xy] >= 0.f || id.y == gridSize-1) ? in2[id.xy] : in2[up];
     float ubar_x = in0[id.xy] / max(minWaterHeight, hx);
     float ubar_y = in1[id.xy] / max(minWaterHeight, hy);
 
