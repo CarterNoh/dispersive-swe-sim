@@ -18,6 +18,7 @@ cbuffer Constants : register(b0) {
     float deltaT;
     float diffusionPenalty;
     // SWE & Transport Params
+    float slopeLimit;
     float cflCondition;
     float gammaTransport;
     // eWave Params

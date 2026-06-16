@@ -21,7 +21,7 @@ public:
 
 	// Terrain & Water Parameters
 	static constexpr int TERRAIN_TYPE = 4; 		   // 0 = flat, 1 = ramp, 2 = bumps, 3 = basins, 4 = beach, 5 = 1D hill, 6 = 2D hill
-	static constexpr int WATER_TYPE   = 1; 		   // 0 = flat, 1 = step/dam break, 2 = diagonal slope, 3 = splash, 4 = ripples, 5 = basin flood
+	static constexpr int WATER_TYPE   = 0; 		   // 0 = flat, 1 = step/dam break, 2 = diagonal slope, 3 = splash, 4 = ripples, 5 = basin flood
 	static constexpr float TERRAIN_HEIGHT = -13.f; // base height of terrain features (meters)
 	static constexpr float TERRAIN_SCALE = 20.f;    // scale of terrain features (meters)
 	static constexpr float WATER_LEVEL = 0.f; 	   // level of water free surface at start (H)
@@ -37,22 +37,23 @@ public:
 	int DEPTH_NUM = depths.size(); // number of discrete water depth solutions to compute for eWave dispersion correction
 
 	// Transport Parameters
+	static constexpr float SLOPE_LIMIT = 1.f; 		// 
 	static constexpr float CFL_CONDITION = 0.25f;  // max allowed CFL condition for stability of SWE step, can be higher than overall CFL condition since diffusion and transport steps handle stability as well
-	static constexpr float GAMMA_TRANSPORT = 0.25f; // blending factor for transport step, higher means more stable but also more damping of waves
+	static constexpr float GAMMA_TRANSPORT = 0.25f; // blending factor for transport step, lower means more damping of waves
 
     // FFT Parameters
     float time = 0.f;
     static constexpr float FETCH        = 200.f;    // kilometers
     static constexpr float WIND_SPEED   = 14.f;     // m/s, at 10 meters above surface
-    static constexpr float WIND_ANGLE   = 180.f;    // degrees from x-axis
+    static constexpr float WIND_ANGLE   = 135.f;    // degrees from x-axis
     static constexpr float SWELL        = 0.3f;     // [0, 1] // this has issues at 0 but it shouldn't, I can't find the bug, hunt down later
-    static constexpr float SWELL_ANGLE  = 180.f;    // degrees from x-axis
+    static constexpr float SWELL_ANGLE  = 135.f;    // degrees from x-axis
     static constexpr float CHOPPINESS   = 1.f;      // Amount of horizontal displacement in waves
     static constexpr float FILTER_SMALL = 0.f;      // Set to really wide, not really using this right now 
     static constexpr float FILTER_BIG   = 10000.f;  // 
     static constexpr float FILTER_WIDTH = 1.f;      // 
     static constexpr float FILTER_MIN   = 0.01f;    // 
-	static constexpr float DEPTH_CUTOFF = 6.f; 		// depth to start attenuating FFT waves
+	static constexpr float DEPTH_CUTOFF = 8.f; 		// depth to start attenuating FFT waves
 
 	// Simulation variables
 	GPUField terrain, H, Q_x, Q_y, h, q_x, q_y, 
@@ -120,7 +121,7 @@ private:
     // Constants
 	SimConstants constants = {time, GRIDSIZE, CELLSIZE, TIMESTEP, BOUNDARY_TYPE, MIN_WATER_HEIGHT, SURFACE_TENSION, DENSITY, // Sim Params
 							  DIFFUSION_ITERATIONS, DELTA_T, DIFFUSION_PENALTY, // Diffusion Params
-							  CFL_CONDITION, GAMMA_TRANSPORT, DEPTH_NUM,// SWE & eWave Params
+							  SLOPE_LIMIT, CFL_CONDITION, GAMMA_TRANSPORT, DEPTH_NUM, // SWE & eWave Params
 							  FETCH, WIND_SPEED, WIND_ANGLE, SWELL, SWELL_ANGLE, CHOPPINESS, // FFT Params
 							  FILTER_SMALL, FILTER_BIG, FILTER_WIDTH, FILTER_MIN, DEPTH_CUTOFF};    
 	RenderConstants render_constants = {DirectX::XMMatrixIdentity(), (float)GRIDSIZE, CELLSIZE};

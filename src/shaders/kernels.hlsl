@@ -15,6 +15,7 @@ cbuffer Constants : register(b0) {
     float deltaT;
     float diffusionPenalty;
     // SWE & Transport Params
+    float slopeLimit;
     float cflCondition;
     float gammaTransport;
     // eWave Params
@@ -342,7 +343,7 @@ void CalcUbar(uint3 id : SV_DispatchThreadID) {
 
 [numthreads(16, 16, 1)]
 void CalcSWE(uint3 id : SV_DispatchThreadID) {
-    // Inputs: in0 = ubar_x, in1 = ubar_y, in2 = hbar, in3 = H, in4 = delH_x, delH_y
+    // Inputs: in0 = ubar_x, in1 = ubar_y, in2 = hbar, in3 = H, in4 = delHfft_x, delHfft_y
     // Outputs: out0 = ubarNew_x, out1 = ubarNew_y, out2 = qbar_x, out3 = qbar_y
     if (id.x >= (uint)(gridSize) || id.y >= (uint)(gridSize)) return;
 
@@ -390,8 +391,14 @@ void CalcSWE(uint3 id : SV_DispatchThreadID) {
     // float duy_dt = - (1/cellSize) * ((q_y_0/h_y_p05) * (in1[curr] - in1[down]) + (q_x_m05/h_y_p05) * (in1[curr] - in1[left]));
     float dux_dt = - (1/(cellSize * h_x_p05)) * ((q_x_1 * u_star_x_1 - q_x_0 * u_star_x_0) - in0[curr] * (q_x_1 - q_x_0));
     float duy_dt = - (1/(cellSize * h_y_p05)) * ((q_y_1 * u_star_y_1 - q_y_0 * u_star_y_0) - in1[curr] * (q_y_1 - q_y_0));
-    dux_dt -= (1/cellSize) * GRAVITY * (in3[right] - in3[curr]); // gravitational force
-    duy_dt -= (1/cellSize) * GRAVITY * (in3[up]    - in3[curr]);
+    
+    // Incorporate gravity force and limit steep waves
+    float gradh_x = (in3[right] - in3[curr]) / cellSize;
+    float gradh_y = (in3[up] - in3[curr]) / cellSize;
+    if (abs(gradh_x) > slopeLimit) gradh_x = sign(gradh_x) * slopeLimit; // When wave gets too steep, it "crashes"
+    if (abs(gradh_y) > slopeLimit) gradh_y = sign(gradh_y) * slopeLimit; // https://arxiv.org/html/2503.03009v1
+    dux_dt -= GRAVITY * gradh_x; // gravitational force
+    duy_dt -= GRAVITY * gradh_y;
 
     // Calculate FFT wave forcing
     float depth_weight = SafeTanh(in2[curr] / depthCutoff); // scaling term to reduce FFT waves in shallow water
