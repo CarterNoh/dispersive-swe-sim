@@ -43,17 +43,16 @@ public:
     // FFT Parameters
     float time = 0.f;
     static constexpr float FETCH        = 200.f;    // kilometers
-    static constexpr float WIND_SPEED   = 14.f;     // m/s
-    static constexpr float WIND_ANGLE   = 90.f;    // degrees from x-axis
-    static constexpr float SWELL        = 0.5f;     // [0, 1] // this has issues at 0 but it shouldn't, I can't find the bug, hunt down later
-    static constexpr float SWELL_ANGLE  = 90.f;    // degrees from x-axis
-    static constexpr float CHOPPINESS   = 1.f;      // 
+    static constexpr float WIND_SPEED   = 14.f;     // m/s, at 10 meters above surface
+    static constexpr float WIND_ANGLE   = 180.f;    // degrees from x-axis
+    static constexpr float SWELL        = 0.3f;     // [0, 1] // this has issues at 0 but it shouldn't, I can't find the bug, hunt down later
+    static constexpr float SWELL_ANGLE  = 180.f;    // degrees from x-axis
+    static constexpr float CHOPPINESS   = 1.f;      // Amount of horizontal displacement in waves
     static constexpr float FILTER_SMALL = 0.f;      // Set to really wide, not really using this right now 
     static constexpr float FILTER_BIG   = 10000.f;  // 
     static constexpr float FILTER_WIDTH = 1.f;      // 
     static constexpr float FILTER_MIN   = 0.01f;    // 
-	static constexpr float LAMBDA_HIGH  = 0.f;     // relaxation strength for high-freq FFT injection 
-	static constexpr float LAMBDA_LOW   = TERRAIN_HEIGHT/2;     // relaxation strength for low-freq FFT injection 
+	static constexpr float DEPTH_CUTOFF = 6.f; 		// depth to start attenuating FFT waves
 
 	// Simulation variables
 	GPUField terrain, H, Q_x, Q_y, h, q_x, q_y, 
@@ -63,25 +62,21 @@ public:
 			 qtildePast_x, qtildePast_y, qAdvect_x, qAdvect_y, 
 			 hPast, hbarOld, htildeOld, 
 			 hHat, qHat_x, qHat_y, qHat_x_array, qHat_y_array;
-    GPUField HPos, HNeg, HProp, HHigh, UHigh_x, UHigh_y, DelS_x, DelS_y, // Outputs of PopulateSpectrum, PropagateWaves (complex arrays)
-             hFFT, htildeFFT, utildeFFT_x, utildeFFT_y, delS_x, delS_y, // iFFT'd variables after interpolation
-			 qHatFFT_x, qHatFFT_y, disp_x, disp_y;
+    GPUField HPos, HNeg, HProp, DelH_x, DelH_y, Disp_x, Disp_y, // Outputs of PopulateSpectrum, PropagateWaves (complex arrays)
+             hFFT, delH_x, delH_y, disp_x, disp_y; // iFFT'd variables after interpolation
              
-	GPUField* fields[38] = {
+	GPUField* fields[35] = {
 		&terrain, &H, &Q_x, &Q_y, &h, &q_x, &q_y,
 		&HPast, &QPast_x, &QPast_y, &alpha_H, &alpha_Q_x, &alpha_Q_y,
 		&hbar, &qbar_x, &qbar_y, &htilde, &qtilde_x, &qtilde_y,
 		&ubar_x, &ubar_y, &ubarNew_x, &ubarNew_y,
 		&qtildePast_x, &qtildePast_y, &qAdvect_x, &qAdvect_y,
 		&hPast, &hbarOld, &htildeOld, 
-        &hFFT, &htildeFFT, &utildeFFT_x, &utildeFFT_y, &delS_x, &delS_y, &disp_x, &disp_y, 
+        &hFFT, &delH_x, &delH_y, &disp_x, &disp_y, 
         };
-	GPUField* fields_complex[5] = {&hHat, &qHat_x, &qHat_y, 
-		&qHatFFT_x, &qHatFFT_y
-	};
-	GPUField* fields_arrays[10] = {&qHat_x_array, &qHat_y_array, 
-        &HPos, &HNeg, &HProp, &HHigh, &UHigh_x, &UHigh_y, &DelS_x, &DelS_y
-	};
+	GPUField* fields_complex[3] = {&hHat, &qHat_x, &qHat_y};
+	GPUField* fields_arrays[9] = {&qHat_x_array, &qHat_y_array, 
+        &HPos, &HNeg, &HProp, &DelH_x, &DelH_y, &Disp_x, &Disp_y};
 	GPUBuffer depth;
 
 	GPU* gpu;
@@ -109,14 +104,14 @@ private:
 
 	// Compute Shaders
 	ID3D11ComputeShader *ApplyBoundaries, *InitDecomp, *CalcDiffusionCoeffs, *DiffusionStep, *DecomposeFields, 
-						*CalcQFFT, *CalcUbar, *CalcSWE, *UpdateTilde, *CalcQAdvect, *IntegrateH, 
+						*CalcUbar, *CalcSWE, *UpdateTilde, *CalcQAdvect, *IntegrateH, 
 						*TransferToFFT, *CalcEWave, *InterpQ;
-	ID3D11ComputeShader** shaders[14] = {
+	ID3D11ComputeShader** shaders[13] = {
 						&ApplyBoundaries, &InitDecomp, &CalcDiffusionCoeffs, &DiffusionStep, &DecomposeFields, 
-						&CalcQFFT, &CalcUbar, &CalcSWE, &UpdateTilde, &CalcQAdvect, &IntegrateH, 
+						&CalcUbar, &CalcSWE, &UpdateTilde, &CalcQAdvect, &IntegrateH, 
 						&TransferToFFT, &CalcEWave, &InterpQ};
-	char* names[14] = {"ApplyBoundaries", "InitDecomp", "CalcDiffusionCoeffs", "DiffusionStep", "DecomposeFields", 
-					   "CalcQFFT", "CalcUbar", "CalcSWE", "UpdateTilde", "CalcQAdvect", "IntegrateH", 
+	char* names[13] = {"ApplyBoundaries", "InitDecomp", "CalcDiffusionCoeffs", "DiffusionStep", "DecomposeFields", 
+					   "CalcUbar", "CalcSWE", "UpdateTilde", "CalcQAdvect", "IntegrateH", 
 					   "TransferToFFT", "CalcEWave", "InterpQ"};
     // FFT Wave Compute Shaders
 	ID3D11ComputeShader *PopulateSpectrum, *PropagateWaves, *Interp;
@@ -127,6 +122,6 @@ private:
 							  DIFFUSION_ITERATIONS, DELTA_T, DIFFUSION_PENALTY, // Diffusion Params
 							  CFL_CONDITION, GAMMA_TRANSPORT, DEPTH_NUM,// SWE & eWave Params
 							  FETCH, WIND_SPEED, WIND_ANGLE, SWELL, SWELL_ANGLE, CHOPPINESS, // FFT Params
-							  FILTER_SMALL, FILTER_BIG, FILTER_WIDTH, FILTER_MIN, LAMBDA_HIGH, LAMBDA_LOW};    
+							  FILTER_SMALL, FILTER_BIG, FILTER_WIDTH, FILTER_MIN, DEPTH_CUTOFF};    
 	RenderConstants render_constants = {DirectX::XMMatrixIdentity(), (float)GRIDSIZE, CELLSIZE};
 };

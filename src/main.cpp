@@ -175,7 +175,7 @@ int RunWithRender() {
     // Set up a camera looking at the center of the grid
     RenderConstants rConsts = InitCamera(sim.GRIDSIZE);
     sim.gpu->UpdateRenderConstants(rConsts);
-    sim.gpu->Render(sim.H.srv);
+    // sim.gpu->Render(sim.H.srv);
 
     // Loop
     MSG msg = {};
@@ -192,8 +192,8 @@ int RunWithRender() {
             DispatchMessage(&msg);
         }
         sim.SimStep();
-        sim.gpu->Render(sim.H.srv);
-        // sim.gpu->Render({sim.H.srv, sim.disp_x.srv, sim.disp_y.srv});
+        // sim.gpu->Render(sim.H.srv);
+        sim.gpu->Render({sim.H.srv, sim.disp_x.srv, sim.disp_y.srv});
         // sim.gpu->Render({sim.H.srv});
         tick++;
         if (tick >= numTicks) running = false;

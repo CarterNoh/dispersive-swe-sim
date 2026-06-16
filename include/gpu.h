@@ -39,8 +39,7 @@ struct alignas(16) SimConstants {
     float filterBig;
     float filterWidth;
     float filterMin;
-    float lambdaHigh;
-    float lambdaLow;
+    float depthCutoff;
 };
 
 struct alignas(16) FFTConstants {
@@ -104,8 +103,8 @@ public:
     bool CreateGridMesh(int gridSize);
     bool CompileVertexShader(const std::wstring& file, const std::string& entryPoint);
     bool CompilePixelShader(const std::wstring& file, const std::string& entryPoint);
-    void Render(ID3D11ShaderResourceView* heightSRV);
-    // void Render(const std::vector<ID3D11ShaderResourceView*>& srvs);
+    // void Render(ID3D11ShaderResourceView* heightSRV);
+    void Render(const std::vector<ID3D11ShaderResourceView*>& srvs);
     
 
 private:

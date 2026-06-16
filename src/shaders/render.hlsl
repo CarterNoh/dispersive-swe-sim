@@ -7,8 +7,8 @@ cbuffer RenderParams : register(b0) {
 
 // --- INPUT TEXTURE (SRV) ---
 Texture2D<float> HeightMap : register(t0);
-// Texture2D<float> DispXMap  : register(t1);
-// Texture2D<float> DispYMap  : register(t2);
+Texture2D<float> DispXMap  : register(t1);
+Texture2D<float> DispYMap  : register(t2);
 SamplerState PointSampler  : register(s0);
 
 struct Vertex {
@@ -28,11 +28,11 @@ Pixel VSMain(Vertex input) {
     // Convert flat vertex position to texture UV coordinates (0.0 to 1.0)
     float2 uv = input.position / (gridSize - 1);
     float h = HeightMap.SampleLevel(PointSampler, uv, 0);
-    // float dx = DispXMap.SampleLevel(PointSampler, uv, 0);
-    // float dy = DispYMap.SampleLevel(PointSampler, uv, 0);
+    float dx = DispXMap.SampleLevel(PointSampler, uv, 0);
+    float dy = DispYMap.SampleLevel(PointSampler, uv, 0);
     float scale = 1.f;
-    float3 wPos = float3(input.position.x, h * scale, input.position.y);
-    // float3 wPos = float3(input.position.x + dx, h * scale, input.position.y + dy);
+    // float3 wPos = float3(input.position.x, h * scale, input.position.y);
+    float3 wPos = float3(input.position.x + dx, h * scale, input.position.y + dy);
     
     // Project to the screen
     output.position = mul(float4(wPos, 1.0f), viewProjection);
