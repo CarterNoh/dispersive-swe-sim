@@ -320,21 +320,15 @@ void CalcUbar(uint3 id : SV_DispatchThreadID) {
     // Inputs: in0 = qbar_x, in1 = qbar_y, in2 = hbarOld
     // Outputs: out0 = ubar_x, out1 = ubar_y
     if (id.x >= (uint)(gridSize) || id.y >= (uint)(gridSize)) return;
-    
-    float ubar_x = in0[id.xy];
-    float ubar_y = in1[id.xy];
 
-    uint2 xplus = uint2(min(id.x + 1, gridSize - 1), id.y);
-    uint2 yplus = uint2(id.x, min(id.y + 1, gridSize - 1));
+    uint2 right = uint2(min(id.x + 1, gridSize - 1), id.y);
+    uint2 up    = uint2(id.x, min(id.y + 1, gridSize - 1));
+
     // First-Order Up-Winding
-    if (ubar_x >= 0.f || id.x == gridSize-1)
-        ubar_x /= max(minWaterHeight, in2[id.xy]);
-    else
-        ubar_x /= max(minWaterHeight, in2[xplus]);
-    if (ubar_y >= 0.f || id.y == gridSize-1)
-        ubar_y /= max(minWaterHeight, in2[id.xy]);
-    else
-        ubar_y /= max(minWaterHeight, in2[id.xy + uint2(0,1)]);
+    float hx = (in0[id.xy] >= 0.f || id.x == gridSize-1) ? in2[id.xy] : in2[right];
+    float hy = (in1[id.xy] >= 0.f || id.y == gridSize-1) ? in2[id.xy] : in2[up];
+    float ubar_x = in0[id.xy] / max(minWaterHeight, hx);
+    float ubar_y = in1[id.xy] / max(minWaterHeight, hy);
 
     // Enforcing CFL condition for later surface waves advection
     out0[id.xy] = LimitVelocity(ubar_x);  
@@ -381,12 +375,12 @@ void CalcSWE(uint3 id : SV_DispatchThreadID) {
     float h_y_p05 = (in2[curr] + in2[up]) / 2.f;
 
     // Calculate corresponding values for u_x_(i,j) using upwinding
-    float u_star_x_0 = (q_x_0 >= 0.f) ? in0[left] : in0[curr];
-    float u_star_x_1 = (q_x_1 >= 0.f) ? in0[curr] : in0[right]; 
-    float u_star_y_0 = (q_y_0 >= 0.f) ? in1[down] : in1[curr];
-    float u_star_y_1 = (q_y_1 >= 0.f) ? in1[curr] : in1[up];   
+    float u_x_0 = (q_x_0 >= 0.f) ? in0[left] : in0[curr];
+    float u_x_1 = (q_x_1 >= 0.f) ? in0[curr] : in0[right]; 
+    float u_y_0 = (q_y_0 >= 0.f) ? in1[down] : in1[curr];
+    float u_y_1 = (q_y_1 >= 0.f) ? in1[curr] : in1[up];       
 
-    // Compute dux_dt and duy_dt
+    // Compute dux_dt and duy_dt 
     // float dux_dt = - (1/cellSize) * ((q_x_0/h_x_p05) * (in0[curr] - in0[left]) + (q_y_m05/h_x_p05) * (in0[curr] - in0[down]));
     // float duy_dt = - (1/cellSize) * ((q_y_0/h_y_p05) * (in1[curr] - in1[down]) + (q_x_m05/h_y_p05) * (in1[curr] - in1[left]));
     float dux_dt = - (1/(cellSize * h_x_p05)) * ((q_x_1 * u_star_x_1 - q_x_0 * u_star_x_0) - in0[curr] * (q_x_1 - q_x_0));
@@ -402,7 +396,7 @@ void CalcSWE(uint3 id : SV_DispatchThreadID) {
 
     // Calculate FFT wave forcing
     float depth_weight = SafeTanh(in2[curr] / depthCutoff); // scaling term to reduce FFT waves in shallow water
-    dux_dt += depth_weight * GRAVITY * in4[curr]; // wave pressure gradient 
+    dux_dt += depth_weight * GRAVITY * in4[curr]; // FFT wave pressure gradient 
     dux_dt += depth_weight * GRAVITY * in5[curr];
 
     // Integrate u, calculate q
