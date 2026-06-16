@@ -383,8 +383,8 @@ void CalcSWE(uint3 id : SV_DispatchThreadID) {
     // Compute dux_dt and duy_dt 
     // float dux_dt = - (1/cellSize) * ((q_x_0/h_x_p05) * (in0[curr] - in0[left]) + (q_y_m05/h_x_p05) * (in0[curr] - in0[down]));
     // float duy_dt = - (1/cellSize) * ((q_y_0/h_y_p05) * (in1[curr] - in1[down]) + (q_x_m05/h_y_p05) * (in1[curr] - in1[left]));
-    float dux_dt = - (1/(cellSize * h_x_p05)) * ((q_x_1 * u_star_x_1 - q_x_0 * u_star_x_0) - in0[curr] * (q_x_1 - q_x_0));
-    float duy_dt = - (1/(cellSize * h_y_p05)) * ((q_y_1 * u_star_y_1 - q_y_0 * u_star_y_0) - in1[curr] * (q_y_1 - q_y_0));
+    float dux_dt = - (1/(cellSize * h_x_p05)) * ((q_x_1 * u_x_1 - q_x_0 * u_x_0) - in0[curr] * (q_x_1 - q_x_0));
+    float duy_dt = - (1/(cellSize * h_y_p05)) * ((q_y_1 * u_y_1 - q_y_0 * u_y_0) - in1[curr] * (q_y_1 - q_y_0));
     
     // Incorporate gravity force and limit steep waves
     float gradh_x = (in3[right] - in3[curr]) / cellSize;
