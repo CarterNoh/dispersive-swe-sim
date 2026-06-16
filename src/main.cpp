@@ -16,7 +16,7 @@ extern "C" {
 namespace fs = std::filesystem;
 
 // Parameters
-int numTicks = 10000; // Number of simulation steps to run
+int numTicks = 2000; // Number of simulation steps to run
 bool render = true; // Whether to render the simulation or just run it headless
 
 void SaveToCSV(const std::vector<float>& h, int size, int tick) {
@@ -78,8 +78,6 @@ void SaveToCSV(const std::vector<std::complex<float>>& data, int size, int array
     }
     std::ofstream file(filename);
     if (!file.is_open()) return;
-    // // Header optimized for Python / Pandas DataFrames
-    // file << "x,y,layer,real,imag,magnitude\n";
     for (int layer = 0; layer < arraySize; ++layer) {
         int sliceOffset = layer * (size * size);
         for (int y = 0; y < size; ++y) {
@@ -112,7 +110,7 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
 RenderConstants InitCamera(int gridSize) {
     // These values must match those in the Vertex Shader
     float maxInitialHeight = 0.2f; 
-    float visualScale = 50.f;
+    float visualScale = 1.f;
     float trueMax = maxInitialHeight * visualScale;
 
     // Focus the camera on the center point
@@ -177,7 +175,7 @@ int RunWithRender() {
     // Set up a camera looking at the center of the grid
     RenderConstants rConsts = InitCamera(sim.GRIDSIZE);
     sim.gpu->UpdateRenderConstants(rConsts);
-    sim.gpu->Render(sim.H.srv);
+    // sim.gpu->Render(sim.H.srv);
 
     // Loop
     MSG msg = {};
@@ -194,7 +192,9 @@ int RunWithRender() {
             DispatchMessage(&msg);
         }
         sim.SimStep();
-        sim.gpu->Render(sim.H.srv);
+        // sim.gpu->Render(sim.H.srv);
+        sim.gpu->Render({sim.H.srv, sim.disp_x.srv, sim.disp_y.srv});
+        // sim.gpu->Render({sim.H.srv});
         tick++;
         if (tick >= numTicks) running = false;
     }
@@ -223,41 +223,39 @@ int RunHeadless() {
     std::vector<float> H(size * size);
     std::vector<std::complex<float>> hHat(size*size);
     std::vector<std::complex<float>> array;
-    sim.gpu->DownloadFromGPU(sim.terrain.tex, terrain, size);
+    // sim.gpu->DownloadFromGPU(sim.terrain.tex, terrain, size);
     // sim.gpu->DownloadFromGPU(sim.H.tex, H, size);
-    SaveToCSV(terrain, size, -1); // Save terrain data for reference
-    SaveToCSV(H, size, 0); // Save initial water height data
+    // SaveToCSV(terrain, size, -1); // Save terrain data for reference
+    // SaveToCSV(H, size, 0); // Save initial water height data
+    sim.gpu->DownloadFromGPU(sim.HPos.tex, array, size, arraySize);
+    SaveToCSV(array, size, arraySize, 0);
 
-    std::cout << "Starting simulation loop..." << std::endl;
-    auto totalStart = std::chrono::high_resolution_clock::now();
-    for (int tick = 1; tick < numTicks; ++tick) {
-        auto start = std::chrono::high_resolution_clock::now();
-        sim.SimStep();
-        sim.gpu->DownloadFromGPU(sim.qtilde_x.tex, H, size);
-        SaveToCSV(H, size, tick);
-        // SaveToCSV(hHat, size, tick);
-        // sim.gpu->DownloadFromGPU(sim.qHat_x_array.tex, array, size, arraySize);
-        // SaveToCSV(array, size, arraySize, tick);
+    // std::cout << "Starting simulation loop..." << std::endl;
+    // auto totalStart = std::chrono::high_resolution_clock::now();
+    // for (int tick = 1; tick < numTicks; ++tick) {
+    //     auto start = std::chrono::high_resolution_clock::now();
+    //     sim.SimStep();
+    //     sim.gpu->DownloadFromGPU(sim.H.tex, H, size);
+    //     SaveToCSV(H, size, tick);
+    //     // sim.gpu->DownloadFromGPU(sim.H.tex, hHat, size);
+    //     // SaveToCSV(hHat, size, tick);
+    //     // sim.gpu->DownloadFromGPU(sim.qHat_x_array.tex, array, size, arraySize);
+    //     // SaveToCSV(array, size, arraySize, tick);
 
-        auto sim_time = std::chrono::high_resolution_clock::now();
-        std::chrono::duration<double, std::milli> elapsed = sim_time - start;
-        std::cout << "Tick: " << tick << " | Simulation Time: " << elapsed.count() << "ms" << std::endl;
-    }
-    auto totalEnd = std::chrono::high_resolution_clock::now();
-    std::chrono::duration<double, std::milli> totalElapsed = totalEnd - totalStart;
-    std::cout << "Total Simulation Time for " << numTicks << " ticks: " << totalElapsed.count() << "ms" << std::endl;
-    std::cout << "Average Speed: " << ((totalElapsed.count() / 1000 / numTicks)) << " sec/tick" << std::endl;
-    std::cout << "FPS: " << (1000.0 / (totalElapsed.count() / numTicks)) << " frames/sec" << std::endl;
+    //     auto sim_time = std::chrono::high_resolution_clock::now();
+    //     std::chrono::duration<double, std::milli> elapsed = sim_time - start;
+    //     std::cout << "Tick: " << tick << " | Simulation Time: " << elapsed.count() << "ms" << std::endl;
+    // }
+    // auto totalEnd = std::chrono::high_resolution_clock::now();
+    // std::chrono::duration<double, std::milli> totalElapsed = totalEnd - totalStart;
+    // std::cout << "Total Simulation Time for " << numTicks << " ticks: " << totalElapsed.count() << "ms" << std::endl;
+    // std::cout << "Average Speed: " << ((totalElapsed.count() / 1000 / numTicks)) << " sec/tick" << std::endl;
+    // std::cout << "FPS: " << (1000.0 / (totalElapsed.count() / numTicks)) << " frames/sec" << std::endl;
 
     return 0;
 }
 
 int main() {
-
-    if (render) {
-        return RunWithRender();
-    }
-    else {
-        return RunHeadless();
-    }
+    if (render) return RunWithRender();
+    else        return RunHeadless();
 }

@@ -1,26 +1,37 @@
-// Constant buffer matching the C++ struct
+// Shaders executing steps of algorithm outlined in "Generalizing Shallow Water Simulations with Dispersive Surface Waves"
+
 cbuffer Constants : register(b0) {
-    // Sim params
+    float time;
+    // Sim Params
     int gridSize; 
     float cellSize;
     float timeStep;
     int boundaryType;
     float minWaterHeight;
-
-    // Decomposition params
+    float surfaceTension;
+    float density;
+    // Decomposition Params
     int diffusionIterations;
     float deltaT;
     float diffusionPenalty;
-
     // SWE & Transport Params
+    float slopeLimit;
     float cflCondition;
     float gammaTransport;
-
-    // eWave params
+    // eWave Params
     int depthNum;
-
-    // Padding for 16-byte alignment 
-    float buffer;
+    // FFT Wave Params
+    float fetch;
+    float windSpeed;
+    float windAngle;
+    float swell;
+    float swellAngle;
+    float choppiness;
+    float filterSmall;
+    float filterBig;
+    float filterWidth;
+    float filterMin;
+    float depthCutoff;
 };
 
 #define GRAVITY 9.80665
@@ -146,6 +157,12 @@ float SampleCubicClamped2D(Texture2D<float> dataField, float2 samplePos) {
 float2 ComplexMul(float2 a, float2 b) {
     return float2(a.x * b.x - a.y * b.y,
                   a.x * b.y + a.y * b.x);
+}
+
+float SafeTanh(float x) {
+    if (x > 20.f)       return 1.f;
+    else if (x < -20.f) return -1.f;
+    else                return tanh(x);
 }
 
 //////////////////// COMPUTE SHADERS /////////////////////////
@@ -320,7 +337,7 @@ void CalcUbar(uint3 id : SV_DispatchThreadID) {
 
 [numthreads(16, 16, 1)]
 void CalcSWE(uint3 id : SV_DispatchThreadID) {
-    // Inputs: in0 = ubar_x, in1 = ubar_y, in2 = hbar, in3 = H
+    // Inputs: in0 = ubar_x, in1 = ubar_y, in2 = hbar, in3 = H, in4 = delHfft_x, delHfft_y
     // Outputs: out0 = ubarNew_x, out1 = ubarNew_y, out2 = qbar_x, out3 = qbar_y
     if (id.x >= (uint)(gridSize) || id.y >= (uint)(gridSize)) return;
 
@@ -358,7 +375,6 @@ void CalcSWE(uint3 id : SV_DispatchThreadID) {
     float h_y_p05 = (in2[curr] + in2[up]) / 2.f;
 
     // Calculate corresponding values for u_x_(i,j) using upwinding
-    // Why not average here like we average the q's? 
     float u_x_0 = (q_x_0 >= 0.f) ? in0[left] : in0[curr];
     float u_x_1 = (q_x_1 >= 0.f) ? in0[curr] : in0[right]; 
     float u_y_0 = (q_y_0 >= 0.f) ? in1[down] : in1[curr];
@@ -367,13 +383,25 @@ void CalcSWE(uint3 id : SV_DispatchThreadID) {
     // Compute dux_dt and duy_dt 
     // float dux_dt = - (1/cellSize) * ((q_x_0/h_x_p05) * (in0[curr] - in0[left]) + (q_y_m05/h_x_p05) * (in0[curr] - in0[down]));
     // float duy_dt = - (1/cellSize) * ((q_y_0/h_y_p05) * (in1[curr] - in1[down]) + (q_x_m05/h_y_p05) * (in1[curr] - in1[left]));
-    float dux_dt = - (1/(cellSize * h_x_p05)) * ((q_x_1 * u_x_1 - q_x_0 * u_x_0) - in0[curr] * (q_x_1 - q_x_0));
-    float duy_dt = - (1/(cellSize * h_y_p05)) * ((q_y_1 * u_y_1 - q_y_0 * u_y_0) - in1[curr] * (q_y_1 - q_y_0));
-    dux_dt -= (1/cellSize) * GRAVITY * (in3[right] - in3[curr]);
-    duy_dt -= (1/cellSize) * GRAVITY * (in3[up]    - in3[curr]);
+    float dux_dt = - (1/(cellSize * h_x_p05)) * ((q_x_1 * u_star_x_1 - q_x_0 * u_star_x_0) - in0[curr] * (q_x_1 - q_x_0));
+    float duy_dt = - (1/(cellSize * h_y_p05)) * ((q_y_1 * u_star_y_1 - q_y_0 * u_star_y_0) - in1[curr] * (q_y_1 - q_y_0));
+    
+    // Incorporate gravity force and limit steep waves
+    float gradh_x = (in3[right] - in3[curr]) / cellSize;
+    float gradh_y = (in3[up] - in3[curr]) / cellSize;
+    if (abs(gradh_x) > slopeLimit) gradh_x = sign(gradh_x) * slopeLimit; // When wave gets too steep, it "crashes"
+    if (abs(gradh_y) > slopeLimit) gradh_y = sign(gradh_y) * slopeLimit; // https://arxiv.org/html/2503.03009v1
+    dux_dt -= GRAVITY * gradh_x; // gravitational force
+    duy_dt -= GRAVITY * gradh_y;
+
+    // Calculate FFT wave forcing
+    float depth_weight = SafeTanh(in2[curr] / depthCutoff); // scaling term to reduce FFT waves in shallow water
+    dux_dt += depth_weight * GRAVITY * in4[curr]; // FFT wave pressure gradient 
+    dux_dt += depth_weight * GRAVITY * in5[curr];
+
+    // Integrate u, calculate q
     float ubarNew_x = LimitVelocity(in0[curr] + timeStep * dux_dt);
     float ubarNew_y = LimitVelocity(in1[curr] + timeStep * duy_dt);
-    
     out0[curr] = ubarNew_x;
     out1[curr] = ubarNew_y;
     out2[curr] = ubarNew_x * ((ubarNew_x >= 0.f) ? in2[curr] : in2[right]);
@@ -525,6 +553,8 @@ void TransferToFFT(uint3 id : SV_DispatchThreadID) {
 Texture2D<float2> hhat   : register(t0);
 Texture2D<float2> qhat_x : register(t1);
 Texture2D<float2> qhat_y : register(t2);
+Texture2D<float2> qhatFFT_x : register(t3);
+Texture2D<float2> qhatFFT_y : register(t4);
 RWTexture2DArray<float2> qhat_x_array: register(u0);
 RWTexture2DArray<float2> qhat_y_array: register(u1);
 [numthreads(16, 16, 1)]
@@ -551,7 +581,6 @@ void CalcEWave(uint3 id : SV_DispatchThreadID) {
     float kx = (float)freqX * dK; // spatial frequency: radians per meter
     float ky = (float)freqY * dK;
     float k = sqrt(kx * kx + ky * ky);
-
     // Unit vectors
     float kx_ = kx / k;
     float ky_ = ky / k;
@@ -563,9 +592,7 @@ void CalcEWave(uint3 id : SV_DispatchThreadID) {
     float beta = sqrt((2.0 / (k * cellSize)) * sin(k * cellSize / 2.0)); // From their 1D code, but different from paper
     // float beta = sqrt((2.0 * k / cellSize) * sin(k * cellSize / 2.0)); // correct formula from paper, but not stable?
     // Angular frequency for dispersion relation
-    float kh = k * in8[id.z];
-    float tanh_kh = (kh > 20.f) ? 1.0f : tanh(kh);
-    float omega = sqrt(GRAVITY * k * tanh_kh) / beta;
+    float omega = sqrt(GRAVITY * k * SafeTanh(k * in8[id.z])) / beta;
     float S = sin(omega * timeStep) * omega / (k * k);
     float C = cos(omega * timeStep);
     float Cx = 1 + (C-1) * kx2;
@@ -579,10 +606,10 @@ void CalcEWave(uint3 id : SV_DispatchThreadID) {
     // Phase shift in X: shift by dx/2 by multiplying by e^(i * shiftX) = cos(shiftX) + i*sin(shiftX)
     float shiftX = 0.5f * cellSize * kx;
     float shiftY = 0.5f * cellSize * ky;
-    float2 e_mix = float2(cos(shiftX), sin(shiftX));
-    float2 e_miy = float2(cos(shiftY), sin(shiftY));
-    dhdx = ComplexMul(dhdx, e_mix);
-    dhdy = ComplexMul(dhdy, e_miy);
+    float2 e_ix = float2(cos(shiftX), sin(shiftX));
+    float2 e_iy = float2(cos(shiftY), sin(shiftY));
+    dhdx = ComplexMul(dhdx, e_ix);
+    dhdy = ComplexMul(dhdy, e_iy);
     
     // Shift the q cross-terms to align with their target faces
     float theta_x = 0.5f * cellSize * (ky - kx);
@@ -625,9 +652,11 @@ void InterpQ(uint3 id : SV_DispatchThreadID) {
     // Inputs: qtilde_x_array, qtilde_y_array, hbar, depth
     // Outputs: qtilde_x, qtilde_y
     if (id.x >= (uint)(gridSize) || id.y >= (uint)(gridSize)) return;
+    uint2 right = uint2(min(id.x + 1, gridSize - 1), id.y);
+    uint2 up    = uint2(id.x, min(id.y + 1, gridSize - 1));
 
-    float waterDepth_x = max(hbar[id.xy], hbar[id.xy + uint2(1, 0)]);
-    float waterDepth_y = max(hbar[id.xy], hbar[id.xy + uint2(0, 1)]);
+    float waterDepth_x = max(hbar[id.xy], hbar[right]);
+    float waterDepth_y = max(hbar[id.xy], hbar[up]);
     int d1_x = 0;
     int d1_y = 0;
     for (int d = 0; d < depthNum; d++) {

@@ -98,10 +98,11 @@ std::vector<float> Sim::SetWater(std::vector<float>& terrain) {
 
 void Sim::Init(GPU* gpu) {
 	// Set up GPU Shaders
-	for (int i=0; i < sizeof(shaders) / sizeof(shaders[0]); i++) {
+	for (int i=0; i < sizeof(shaders) / sizeof(shaders[0]); i++)
 		gpu->CompileComputeShader(L"shaders/kernels.hlsl", names[i], shaders[i]);
-	}
-    gpu->UpdateConstants(constants);
+    for (int i=0; i < sizeof(waveShaders) / sizeof(waveShaders[0]); i++)
+		gpu->CompileComputeShader(L"shaders/fftwaves.hlsl", waveNames[i], waveShaders[i]);
+	gpu->UpdateConstants(constants);
 
 	// Create GPU Textures and Upload Initial Data
 	for (int i=0; i < sizeof(fields) / sizeof(fields[0]); i++) {
@@ -114,7 +115,7 @@ void Sim::Init(GPU* gpu) {
 		std::vector<float> temp(GRIDSIZE * GRIDSIZE * 2, 0.0f);
 		gpu->UploadToGPU(fields_complex[i]->tex, temp, GRIDSIZE, true);
 	}
-	for (int i = 0; i < 2; i++) {
+	for (int i = 0; i < sizeof(fields_arrays) / sizeof(fields_arrays[0]); i++) {
 		gpu->CreateGridTexture(fields_arrays[i], GRIDSIZE, true, DEPTH_NUM);
 		std::vector<float> temp(GRIDSIZE * GRIDSIZE * DEPTH_NUM * 2, 0.0f);
 		gpu->UploadToGPU(fields_arrays[i]->tex, temp, GRIDSIZE, true, DEPTH_NUM);
@@ -132,6 +133,10 @@ void Sim::Init(GPU* gpu) {
 	gpu->UploadToGPU(H.tex, H_temp, GRIDSIZE);
 	gpu->UploadToGPU(hbar.tex, h_temp, GRIDSIZE);
 	gpu->UploadToGPU(hbarOld.tex, h_temp, GRIDSIZE);
+
+    // Initialize FFT Wave Spectrum
+    gpu->Dispatch(PopulateSpectrum, {}, 
+		{HPos.uav, HNeg.uav}, DEPTH_NUM);
 }
 
 Sim::Sim() {
@@ -163,9 +168,13 @@ int Sim::Release(void) {
 // ********************************************************************************************************************
 
 void Sim::SimStep() {
+    time += TIMESTEP;
+    constants.time = time;
+	gpu->UpdateConstants(constants);
+
 	DecompositionStep();
+    FFTStep();
 	eWaveStep();
-	// FFTStep();
 	SWEStep();
 	TransportStep();
 	ComputeValues();
@@ -209,15 +218,33 @@ void Sim::DecompositionStep() {
 	// gpu->Dispatch(ApplyBoundaries, {}, 
 	// 	{htilde.uav, qtilde_x.uav, qtilde_y.uav});
 
+    // Recalculate H for use later (reusing shader)
 	gpu->Dispatch(InitDecomp, 
 		{h.srv, nullptr, nullptr, terrain.srv}, 
 		{H.uav});
 }
 
+void Sim::FFTStep() {
+    // Propagate waves
+	gpu->Dispatch(PropagateWaves, 
+		{HPos.srv, HNeg.srv},
+		{HProp.uav, DelH_x.uav, DelH_y.uav, Disp_x.uav, Disp_y.uav}, DEPTH_NUM);
+	gpu->ExecuteFFT(HProp.uav,   GRIDSIZE, true, DEPTH_NUM);
+	gpu->ExecuteFFT(DelH_x.uav,  GRIDSIZE, true, DEPTH_NUM);
+	gpu->ExecuteFFT(DelH_y.uav,  GRIDSIZE, true, DEPTH_NUM);
+	gpu->ExecuteFFT(Disp_x.uav,  GRIDSIZE, true, DEPTH_NUM);
+	gpu->ExecuteFFT(Disp_y.uav,  GRIDSIZE, true, DEPTH_NUM);
+
+	// Interpolate outputs between depths
+	gpu->Dispatch(Interp, 
+		{HProp.srv, DelH_x.srv, DelH_y.srv, Disp_x.srv, Disp_y.srv, hbar.srv}, 
+		{hFFT.uav, delH_x.uav, delH_y.uav, disp_x.uav, disp_y.uav});
+}
+
 void Sim::eWaveStep() {
 	// Copy variables to fourier domain & perform FFT
 	gpu->Dispatch(TransferToFFT, 
-		{htilde.srv, qtilde_x.srv, qtilde_y.srv}, 
+		{htilde.srv, qtilde_x.srv, qtilde_y.srv},
 		{htildeOld.uav, hHat.uav, qHat_x.uav, qHat_y.uav});
 	gpu->ExecuteFFT(hHat.uav, GRIDSIZE, false);
 	gpu->ExecuteFFT(qHat_x.uav, GRIDSIZE, false);
@@ -251,7 +278,7 @@ void Sim::SWEStep() {
 	// Compute time derivative of u_bar and integrate to get new u_bar, then 
 	// transfer back to flow rate using upwinding on most recent hbar
 	gpu->Dispatch(CalcSWE,
-		{ubar_x.srv, ubar_y.srv, hbar.srv, H.srv}, 
+		{ubar_x.srv, ubar_y.srv, hbar.srv, H.srv, delH_x.srv, delH_y.srv}, 
 		{ubarNew_x.uav, ubarNew_y.uav, qbar_x.uav, qbar_y.uav});
 	// gpu->Dispatch(ApplyBoundaries, {}, 
 	// 	{ubarNew_x.uav, ubarNew_y.uav, qbar_x.uav, qbar_y.uav});
@@ -293,4 +320,6 @@ void Sim::ComputeValues() {
 	gpu->Dispatch(InitDecomp, 
 		{h.srv, nullptr, nullptr, terrain.srv}, 
 		{H.uav});
+
+	// gpu->Dispatch(PrepareRender, {h.srv, terrain.srv}, {HRender.srv});	
 }

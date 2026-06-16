@@ -9,38 +9,51 @@
 #include <DirectXMath.h> // For the ViewProjection matrix
 
 // The constant buffer must be padded to a multiple of 16 bytes for HLSL
-struct SimConstants {
-    // Simulation params
-    int gridSize;
+struct alignas(16) SimConstants {
+    float time;
+    // Sim Params
+    int gridSize; 
     float cellSize;
     float timeStep;
     int boundaryType;
     float minWaterHeight;
-    // Decomposition params
+    float surfaceTension;
+    float density;
+    // Decomposition Params
     int diffusionIterations;
     float deltaT;
     float diffusionPenalty;
     // SWE & Transport Params
+    float slopeLimit;
     float cflCondition;
     float gammaTransport;
     // eWave Params
     int depthNum;
-    // Padding for 16-byte alignment
-    float buffer;
+    // FFT wave params
+    float fetch;
+    float windSpeed;
+    float windAngle;
+    float swell;
+    float swellAngle;
+    float choppiness;
+    float filterSmall;
+    float filterBig;
+    float filterWidth;
+    float filterMin;
+    float depthCutoff;
 };
 
-struct FFTConstants {
+struct alignas(16) FFTConstants {
     int N;         // Transform size (gridsize) (must be power of two)
     int Bits;      // log2(N)  
     int Inverse;   // 0 = forward DFT, 1 = inverse DFT
     int Row;       // Row = 1. Col = 0
 };
 
-struct RenderConstants {
-    DirectX::XMMATRIX viewProjection; // 64 bytes
-    float gridSize;                   // 4 bytes
-    float cellSize;                   // 4 bytes
-    float buffer[2];                  // 8 bytes (Total = 80 bytes, must be multiple of 16)
+struct alignas(16) RenderConstants {
+    DirectX::XMMATRIX viewProjection;
+    float gridSize;
+    float cellSize;
 };
 
 struct GPUField {
@@ -64,7 +77,7 @@ public:
     bool Init(int size); // For headless compute
     bool Init(int size, HWND hwnd); // For rendering
 
-    // Compute Shaders
+    // Compute Shaders    
     void UpdateConstants(const SimConstants& constants);
     bool CreateGridTexture(GPUField* field, int size, bool isComplex = false, int arraySize = 1);
     bool UploadToGPU(ID3D11Texture2D* tex, const std::vector<float>& data, int gridSize, bool isComplex = false, int arraySize = 1);
@@ -91,7 +104,8 @@ public:
     bool CreateGridMesh(int gridSize);
     bool CompileVertexShader(const std::wstring& file, const std::string& entryPoint);
     bool CompilePixelShader(const std::wstring& file, const std::string& entryPoint);
-    void Render(ID3D11ShaderResourceView* heightSRV);
+    // void Render(ID3D11ShaderResourceView* heightSRV);
+    void Render(const std::vector<ID3D11ShaderResourceView*>& srvs);
     
 
 private:

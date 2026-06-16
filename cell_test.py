@@ -7,13 +7,13 @@ d1 = np.array([1.712, 3.972, 11.260, 45.61, 102.8, 182.9]) # max stable depth fo
 d_avg = np.mean((d0, d1), axis=0)
 A = np.vstack((cellsize**2, cellsize, np.ones(cellsize.shape))).T
 [b2, b1, b0] = np.linalg.pinv(A) @ d_avg
-print(b2, b1, b0)
+# print(b2, b1, b0)
 d_est = b2*cellsize**2 + b1*cellsize + b0
-plt.plot(cellsize, d0)
-plt.plot(cellsize, d1)
-plt.plot(cellsize, d_est)
-plt.legend(("512", "256", "Estimate"))
-plt.show()
+# plt.plot(cellsize, d0)
+# plt.plot(cellsize, d1)
+# plt.plot(cellsize, d_est)
+# plt.legend(("512", "256", "Estimate"))
+# plt.show()
 # Result is highly quadratic, a very good fit!
 
 def solve_quadratic(d):
@@ -22,7 +22,7 @@ def solve_quadratic(d):
     c = b0 #-0.14717654147795045
     return (-b + np.sqrt(b**2 - 4*a*(c-d))) / (2 * a)
 
-print(solve_quadratic(1.5))
+print(solve_quadratic(12))
 
 # Note: stability also seems to be somewhat dependant on the timestep, but I didn't have time to do more testing. 
 
