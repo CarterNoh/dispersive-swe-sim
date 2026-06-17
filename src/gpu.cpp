@@ -540,19 +540,19 @@ void GPU::ExecuteFFT(ID3D11UnorderedAccessView* fftBufferUAV, int sizeX, int siz
     constants.BitsX = bitsX;
     constants.BitsY = bitsY;
 
-    // Row pass: one group per ROW (row index ranges over X)
-    constants.Row = 1; // Row pass
+    // Row pass: transform each ROW (length = sizeX). There are sizeY rows.
+    constants.Row = 1; // Row pass (tid runs across X, GID.y selects row index Y)
     UpdateFFTConstants(constants);
     if (numLayers > 1) context->CSSetShader(fftArrayShaderX, nullptr, 0);
     else               context->CSSetShader(fftShaderX, nullptr, 0);
-    context->Dispatch(1, sizeX, numLayers); // GID.y iterates rows [0..sizeX-1]
+    context->Dispatch(1, sizeY, numLayers); // One group per ROW: GID.y ∈ [0..sizeY-1]
 
-    // Column pass: one group per COLUMN (column index ranges over Y)
-    constants.Row = 0; // Column pass
+    // Column pass: transform each COLUMN (length = sizeY). There are sizeX columns.
+    constants.Row = 0; // Column pass (tid runs across Y, GID.y selects column index X)
     UpdateFFTConstants(constants);
     if (numLayers > 1) context->CSSetShader(fftArrayShaderY, nullptr, 0);
     else               context->CSSetShader(fftShaderY, nullptr, 0);
-    context->Dispatch(1, sizeY, numLayers); // GID.y iterates columns [0..sizeY-1]
+    context->Dispatch(1, sizeX, numLayers); // One group per COLUMN: GID.y ∈ [0..sizeX-1]
 
     // Unbind
     ID3D11UnorderedAccessView* nullUAV = nullptr;
