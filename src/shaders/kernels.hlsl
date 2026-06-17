@@ -169,7 +169,8 @@ float SafeTanh(float x) {
 
 // Apply Boundary Conditions
 [numthreads(16, 16, 1)]
-void ApplyBoundaries(uint3 id : SV_DispatchThreadID){
+void ApplyBoundaries(uint3 id : SV_DispatchThreadID) {
+    // Inputs: in0 = u_x, in1 = u_y, in2+ = fieldOld
     uint x = id.x;
     uint y = id.y;
     if (x >= (uint)(gridSize) || y >= (uint)(gridSize)) return;
@@ -181,23 +182,40 @@ void ApplyBoundaries(uint3 id : SV_DispatchThreadID){
     if (!(left || right || top || bottom)) return;
 
     // Pick a source interior cell depending on boundary side
-    uint2 src;
-    if (left && bottom)
+    uint2 src; // cell to draw from
+    float w; // carrier velocity
+    if (left && bottom) {
         src = uint2(1, 1);
-    else if (left && top)
+        w = abs(min(0, in1[src])); // ambiguous, could be negative u_x or u_y.
+    }
+    else if (left && top) {
         src = uint2(1, gridSize-2);
-    else if (right && bottom)
+        w = abs(min(0, in0[src])); // ambiguous, could be negative u_x or positive u_y.
+    }
+    else if (right && bottom) {
         src = uint2(gridSize-2, 1);
-    else if (right && top)
+        w = abs(max(0, in0[src])); // ambiguous, could be positive u_x or negative u_y.
+    }
+    else if (right && top) {
         src = uint2(gridSize-2, gridSize-2);
-    else if (left)
+        w = abs(max(0, in1[src])); // ambiguous, could be positive u_x or u_y.
+    }
+    else if (left) {
         src = uint2(1, y);
-    else if (right)
+        w = abs(min(0.f, in0[src])); // negative u_x
+    }
+    else if (right) {
         src = uint2(gridSize-2, y);
-    else if (bottom)
+        w = abs(max(0.f, in0[src])); // positive u_x
+    }
+    else if (bottom) {
         src = uint2(x, 1);
-    else // top
+        w = abs(min(0.f, in1[src])); // negative u_y
+    }
+    else { // top
         src = uint2(x, gridSize-2);
+        w = abs(max(0.f, in1[src])); // positive u_y
+    }
 
     // Apply boundary condition
     if (boundaryType == 0) { // wall (copy neighbor)
@@ -215,6 +233,19 @@ void ApplyBoundaries(uint3 id : SV_DispatchThreadID){
         out1[id.xy] = 2.0f * out1[src] - out1[src + dir];
         out2[id.xy] = 2.0f * out2[src] - out2[src + dir];
         out3[id.xy] = 2.0f * out3[src] - out3[src + dir];
+    }
+    else if (boundaryType == 2) { // advective boundary
+        // float c = 1500.f; // speed of sound, m/s
+        // if (valX) w += c; // use for u_x, q_x
+        float d_inf = 100;
+        float field_inf = 0; // zero velocity, zero height
+        float a = w * timeStep;
+        float k = a / d_inf;
+        float denom = 1 + a + k;
+        out0[id.xy] = ((in2[id.xy] + k * field_inf) + out0[src] * a) / denom;
+        out0[id.xy] = ((in3[id.xy] + k * field_inf) + out1[src] * a) / denom;
+        out0[id.xy] = ((in4[id.xy] + k * field_inf) + out1[src] * a) / denom;
+        out0[id.xy] = ((in5[id.xy] + k * field_inf) + out1[src] * a) / denom;
     }
 }
 
@@ -539,7 +570,7 @@ RWTexture2D<float2> qHat_y: register(u3); // Complex
 [numthreads(16, 16, 1)]
 void TransferToFFT(uint3 id : SV_DispatchThreadID) {
     // Inputs: in0 = htilde, in1 = qtilde_x, in2 = qtilde_y
-    // Outputs: out0 = htildeOld, out1 = hHat, out2 = qHat_x, out3 = qHat_y
+    // Outputs: out0 = htildePast, out1 = hHat, out2 = qHat_x, out3 = qHat_y
     if (id.x >= (uint)(gridSize) || id.y >= (uint)(gridSize)) return;
 
     // Average htilde in time to get on same timestep as q, then prep variables for FFT

@@ -176,6 +176,9 @@ int RunWithRender() {
     RenderConstants rConsts = InitCamera(sim.GRIDSIZE);
     sim.gpu->UpdateRenderConstants(rConsts);
     // sim.gpu->Render(sim.H.srv);
+    sim.gpu->Render({sim.h.srv, sim.disp_x.srv, sim.disp_y.srv});
+    sim.SimStep();
+    sim.gpu->Render({sim.h.srv, sim.disp_x.srv, sim.disp_y.srv});
 
     // Loop
     MSG msg = {};
@@ -193,7 +196,7 @@ int RunWithRender() {
         }
         sim.SimStep();
         // sim.gpu->Render(sim.H.srv);
-        sim.gpu->Render({sim.H.srv, sim.disp_x.srv, sim.disp_y.srv});
+        // sim.gpu->Render({sim.H.srv, sim.disp_x.srv, sim.disp_y.srv});
         // sim.gpu->Render({sim.H.srv});
         tick++;
         if (tick >= numTicks) running = false;

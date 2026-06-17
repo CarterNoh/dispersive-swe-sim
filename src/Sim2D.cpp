@@ -132,7 +132,7 @@ void Sim::Init(GPU* gpu) {
 	gpu->UploadToGPU(h.tex, h_temp, GRIDSIZE);
 	gpu->UploadToGPU(H.tex, H_temp, GRIDSIZE);
 	gpu->UploadToGPU(hbar.tex, h_temp, GRIDSIZE);
-	gpu->UploadToGPU(hbarOld.tex, h_temp, GRIDSIZE);
+	gpu->UploadToGPU(hbarPast.tex, h_temp, GRIDSIZE);
 
     // Initialize FFT Wave Spectrum
     gpu->Dispatch(PopulateSpectrum, {}, 
@@ -210,6 +210,9 @@ void Sim::DecompositionStep() {
 	}
 
 	// final conversion to individual solver quantities
+	std::swap(hbar, hbarPast);
+	std::swap(qbar_x, qbarPast_x);
+	std::swap(qbar_y, qbarPast_y);
 	gpu->Dispatch(DecomposeFields, 
 		{H.srv, Q_x.srv, Q_y.srv, h.srv, q_x.srv, q_y.srv, terrain.srv}, 
 		{hbar.uav, qbar_x.uav, qbar_y.uav, htilde.uav, qtilde_x.uav, qtilde_y.uav});
@@ -245,7 +248,7 @@ void Sim::eWaveStep() {
 	// Copy variables to fourier domain & perform FFT
 	gpu->Dispatch(TransferToFFT, 
 		{htilde.srv, qtilde_x.srv, qtilde_y.srv},
-		{htildeOld.uav, hHat.uav, qHat_x.uav, qHat_y.uav});
+		{htildePast.uav, hHat.uav, qHat_x.uav, qHat_y.uav});
 	gpu->ExecuteFFT(hHat.uav, GRIDSIZE, false);
 	gpu->ExecuteFFT(qHat_x.uav, GRIDSIZE, false);
 	gpu->ExecuteFFT(qHat_y.uav, GRIDSIZE, false);
@@ -263,7 +266,7 @@ void Sim::eWaveStep() {
 	gpu->Dispatch(InterpQ,
 		{hbar.srv, qHat_x_array.srv, qHat_y_array.srv},
 		{qtilde_x.uav, qtilde_y.uav}, DEPTH_NUM);
-	// gpu->Dispatch(ApplyBoundaries, {}, 
+	// gpu->Dispatch(ApplyBoundaries, {_, _, qtildePast_x.srv, qtildePast_y.srv}, 
 	// 	{qtilde_x.uav, qtilde_y.uav});
 }
 
@@ -272,7 +275,7 @@ void Sim::SWEStep() {
 
 	// qbar to ubar using hbar from last timestep	
 	gpu->Dispatch(CalcUbar, 
-		{qbar_x.srv, qbar_y.srv, hbarOld.srv,}, 
+		{qbar_x.srv, qbar_y.srv, hbarPast.srv,}, 
 		{ubar_x.uav, ubar_y.uav});
 		
 	// Compute time derivative of u_bar and integrate to get new u_bar, then 
@@ -280,11 +283,9 @@ void Sim::SWEStep() {
 	gpu->Dispatch(CalcSWE,
 		{ubar_x.srv, ubar_y.srv, hbar.srv, H.srv, delH_x.srv, delH_y.srv}, 
 		{ubarNew_x.uav, ubarNew_y.uav, qbar_x.uav, qbar_y.uav});
-	// gpu->Dispatch(ApplyBoundaries, {}, 
-	// 	{ubarNew_x.uav, ubarNew_y.uav, qbar_x.uav, qbar_y.uav});
-
-	// store current hbar for next timestep
-	std::swap(hbar, hbarOld);
+	// gpu->Dispatch(ApplyBoundaries, 
+	// 	{ubar_x.srv, ubar_y.srv, ubar_x.srv, ubar_y.srv, qbarPast_x.srv, qbarPast_y.srv}, 
+	// 	{ubarNew_x.uav, ubarNew_y.uav, qbar_x.uav, qbar_y.uav});	
 }
 
 void Sim::TransportStep() {
@@ -297,7 +298,8 @@ void Sim::TransportStep() {
 		{ubarNew_x.srv, ubar_x.srv, ubarNew_y.srv, ubar_y.srv, 
 			qtildePast_x.srv, qtildePast_y.srv, h.srv, htilde.srv},
 		{htilde.uav, qtilde_x.uav, qtilde_y.uav});	
-	// gpu->Dispatch(ApplyBoundaries, {}, 
+	// gpu->Dispatch(ApplyBoundaries, 
+	// 	{ubarNew_x.srv, ubarNew_y.srv, htildePast.srv, qtildePast_x.srv, qtildePast_y.srv}, 
 	// 	{htilde.uav, qtilde_x.uav, qtilde_y.uav});
 	
 	// Advection of h through ubar:
@@ -305,8 +307,11 @@ void Sim::TransportStep() {
 	gpu->Dispatch(CalcQAdvect, 
 		{ubarNew_x.srv, ubarNew_y.srv, htilde.srv},
 		{qAdvect_x.uav, qAdvect_y.uav});
+	// apply boundaries
 
 	std::swap(h, hPast);
+	std::swap(q_x, qPast_x);
+	std::swap(q_y, qPast_y);
 }
 	
 void Sim::ComputeValues() {
@@ -314,8 +319,9 @@ void Sim::ComputeValues() {
 		{qbar_x.srv, qtilde_x.srv, qAdvect_x.srv, qbar_y.srv, qtilde_y.srv, qAdvect_y.srv, 
 			hPast.srv, terrain.srv}, 
 		{h.uav, q_x.uav, q_y.uav});
-	// gpu->Dispatch(ApplyBoundaries, {}, 
-	// 	{h.uav, q_x.uav, q_y.uav});
+	gpu->Dispatch(ApplyBoundaries, 
+		{ubarNew_x.srv, ubarNew_y.srv, hPast.srv, qPast_x.srv, qPast_y.srv}, 
+		{h.uav, q_x.uav, q_y.uav});
 
 	gpu->Dispatch(InitDecomp, 
 		{h.srv, nullptr, nullptr, terrain.srv}, 

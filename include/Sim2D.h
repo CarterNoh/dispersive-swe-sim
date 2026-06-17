@@ -14,7 +14,7 @@ public:
 	static constexpr int GRIDSIZE = 256;	// grid size in one dimension (# cells)
 	static constexpr float CELLSIZE = 1.f;	// cell size in one dimension (meters/cell)
 	static constexpr float TIMESTEP = 1.f / 60.f;
-	static constexpr int BOUNDARY_TYPE = 0; // not in use any more, need to remove probably
+	static constexpr int BOUNDARY_TYPE = 2; // not in use any more, need to remove probably
 	static constexpr float MIN_WATER_HEIGHT = 0.001f; // minimum water height for stability
     static constexpr float SURFACE_TENSION = 0.001f;
     static constexpr float DENSITY = 999.f;
@@ -56,23 +56,25 @@ public:
 	static constexpr float DEPTH_CUTOFF = 8.f; 		// depth to start attenuating FFT waves
 
 	// Simulation variables
-	GPUField terrain, H, Q_x, Q_y, h, q_x, q_y, 
+	GPUField terrain, H, Q_x, Q_y, h, q_x, q_y,
 			 HPast, QPast_x, QPast_y, alpha_H, alpha_Q_x, alpha_Q_y, 
 			 hbar, qbar_x, qbar_y, htilde, qtilde_x, qtilde_y,
 			 ubar_x, ubar_y, ubarNew_x, ubarNew_y,
 			 qtildePast_x, qtildePast_y, qAdvect_x, qAdvect_y, 
-			 hPast, hbarOld, htildeOld, 
+			 hPast, hbarPast, htildePast, 
+			 qPast_x, qPast_y, qbarPast_x, qbarPast_y,
 			 hHat, qHat_x, qHat_y, qHat_x_array, qHat_y_array;
     GPUField HPos, HNeg, HProp, DelH_x, DelH_y, Disp_x, Disp_y, // Outputs of PopulateSpectrum, PropagateWaves (complex arrays)
              hFFT, delH_x, delH_y, disp_x, disp_y; // iFFT'd variables after interpolation
              
-	GPUField* fields[35] = {
+	GPUField* fields[39] = {
 		&terrain, &H, &Q_x, &Q_y, &h, &q_x, &q_y,
 		&HPast, &QPast_x, &QPast_y, &alpha_H, &alpha_Q_x, &alpha_Q_y,
 		&hbar, &qbar_x, &qbar_y, &htilde, &qtilde_x, &qtilde_y,
 		&ubar_x, &ubar_y, &ubarNew_x, &ubarNew_y,
 		&qtildePast_x, &qtildePast_y, &qAdvect_x, &qAdvect_y,
-		&hPast, &hbarOld, &htildeOld, 
+		&hPast, &hbarPast, &htildePast, 
+		&qPast_x, &qPast_y, &qbarPast_x, &qbarPast_y,
         &hFFT, &delH_x, &delH_y, &disp_x, &disp_y, 
         };
 	GPUField* fields_complex[3] = {&hHat, &qHat_x, &qHat_y};
