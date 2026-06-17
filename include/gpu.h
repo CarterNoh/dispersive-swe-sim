@@ -102,7 +102,7 @@ public:
 
     // FFT
     void UpdateFFTConstants(const FFTConstants& constants);
-    bool CompileFFTShaders(int size);
+    bool CompileFFTShaders(int sizeX, int sizeY);
     void ExecuteFFT(ID3D11UnorderedAccessView* fftBufferUAV, int sizeX, int sizeY, bool inverse, int numLayers = 1);
 
     // Rendering 
@@ -132,8 +132,10 @@ private:
     
     // FFT
     ID3D11Buffer* fftConstantBuffer = nullptr;
-    ID3D11ComputeShader* fftShader = nullptr;
-    ID3D11ComputeShader* fftArrayShader = nullptr;
+    ID3D11ComputeShader* fftShaderX = nullptr;
+    ID3D11ComputeShader* fftShaderY = nullptr;
+    ID3D11ComputeShader* fftArrayShaderX = nullptr;
+    ID3D11ComputeShader* fftArrayShaderY = nullptr;
 
     // Rendering
     IDXGISwapChain* swapChain = nullptr;

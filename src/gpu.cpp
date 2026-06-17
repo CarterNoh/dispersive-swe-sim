@@ -10,8 +10,10 @@ GPU::~GPU() {
     if (stagingTex) stagingTex->Release();
     if (constantBuffer) constantBuffer->Release();
     if (fftConstantBuffer) fftConstantBuffer->Release();
-    if (fftShader) fftShader->Release();
-    if (fftArrayShader) fftArrayShader->Release();
+    if (fftShaderX) fftShaderX->Release();
+    if (fftShaderY) fftShaderY->Release();
+    if (fftArrayShaderX) fftArrayShaderX->Release();
+    if (fftArrayShaderY) fftArrayShaderY->Release();
     if (vertexShader) vertexShader->Release();
     if (pixelShader) pixelShader->Release();
     if (context) context->Release();
@@ -56,9 +58,8 @@ bool GPU::BaseInit(int sizeX, int sizeY) {
         std::cerr << "ERROR: Failed to create FFT Constant Buffer." << std::endl;
         return false;
     }
-    // Compile FFT Shader (use max of X/Y as FFT_SIZE macro)
-    int maxDim = (sizeX > sizeY) ? sizeX : sizeY;
-    if (!CompileFFTShaders(maxDim)) {
+    // Compile FFT Shaders
+    if (!CompileFFTShaders(sizeX, sizeY)) {
         std::cerr << "ERROR: Failed to create FFT shaders." << std::endl;
         return false;
     }
@@ -454,44 +455,70 @@ void GPU::UpdateFFTConstants(const FFTConstants& constants) {
     }
 }
 
-bool GPU::CompileFFTShaders(int size) {
+bool GPU::CompileFFTShaders(int sizeX, int sizeY) {
     // if (!CompileComputeShader(L"shaders/fft.hlsl", "FFTKernel_1D", &fftShader))
     //     return false;
 
     ID3DBlob* shaderBlob = nullptr;
     ID3DBlob* errorBlob = nullptr;
-    D3D_SHADER_MACRO singleMacros[] = {
-        { "FFT_SIZE", std::to_string(size).c_str() },
+
+    ///// Shaders for single grid in X and Y
+    // X Direction
+    D3D_SHADER_MACRO singleMacrosX[] = {
+        { "FFT_SIZE", std::to_string(sizeX).c_str() },
         { NULL, NULL }};
-    HRESULT hr = D3DCompileFromFile(L"shaders/fft.hlsl", singleMacros, nullptr, "FFTKernel_1D", "cs_5_0", 0, 0, &shaderBlob, &errorBlob);
-    if (FAILED(hr)) {
-        if (errorBlob) std::cerr << "Shader Error: " << (char*)errorBlob->GetBufferPointer() << std::endl;
+    HRESULT hrX = D3DCompileFromFile(L"shaders/fft.hlsl", singleMacrosX, nullptr, "FFTKernel_1D", "cs_5_0", 0, 0, &shaderBlob, &errorBlob);
+    if (FAILED(hrX)) {
+        if (errorBlob) std::cerr << "Shader Error Single X: " << (char*)errorBlob->GetBufferPointer() << std::endl;
         return false;
     }
-    device->CreateComputeShader(shaderBlob->GetBufferPointer(), shaderBlob->GetBufferSize(), nullptr, &fftShader);
+    device->CreateComputeShader(shaderBlob->GetBufferPointer(), shaderBlob->GetBufferSize(), nullptr, &fftShaderX);
     shaderBlob->Release();
 
-    D3D_SHADER_MACRO arrayMacros[] = {
-    { "FFT_SIZE", std::to_string(size).c_str() },
-    { "IS_ARRAY", "1" },
-    { NULL, NULL }};
-    HRESULT hr1 = D3DCompileFromFile(L"shaders/fft.hlsl", arrayMacros, nullptr, "FFTKernel_1D", "cs_5_0", 0, 0, &shaderBlob, &errorBlob);
-    if (FAILED(hr1)) {
-        if (errorBlob) std::cerr << "Shader Error: " << (char*)errorBlob->GetBufferPointer() << std::endl;
+    // Y Direction
+    D3D_SHADER_MACRO singleMacrosY[] = {
+        { "FFT_SIZE", std::to_string(sizeY).c_str() },
+        { NULL, NULL }};
+    HRESULT hrY = D3DCompileFromFile(L"shaders/fft.hlsl", singleMacrosY, nullptr, "FFTKernel_1D", "cs_5_0", 0, 0, &shaderBlob, &errorBlob);
+    if (FAILED(hrY)) {
+        if (errorBlob) std::cerr << "Shader Error Single Y: " << (char*)errorBlob->GetBufferPointer() << std::endl;
         return false;
     }
-    device->CreateComputeShader(shaderBlob->GetBufferPointer(), shaderBlob->GetBufferSize(), nullptr, &fftArrayShader);
+    device->CreateComputeShader(shaderBlob->GetBufferPointer(), shaderBlob->GetBufferSize(), nullptr, &fftShaderY);
+    shaderBlob->Release();
+
+    ///// Shaders for arrays of grids in X and Y
+    // X Direction
+    D3D_SHADER_MACRO arrayMacrosX[] = {
+    { "FFT_SIZE", std::to_string(sizeX).c_str() },
+    { "IS_ARRAY", "1" },
+    { NULL, NULL }};
+    HRESULT hrAX = D3DCompileFromFile(L"shaders/fft.hlsl", arrayMacrosX, nullptr, "FFTKernel_1D", "cs_5_0", 0, 0, &shaderBlob, &errorBlob);
+    if (FAILED(hrAX)) {
+        if (errorBlob) std::cerr << "Shader Error Array X: " << (char*)errorBlob->GetBufferPointer() << std::endl;
+        return false;
+    }
+    device->CreateComputeShader(shaderBlob->GetBufferPointer(), shaderBlob->GetBufferSize(), nullptr, &fftArrayShaderX);
+    shaderBlob->Release();
+
+    // Y Direction
+    D3D_SHADER_MACRO arrayMacrosY[] = {
+    { "FFT_SIZE", std::to_string(sizeY).c_str() },
+    { "IS_ARRAY", "1" },
+    { NULL, NULL }};
+    HRESULT hrAY = D3DCompileFromFile(L"shaders/fft.hlsl", arrayMacrosY, nullptr, "FFTKernel_1D", "cs_5_0", 0, 0, &shaderBlob, &errorBlob);
+    if (FAILED(hrAY)) {
+        if (errorBlob) std::cerr << "Shader Error Array Y: " << (char*)errorBlob->GetBufferPointer() << std::endl;
+        return false;
+    }
+    device->CreateComputeShader(shaderBlob->GetBufferPointer(), shaderBlob->GetBufferSize(), nullptr, &fftArrayShaderY);
     shaderBlob->Release();
 
     return true;
 }
 
 void GPU::ExecuteFFT(ID3D11UnorderedAccessView* fftBufferUAV, int sizeX, int sizeY, bool inverse, int numLayers) {
-    // Setup shader
-    if (numLayers > 1)
-        context->CSSetShader(fftArrayShader, nullptr, 0);
-    else
-        context->CSSetShader(fftShader, nullptr, 0);
+    // Set UAV
     context->CSSetUnorderedAccessViews(0, 1, &fftBufferUAV, nullptr);
 
     // Prepare FFT constants with separate X/Y sizes and bit counts
@@ -509,15 +536,19 @@ void GPU::ExecuteFFT(ID3D11UnorderedAccessView* fftBufferUAV, int sizeX, int siz
     constants.BitsX = bitsX;
     constants.BitsY = bitsY;
 
-    // Row pass: one group per ROW (row index ranges over Y)
+    // Row pass: one group per ROW (row index ranges over X)
     constants.Row = 1; // Row pass
     UpdateFFTConstants(constants);
-    context->Dispatch(1, sizeY, numLayers); // GID.y iterates rows [0..sizeY-1]
+    if (numLayers > 1) context->CSSetShader(fftArrayShaderX, nullptr, 0);
+    else               context->CSSetShader(fftShaderX, nullptr, 0);
+    context->Dispatch(1, sizeX, numLayers); // GID.y iterates rows [0..sizeX-1]
 
-    // Column pass: one group per COLUMN (column index ranges over X)
+    // Column pass: one group per COLUMN (column index ranges over Y)
     constants.Row = 0; // Column pass
     UpdateFFTConstants(constants);
-    context->Dispatch(1, sizeX, numLayers); // GID.y iterates columns [0..sizeX-1]
+    if (numLayers > 1) context->CSSetShader(fftArrayShaderY, nullptr, 0);
+    else               context->CSSetShader(fftShaderY, nullptr, 0);
+    context->Dispatch(1, sizeY, numLayers); // GID.y iterates columns [0..sizeY-1]
 
     // Unbind
     ID3D11UnorderedAccessView* nullUAV = nullptr;
