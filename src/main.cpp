@@ -98,6 +98,30 @@ void SaveToCSV(const std::vector<std::complex<float>>& data, int size, int array
     }
 }
 
+// New overload for non-square complex array outputs
+void SaveToCSV(const std::vector<std::complex<float>>& data, int width, int height, int arraySize, int tick) {
+    if (!fs::exists("data")) {
+        fs::create_directory("data");
+    }
+    std::string filename = "data/frame_" + std::to_string(tick) + ".csv";
+    if (tick < 0) {
+        filename = "data/terrain.csv";
+    }
+    std::ofstream file(filename);
+    if (!file.is_open()) return;
+    for (int layer = 0; layer < arraySize; ++layer) {
+        int sliceOffset = layer * (width * height);
+        for (int y = 0; y < height; ++y) {
+            for (int x = 0; x < width; ++x) {
+                std::complex<float> val = data[sliceOffset + (y * width) + x];
+                file << val.real();
+                if (x < width - 1) file << ",";
+            }
+            file << "\n";
+        }
+    }
+}
+
 LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
     // The callback function Windows uses to handle clicks, keys, and closing
     if (uMsg == WM_DESTROY) {
@@ -107,22 +131,23 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
     return DefWindowProc(hwnd, uMsg, wParam, lParam);
 }
 
-RenderConstants InitCamera(int gridSize) {
+RenderConstants InitCamera(int gridSizeX, int gridSizeY) {
     // These values must match those in the Vertex Shader
     float maxInitialHeight = 0.2f; 
     float visualScale = 1.f;
     float trueMax = maxInitialHeight * visualScale;
 
     // Focus the camera on the center point
-    float center = gridSize / 2.0f;
-    DirectX::XMVECTOR focusPoint = DirectX::XMVectorSet(center, trueMax/2.0f, center, 1.0f);
+    float centerX = gridSizeX / 2.0f;
+    float centerY = gridSizeY / 2.0f;
+    DirectX::XMVECTOR focusPoint = DirectX::XMVectorSet(centerX, trueMax/2.0f, centerY, 1.0f);
 
     // Define camera angles
     float pitch =  25.0f * (DirectX::XM_PI / 180.0f);
     float yaw   = 30.0f * (DirectX::XM_PI / 180.0f);
 
     // Define the distance to pull the camera back
-    float distance = gridSize * 1.5f;
+    float distance = max(gridSizeX, gridSizeY) * 1.5f;
 
     // Calculate the new Eye Position using a Rotation Matrix
     // We start with the camera pulled straight back along the Z-axis...
@@ -138,7 +163,7 @@ RenderConstants InitCamera(int gridSize) {
     DirectX::XMMATRIX view = DirectX::XMMatrixLookAtLH(eyePosition, focusPoint, upDirection);
 
     // Use an Orthographic Projection for strict mathematical lines (No perspective distortion)
-    float gridDiagonal = gridSize * 1.414f;
+    float gridDiagonal = sqrt((float)(gridSizeX * gridSizeX + gridSizeY * gridSizeY));
     float padding = 1.1f;
     float viewWidth = gridDiagonal * padding;
     float tiltedGridHeight = gridDiagonal * sin(pitch);
@@ -147,7 +172,8 @@ RenderConstants InitCamera(int gridSize) {
 
     RenderConstants rConsts = {};
     rConsts.viewProjection = DirectX::XMMatrixTranspose(view * projection);
-    rConsts.gridSize = (float)gridSize;
+    rConsts.gridSizeX = (float)gridSizeX;
+    rConsts.gridSizeY = (float)gridSizeY;
     rConsts.cellSize = (float)Sim::CELLSIZE;
     return rConsts;
 }
@@ -173,7 +199,7 @@ int RunWithRender() {
     // Initialize Simulation
     Sim sim(hwnd); 
     // Set up a camera looking at the center of the grid
-    RenderConstants rConsts = InitCamera(sim.GRIDSIZE);
+    RenderConstants rConsts = InitCamera(sim.GRIDSIZE_X, sim.GRIDSIZE_Y);
     sim.gpu->UpdateRenderConstants(rConsts);
     // sim.gpu->Render(sim.H.srv);
 
@@ -217,18 +243,19 @@ int RunHeadless() {
 
     // Initialize the simulation
     Sim sim;
-    int size = sim.GRIDSIZE;
+    int sizeX = sim.GRIDSIZE_X;
+    int sizeY = sim.GRIDSIZE_Y;
     int arraySize = sim.DEPTH_NUM;
-    std::vector<float> terrain(size * size);
-    std::vector<float> H(size * size);
-    std::vector<std::complex<float>> hHat(size*size);
+    std::vector<float> terrain(sizeX * sizeY);
+    std::vector<float> H(sizeX * sizeY);
+    std::vector<std::complex<float>> hHat(sizeX * sizeY);
     std::vector<std::complex<float>> array;
-    // sim.gpu->DownloadFromGPU(sim.terrain.tex, terrain, size);
-    // sim.gpu->DownloadFromGPU(sim.H.tex, H, size);
-    // SaveToCSV(terrain, size, -1); // Save terrain data for reference
-    // SaveToCSV(H, size, 0); // Save initial water height data
-    sim.gpu->DownloadFromGPU(sim.HPos.tex, array, size, arraySize);
-    SaveToCSV(array, size, arraySize, 0);
+    // sim.gpu->DownloadFromGPU(sim.terrain.tex, terrain, sizeX, sizeY);
+    // sim.gpu->DownloadFromGPU(sim.H.tex, H, sizeX, sizeY);
+    // SaveToCSV(terrain, sizeX, sizeY, -1); // Save terrain data for reference
+    // SaveToCSV(H, sizeX, sizeY, 0); // Save initial water height data
+    sim.gpu->DownloadFromGPU(sim.HPos.tex, array, sizeX, sizeY, arraySize);
+    SaveToCSV(array, sizeX, sizeY, arraySize, 0);
 
     // std::cout << "Starting simulation loop..." << std::endl;
     // auto totalStart = std::chrono::high_resolution_clock::now();

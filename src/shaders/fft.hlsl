@@ -7,10 +7,14 @@
 
 // Constant Buffer
 cbuffer FFTConstants : register(b1) {
-    int cb_N;          // Transform size (gridsize) (must be power of 2)
-    int cb_Bits;       // log2(cb_N) 
+    int cb_Nx;         // Transform size X (width)
+    int cb_Ny;         // Transform size Y (height)
+    int cb_BitsX;      // log2(cb_Nx)
+    int cb_BitsY;      // log2(cb_Ny)
     int cb_Inverse;    // 0 = forward DFT, 1 = inverse DFT
-    int cb_IsRow;     // Row = 1, Col = 0
+    int cb_IsRow;      // Row = 1, Col = 0
+    int cb_pad0;
+    int cb_pad1;
 };
 
 // Texture Registers
@@ -66,34 +70,37 @@ void FFTKernel_1D(
     uint3 GID : SV_GroupID          // GID.y = row or column index
 ) {
     const uint tid = GI.x;
+    uint N = (cb_IsRow == 1) ? (uint)cb_Nx : (uint)cb_Ny;
+    uint bits = (cb_IsRow == 1) ? (uint)cb_BitsX : (uint)cb_BitsY;
 
     // -------------------------------------------------------------------------
     // PHASE 1 — Load with bit-reversal permutation into groupshared memory
     // -------------------------------------------------------------------------
 
     // Global element coordinate: row pass uses (tid, row), column pass uses (column, tid).
-    // if (tid < cb_N) {
-        const uint rev = bit_reverse(tid, cb_Bits);
-        #ifdef IS_ARRAY
-            uint3 coord = (cb_IsRow == 1) ? uint3(tid, GID.y, GID.z) : uint3(GID.y, tid, GID.z);
-        #else
-            uint2 coord = (cb_IsRow == 1) ? uint2(tid, GID.y) : uint2(GID.y, tid);
-        #endif
+    #ifdef IS_ARRAY
+        uint3 coord = (cb_IsRow == 1) ? uint3(tid, GID.y, GID.z) : uint3(GID.y, tid, GID.z);
+    #else
+        uint2 coord = (cb_IsRow == 1) ? uint2(tid, GID.y) : uint2(GID.y, tid);
+    #endif
+
+    if (tid < N) {
+        const uint rev = bit_reverse(tid, bits);
         gs_Data[rev] = fft[coord];
-    // }
+    }
     GroupMemoryBarrierWithGroupSync();
 
     // -------------------------------------------------------------------------
     // PHASE 2 — Butterfly passes
     // -------------------------------------------------------------------------
 
-    for (uint passNum = 0; passNum < cb_Bits; ++passNum) {
+    for (uint passNum = 0; passNum < bits; ++passNum) {
         const uint span      = 1u << passNum;
         const uint groupSize = span << 1;
         // Declare variables outside the scope so we can write them later
         float2 newEven, newOdd;
         uint evenIdx, oddIdx;
-        if (tid < cb_N / 2) {
+        if (tid < N / 2) {
             const uint k       = tid % span;
             evenIdx            = (tid / span) * groupSize + k;
             oddIdx             = evenIdx + span;
@@ -105,7 +112,7 @@ void FFTKernel_1D(
         }
         // All threads sync before we overwrite the old data
         GroupMemoryBarrierWithGroupSync();
-        if (tid < cb_N / 2) {
+        if (tid < N / 2) {
             gs_Data[evenIdx] = newEven;
             gs_Data[oddIdx]  = newOdd;
         }
@@ -117,12 +124,14 @@ void FFTKernel_1D(
     // PHASE 3 — Normalize (inverse only) and write back to global memory
     // -------------------------------------------------------------------------
 
-    float scale = cb_Inverse ? (1.0f / (float)cb_N) : 1.0f;
+    float scale = cb_Inverse ? (1.0f / (float)N) : 1.0f;
 
-    float2 result;
-    result.x = gs_Data[tid].x * scale;
-    result.y = gs_Data[tid].y * scale;
-    fft[coord] = result;
+    float2 result = float2(0.f, 0.f);
+    if (tid < N) {
+        result.x = gs_Data[tid].x * scale;
+        result.y = gs_Data[tid].y * scale;
+        fft[coord] = result;
+    }
 }
 
 

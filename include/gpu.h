@@ -12,7 +12,8 @@
 struct alignas(16) SimConstants {
     float time;
     // Sim Params
-    int gridSize; 
+    int gridSizeX; 
+    int gridSizeY; 
     float cellSize;
     float timeStep;
     int boundaryType;
@@ -44,16 +45,22 @@ struct alignas(16) SimConstants {
 };
 
 struct alignas(16) FFTConstants {
-    int N;         // Transform size (gridsize) (must be power of two)
-    int Bits;      // log2(N)  
+    int Nx;        // Transform size X (width)
+    int Ny;        // Transform size Y (height)
+    int BitsX;     // log2(Nx)
+    int BitsY;     // log2(Ny)
     int Inverse;   // 0 = forward DFT, 1 = inverse DFT
     int Row;       // Row = 1. Col = 0
+    int pad0;      // padding to 16-byte boundary
+    int pad1;
 };
 
 struct alignas(16) RenderConstants {
     DirectX::XMMATRIX viewProjection;
-    float gridSize;
+    float gridSizeX;
+    float gridSizeY;
     float cellSize;
+    float _pad; // padding to make struct size a multiple of 16 bytes
 };
 
 struct GPUField {
@@ -73,17 +80,17 @@ public:
     GPU();
     ~GPU();
 
-    bool BaseInit(int size);
-    bool Init(int size); // For headless compute
-    bool Init(int size, HWND hwnd); // For rendering
+    bool BaseInit(int sizeX, int sizeY);
+    bool Init(int sizeX, int sizeY); // For headless compute
+    bool Init(int sizeX, int sizeY, HWND hwnd); // For rendering
 
     // Compute Shaders    
     void UpdateConstants(const SimConstants& constants);
-    bool CreateGridTexture(GPUField* field, int size, bool isComplex = false, int arraySize = 1);
-    bool UploadToGPU(ID3D11Texture2D* tex, const std::vector<float>& data, int gridSize, bool isComplex = false, int arraySize = 1);
-    bool DownloadFromGPU(ID3D11Texture2D* tex, std::vector<float>& data, int size);
-    bool DownloadFromGPU(ID3D11Texture2D* tex, std::vector<std::complex<float>>& data, int size);
-    bool DownloadFromGPU(ID3D11Texture2D* tex, std::vector<std::complex<float>>& data, int size, int arraySize);
+    bool CreateGridTexture(GPUField* field, int width, int height, bool isComplex = false, int arraySize = 1);
+    bool UploadToGPU(ID3D11Texture2D* tex, const std::vector<float>& data, int width, int height, bool isComplex = false, int arraySize = 1);
+    bool DownloadFromGPU(ID3D11Texture2D* tex, std::vector<float>& data, int width, int height);
+    bool DownloadFromGPU(ID3D11Texture2D* tex, std::vector<std::complex<float>>& data, int width, int height);
+    bool DownloadFromGPU(ID3D11Texture2D* tex, std::vector<std::complex<float>>& data, int width, int height, int arraySize);
     bool CreateBuffer(GPUBuffer* bufferObj, const void* initData, UINT elementCount);
     bool DownloadBuffer(ID3D11Buffer* buf, std::vector<float>& data, int size);
     bool CompileComputeShader(const std::wstring& file, const std::string& entryPoint, ID3D11ComputeShader** shader);
@@ -91,17 +98,17 @@ public:
     void Dispatch(ID3D11ComputeShader* shader, 
                   const std::vector<ID3D11ShaderResourceView*>& srvs, 
                   const std::vector<ID3D11UnorderedAccessView*>& uavs,
-                  int size = 1);
+                  int layers = 1);
 
     // FFT
     void UpdateFFTConstants(const FFTConstants& constants);
     bool CompileFFTShaders(int size);
-    void ExecuteFFT(ID3D11UnorderedAccessView* fftBufferUAV, int size, bool inverse, int numLayers = 1);
+    void ExecuteFFT(ID3D11UnorderedAccessView* fftBufferUAV, int sizeX, int sizeY, bool inverse, int numLayers = 1);
 
     // Rendering 
     void UpdateRenderConstants(const RenderConstants& constants);
-    bool CreateGridVertexBuffer(int gridSize);
-    bool CreateGridMesh(int gridSize);
+    bool CreateGridVertexBuffer(int width, int height);
+    bool CreateGridMesh(int width, int height);
     bool CompileVertexShader(const std::wstring& file, const std::string& entryPoint);
     bool CompilePixelShader(const std::wstring& file, const std::string& entryPoint);
     // void Render(ID3D11ShaderResourceView* heightSRV);
@@ -110,8 +117,11 @@ public:
 
 private:
     // Compute Shaders
-    int size;   // simulation grid size
-    UINT group; // number of thread groups to dispatch for compute shaders, assuming 16x16 threads per group
+    int sizeX;   // simulation grid width
+    int sizeY;   // simulation grid height
+    UINT groupX; // number of thread groups in X to dispatch for compute shaders, assuming 16x16 threads per group
+    UINT groupY; // number of thread groups in Y
+
     ID3D11Device* device = nullptr;
     ID3D11DeviceContext* context = nullptr;
     ID3D11Buffer* constantBuffer = nullptr;

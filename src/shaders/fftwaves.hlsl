@@ -6,7 +6,8 @@ and the paper "Empirical Directional Wave Spectra for Computer Graphics".
 cbuffer Constants : register(b0) {
     float time;
     // Sim Params
-    int gridSize; 
+    int gridSizeX; 
+    int gridSizeY; 
     float cellSize;
     float timeStep;
     int boundaryType;
@@ -301,7 +302,7 @@ RWTexture2DArray<float2> HNegOut: register(u1);
 [numthreads(16, 16, 1)]
 void PopulateSpectrum(uint3 id : SV_DispatchThreadID) {
     // Outputs: HPosOut = HPos, HNegOut = HNeg (complex amplitudes)
-    if (id.x >= (uint)(gridSize) || id.y >= (uint)(gridSize)) return;
+    if (id.x >= (uint)(gridSizeX) || id.y >= (uint)(gridSizeY)) return;
 
     if (id.x == 0 && id.y == 0) {
         HPosOut[id] = float2(0.f, 0.f);
@@ -310,15 +311,18 @@ void PopulateSpectrum(uint3 id : SV_DispatchThreadID) {
     }
 
     ///// Wave Number ///////
-    // Calculate the physical size of the grid and the frequency step (dK)
-    float domainSize = (float)gridSize * cellSize;
-    float dK = 2.0f * PI / domainSize; 
-    float N_2 = (float)gridSize / 2.0f;
+    // Calculate the physical size of the grid and the frequency step (dK) in each dimension
+    float domainSizeX = (float)gridSizeX * cellSize;
+    float domainSizeY = (float)gridSizeY * cellSize;
+    float dKx = 2.0f * PI / domainSizeX; 
+    float dKy = 2.0f * PI / domainSizeY; 
+    float N2x = (float)gridSizeX / 2.0f;
+    float N2y = (float)gridSizeY / 2.0f;
     // Calculate the physical 2D wavenumber vector components (signed, handling the Nyquist wrap-around)
-    int freqX = ((float)id.x < N_2) ? (int)id.x : (int)id.x - (int)gridSize;
-    int freqY = ((float)id.y < N_2) ? (int)id.y : (int)id.y - (int)gridSize;
-    float kx = (float)freqX * dK; // spatial frequency: radians per meter
-    float ky = (float)freqY * dK;
+    int freqX = ((float)id.x < N2x) ? (int)id.x : (int)id.x - (int)gridSizeX;
+    int freqY = ((float)id.y < N2y) ? (int)id.y : (int)id.y - (int)gridSizeY;
+    float kx = (float)freqX * dKx; // spatial frequency: radians per meter
+    float ky = (float)freqY * dKy;
     float k = sqrt(kx * kx + ky * ky);
     // Unit vectors
     float kx_ = kx / k;
@@ -345,8 +349,9 @@ void PopulateSpectrum(uint3 id : SV_DispatchThreadID) {
     uint seed = Seed(kx, ky, 0);
     float2 unif = Rand2(seed);
     float2 norm = Randn2(seed); 
-    float ampPos = norm.x * dK * sqrt(2 * SPos);
-    float ampNeg = norm.y * dK * sqrt(2 * SNeg);
+    // Use 2D frequency spacing for amplitude conversion
+    float ampPos = norm.x * dKx * dKy * sqrt(2 * SPos);
+    float ampNeg = norm.y * dKx * dKy * sqrt(2 * SNeg);
     float phasePos = unif.x * 2 * PI;
     float phaseNeg = unif.y * 2 * PI;
 
@@ -355,9 +360,9 @@ void PopulateSpectrum(uint3 id : SV_DispatchThreadID) {
     ampPos *= filter;
     ampNeg *= filter;
 
-    // Scale by gridSize^2, since iFFT will normalize by this
-    ampPos *= gridSize * gridSize;
-    ampNeg *= gridSize * gridSize;
+    // Scale by gridSizeX*gridSizeY, since iFFT will normalize by total sample count
+    ampPos *= (float)gridSizeX * (float)gridSizeY;
+    ampNeg *= (float)gridSizeX * (float)gridSizeY;
 
     // Store results
     HPosOut[id] = ampPos * float2(cos(phasePos), -sin(phasePos));
@@ -383,13 +388,16 @@ void PropagateWaves(uint3 id : SV_DispatchThreadID) {
     }
 
     // Calculate Wavevector
-    float domainSize = (float)gridSize * cellSize;
-    float dK = 2.0f * PI / domainSize; 
-    float N_2 = (float)gridSize / 2.0f;
-    int freqX = ((float)id.x < N_2) ? (int)id.x : (int)id.x - (int)gridSize;
-    int freqY = ((float)id.y < N_2) ? (int)id.y : (int)id.y - (int)gridSize;
-    float kx = (float)freqX * dK; // spatial frequency: radians per meter
-    float ky = (float)freqY * dK;
+    float domainSizeX = (float)gridSizeX * cellSize;
+    float domainSizeY = (float)gridSizeY * cellSize;
+    float dKx = 2.0f * PI / domainSizeX;
+    float dKy = 2.0f * PI / domainSizeY;
+    float N2x = (float)gridSizeX / 2.0f;
+    float N2y = (float)gridSizeY / 2.0f;
+    int freqX = ((float)id.x < N2x) ? (int)id.x : (int)id.x - (int)gridSizeX;
+    int freqY = ((float)id.y < N2y) ? (int)id.y : (int)id.y - (int)gridSizeY;
+    float kx = (float)freqX * dKx; // spatial frequency: radians per meter
+    float ky = (float)freqY * dKy;
     float k = sqrt(kx * kx + ky * ky);
     float kx_ = kx / k;
     float ky_ = ky / k;
@@ -436,7 +444,7 @@ RWTexture2D<float> DxOut: register(u3);
 RWTexture2D<float> DyOut: register(u4);
 [numthreads(16, 16, 1)]
 void Interp(uint3 id : SV_DispatchThreadID) {
-    if (id.x >= (uint)(gridSize) || id.y >= (uint)(gridSize)) return;
+    if (id.x >= (uint)(gridSizeX) || id.y >= (uint)(gridSizeY)) return;
 
     float waterDepth = hbar[id.xy];
     if (waterDepth <= minWaterHeight) {
