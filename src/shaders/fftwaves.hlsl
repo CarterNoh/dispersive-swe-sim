@@ -324,6 +324,11 @@ void PopulateSpectrum(uint3 id : SV_DispatchThreadID) {
     float kx = (float)freqX * dKx; // spatial frequency: radians per meter
     float ky = (float)freqY * dKy;
     float k = sqrt(kx * kx + ky * ky);
+    if (k < 1e-6) {
+        HPosOut[id] = float2(0.f, 0.f);
+        HNegOut[id] = float2(0.f, 0.f);
+        return;
+    }
     // Unit vectors
     float kx_ = kx / k;
     float ky_ = ky / k;
@@ -399,6 +404,14 @@ void PropagateWaves(uint3 id : SV_DispatchThreadID) {
     float kx = (float)freqX * dKx; // spatial frequency: radians per meter
     float ky = (float)freqY * dKy;
     float k = sqrt(kx * kx + ky * ky);
+    if (k < 1e-6) {
+        HPropOut[id] = float2(0.f, 0.f);
+        DelHxOut[id] = float2(0.f, 0.f);
+        DelHyOut[id] = float2(0.f, 0.f);
+        DispXOut[id] = float2(0.f, 0.f);
+        DispYOut[id] = float2(0.f, 0.f);
+        return;
+    }
     float kx_ = kx / k;
     float ky_ = ky / k;
 

@@ -585,6 +585,11 @@ void CalcEWave(uint3 id : SV_DispatchThreadID) {
     float kx = (float)freqX * dKx; // spatial frequency: radians per meter
     float ky = (float)freqY * dKy;
     float k = sqrt(kx * kx + ky * ky);
+    if (k < 1e-6) {
+        qhat_x_array[id] = qhat_x[id.xy];
+        qhat_y_array[id] = qhat_y[id.xy];
+        return;
+    }
     // Unit vectors
     float kx_ = kx / k;
     float ky_ = ky / k;
