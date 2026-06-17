@@ -572,15 +572,18 @@ void CalcEWave(uint3 id : SV_DispatchThreadID) {
     }
 
     ///// Wave Number ///////
-    // Calculate the physical size of the grid and the frequency step (dK)
-    float domainSize = (float)gridSizeX * cellSize;
-    float dK = 2.0f * PI / domainSize; 
-    float N_2 = (float)gridSizeX / 2.0f;
+    // Calculate the physical size of the grid and the frequency step (dK) in each dimension
+    float domainSizeX = (float)gridSizeX * cellSize;
+    float domainSizeY = (float)gridSizeY * cellSize;
+    float dKx = 2.0f * PI / domainSizeX; 
+    float dKy = 2.0f * PI / domainSizeY;
+    float NXdiv2 = (float)gridSizeX / 2.0f;
+    float NYdiv2 = (float)gridSizeY / 2.0f;
     // Calculate the physical 2D wavenumber vector components (signed, handling the Nyquist wrap-around)
-    int freqX = (id.x < N_2) ? (int)id.x : (int)id.x - (int)gridSizeX;
-    int freqY = (id.y < N_2) ? (int)id.y : (int)id.y - (int)gridSizeX;
-    float kx = (float)freqX * dK; // spatial frequency: radians per meter
-    float ky = (float)freqY * dK;
+    int freqX = (id.x < NXdiv2) ? (int)id.x : (int)id.x - (int)gridSizeX;
+    int freqY = (id.y < NYdiv2) ? (int)id.y : (int)id.y - (int)gridSizeY;
+    float kx = (float)freqX * dKx; // spatial frequency: radians per meter
+    float ky = (float)freqY * dKy;
     float k = sqrt(kx * kx + ky * ky);
     // Unit vectors
     float kx_ = kx / k;
@@ -637,7 +640,7 @@ void CalcEWave(uint3 id : SV_DispatchThreadID) {
     qhat_x_array[id] = float2(qx_r, qx_i);
     qhat_y_array[id] = float2(qy_r, qy_i);
 
-    if ((id.x == N_2 && id.y == 0) || (id.x == 0 && id.y == N_2) || (id.x == N_2 && id.y == N_2)) {
+    if ((id.x == NXdiv2 && id.y == 0) || (id.x == 0 && id.y == NYdiv2) || (id.x == NXdiv2 && id.y == NYdiv2)) {
         qhat_x_array[id] = float2(qhat_x_array[id].x, 0.0f);
         qhat_y_array[id] = float2(qhat_y_array[id].x, 0.0f);
     }

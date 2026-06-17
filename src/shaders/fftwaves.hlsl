@@ -316,11 +316,11 @@ void PopulateSpectrum(uint3 id : SV_DispatchThreadID) {
     float domainSizeY = (float)gridSizeY * cellSize;
     float dKx = 2.0f * PI / domainSizeX; 
     float dKy = 2.0f * PI / domainSizeY; 
-    float N2x = (float)gridSizeX / 2.0f;
-    float N2y = (float)gridSizeY / 2.0f;
+    float NXdiv2 = (float)gridSizeX / 2.0f;
+    float NYdiv2 = (float)gridSizeY / 2.0f;
     // Calculate the physical 2D wavenumber vector components (signed, handling the Nyquist wrap-around)
-    int freqX = ((float)id.x < N2x) ? (int)id.x : (int)id.x - (int)gridSizeX;
-    int freqY = ((float)id.y < N2y) ? (int)id.y : (int)id.y - (int)gridSizeY;
+    int freqX = ((float)id.x < NXdiv2) ? (int)id.x : (int)id.x - (int)gridSizeX;
+    int freqY = ((float)id.y < NYdiv2) ? (int)id.y : (int)id.y - (int)gridSizeY;
     float kx = (float)freqX * dKx; // spatial frequency: radians per meter
     float ky = (float)freqY * dKy;
     float k = sqrt(kx * kx + ky * ky);
@@ -392,10 +392,10 @@ void PropagateWaves(uint3 id : SV_DispatchThreadID) {
     float domainSizeY = (float)gridSizeY * cellSize;
     float dKx = 2.0f * PI / domainSizeX;
     float dKy = 2.0f * PI / domainSizeY;
-    float N2x = (float)gridSizeX / 2.0f;
-    float N2y = (float)gridSizeY / 2.0f;
-    int freqX = ((float)id.x < N2x) ? (int)id.x : (int)id.x - (int)gridSizeX;
-    int freqY = ((float)id.y < N2y) ? (int)id.y : (int)id.y - (int)gridSizeY;
+    float NXdiv2 = (float)gridSizeX / 2.0f;
+    float NYdiv2 = (float)gridSizeY / 2.0f;
+    int freqX = ((float)id.x < NXdiv2) ? (int)id.x : (int)id.x - (int)gridSizeX;
+    int freqY = ((float)id.y < NYdiv2) ? (int)id.y : (int)id.y - (int)gridSizeY;
     float kx = (float)freqX * dKx; // spatial frequency: radians per meter
     float ky = (float)freqY * dKy;
     float k = sqrt(kx * kx + ky * ky);
