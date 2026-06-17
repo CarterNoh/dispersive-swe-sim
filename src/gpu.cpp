@@ -463,9 +463,13 @@ bool GPU::CompileFFTShaders(int sizeX, int sizeY) {
     ID3DBlob* errorBlob = nullptr;
 
     ///// Shaders for single grid in X and Y
+    // Prepare persistent strings for macro values to avoid dangling c_str() pointers
+    std::string fftSizeXStr = std::to_string(sizeX);
+    std::string fftSizeYStr = std::to_string(sizeY);
+
     // X Direction
     D3D_SHADER_MACRO singleMacrosX[] = {
-        { "FFT_SIZE", std::to_string(sizeX).c_str() },
+        { "FFT_SIZE", fftSizeXStr.c_str() },
         { NULL, NULL }};
     HRESULT hrX = D3DCompileFromFile(L"shaders/fft.hlsl", singleMacrosX, nullptr, "FFTKernel_1D", "cs_5_0", 0, 0, &shaderBlob, &errorBlob);
     if (FAILED(hrX)) {
@@ -477,7 +481,7 @@ bool GPU::CompileFFTShaders(int sizeX, int sizeY) {
 
     // Y Direction
     D3D_SHADER_MACRO singleMacrosY[] = {
-        { "FFT_SIZE", std::to_string(sizeY).c_str() },
+        { "FFT_SIZE", fftSizeYStr.c_str() },
         { NULL, NULL }};
     HRESULT hrY = D3DCompileFromFile(L"shaders/fft.hlsl", singleMacrosY, nullptr, "FFTKernel_1D", "cs_5_0", 0, 0, &shaderBlob, &errorBlob);
     if (FAILED(hrY)) {
@@ -490,9 +494,9 @@ bool GPU::CompileFFTShaders(int sizeX, int sizeY) {
     ///// Shaders for arrays of grids in X and Y
     // X Direction
     D3D_SHADER_MACRO arrayMacrosX[] = {
-    { "FFT_SIZE", std::to_string(sizeX).c_str() },
-    { "IS_ARRAY", "1" },
-    { NULL, NULL }};
+        { "FFT_SIZE", fftSizeXStr.c_str() },
+        { "IS_ARRAY", "1" },
+        { NULL, NULL }};
     HRESULT hrAX = D3DCompileFromFile(L"shaders/fft.hlsl", arrayMacrosX, nullptr, "FFTKernel_1D", "cs_5_0", 0, 0, &shaderBlob, &errorBlob);
     if (FAILED(hrAX)) {
         if (errorBlob) std::cerr << "Shader Error Array X: " << (char*)errorBlob->GetBufferPointer() << std::endl;
@@ -503,9 +507,9 @@ bool GPU::CompileFFTShaders(int sizeX, int sizeY) {
 
     // Y Direction
     D3D_SHADER_MACRO arrayMacrosY[] = {
-    { "FFT_SIZE", std::to_string(sizeY).c_str() },
-    { "IS_ARRAY", "1" },
-    { NULL, NULL }};
+        { "FFT_SIZE", fftSizeYStr.c_str() },
+        { "IS_ARRAY", "1" },
+        { NULL, NULL }};
     HRESULT hrAY = D3DCompileFromFile(L"shaders/fft.hlsl", arrayMacrosY, nullptr, "FFTKernel_1D", "cs_5_0", 0, 0, &shaderBlob, &errorBlob);
     if (FAILED(hrAY)) {
         if (errorBlob) std::cerr << "Shader Error Array Y: " << (char*)errorBlob->GetBufferPointer() << std::endl;
