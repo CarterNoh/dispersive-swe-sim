@@ -170,7 +170,7 @@ float SafeTanh(float x) {
 // Apply Boundary Conditions
 [numthreads(16, 16, 1)]
 void ApplyBoundaries(uint3 id : SV_DispatchThreadID) {
-    // Inputs: in0 = u_x, in1 = u_y, in2+ = fieldOld
+    // Inputs: in0 = u_x, in1 = u_y, in2 = ref, in3+ = fieldOld
     uint x = id.x;
     uint y = id.y;
     if (x >= (uint)(gridSize) || y >= (uint)(gridSize)) return;
@@ -204,8 +204,8 @@ void ApplyBoundaries(uint3 id : SV_DispatchThreadID) {
     }
     else if (right && top) {
         src = uint2(gridSize-2, gridSize-2);
-        float wx = max(0, in0[uint2(gridSize-2, 0)]); 
-        float wy = max(0, in1[uint2(0, gridSize-2)]);
+        float wx = max(0, in0[src]); 
+        float wy = max(0, in1[src]);
         w = sqrt(pow(wx, 2) + pow(wy, 2)); // magnitude of vector (+)[u_x, u_y]
     }
     else if (left) {
@@ -214,15 +214,15 @@ void ApplyBoundaries(uint3 id : SV_DispatchThreadID) {
     }
     else if (right) {
         src = uint2(gridSize-2, y);
-        w = abs(max(0.f, in0[src])); // (+)u_x
+        w = abs(max(0.f, in0[src]));   // (+)u_x
     }
     else if (bottom) {
         src = uint2(x, 1);
-        w = abs(max(0.f, in1[id.xy])); // (-)u_y
+        w = abs(min(0.f, in1[id.xy])); // (-)u_y
     }
     else { // top
         src = uint2(x, gridSize-2);
-        w = abs(max(0.f, in1[src])); // (+)u_y
+        w = abs(max(0.f, in1[src]));   // (+)u_y
     }
 
     // Apply boundary condition
@@ -244,17 +244,39 @@ void ApplyBoundaries(uint3 id : SV_DispatchThreadID) {
     }
     else if (boundaryType == 2) { // advective boundary 
         // see details here: (https://www.tfd.chalmers.se/~hani/kurser/OS_CFD_2022/LeandroLucchese/Report_Lucchese.pdf)
-        // float c = 1500.f; // speed of sound, m/s
-        // if (valX) w += c; // use for u_x, q_x
-        float d_inf = 100;
-        float field_inf = 0; // zero velocity, zero height
-        float a = w * timeStep;
+        float d_inf = gridSize * cellSize;
+        float field_inf = in2[id.xy]; // zero velocity, nonzero h (so H is zero)
+        
+        float a = w * timeStep / cellSize;
         float k = a / d_inf;
         float denom = 1 + a + k;
-        out0[id.xy] = ((in2[id.xy] + k * field_inf) + out0[src] * a) / denom;
-        out1[id.xy] = ((in3[id.xy] + k * field_inf) + out1[src] * a) / denom;
-        out2[id.xy] = ((in4[id.xy] + k * field_inf) + out2[src] * a) / denom;
-        out3[id.xy] = ((in5[id.xy] + k * field_inf) + out3[src] * a) / denom;
+
+        float c = 1500.f; // speed of sound in water, m/s
+        float wc = w + c;
+        float ac = wc * timeStep / cellSize;
+        float kc = ac / d_inf;
+        float denomc = 1 + ac + kc;
+        
+        out0[id.xy] = (in3[id.xy] + a * out0[src] + k * field_inf) / denom; // first field is always scalar field
+        // out1[id.xy] = (in4[id.xy] + ac * out1[src] + kc * field_inf) / denomc; // first field is always scalar field
+        // out2[id.xy] = (in5[id.xy] + ac * out2[src] + kc * field_inf) / denomc; // first field is always scalar field
+        // out3[id.xy] = (in6[id.xy] + ac * out3[src] + kc * field_inf) / denomc; // first field is always scalar field
+        // out4[id.xy] = (in7[id.xy] + ac * out4[src] + kc * field_inf) / denomc; // first field is always scalar field
+
+        if (left || right) { // x-dir variables use c, y-dir variables don't
+            out1[id.xy] = (in4[id.xy] + ac * out1[src] + kc * field_inf) / denomc;
+            out2[id.xy] = (in5[id.xy] + a * out2[src] + k * field_inf) / denom;
+            out3[id.xy] = (in6[id.xy] + ac * out3[src] + kc * field_inf) / denomc;
+            out4[id.xy] = (in7[id.xy] + a * out4[src] + k * field_inf) / denom;
+        }
+        else if (bottom || top) { // y-dir variables use c, x-dir variables don't
+            out1[id.xy] = (in4[id.xy] + a * out1[src] + k * field_inf) / denom;
+            out2[id.xy] = (in5[id.xy] + ac * out2[src] + kc * field_inf) / denomc;
+            out3[id.xy] = (in6[id.xy] + a * out3[src] + k * field_inf) / denom;
+            out4[id.xy] = (in7[id.xy] + ac * out4[src] + kc * field_inf) / denomc;
+        }
+        
+        
     }
 }
 

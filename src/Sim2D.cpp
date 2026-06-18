@@ -125,12 +125,15 @@ void Sim::Init(GPU* gpu) {
 	std::vector<float> terrain_temp = SetTerrain();
 	std::vector<float> h_temp = SetWater(terrain_temp);
 	std::vector<float> H_temp(GRIDSIZE*GRIDSIZE, 0.0f);
+	std::vector<float> h_ref(GRIDSIZE*GRIDSIZE, 0.0f);
 	for (int i = 0; i < GRIDSIZE*GRIDSIZE; i++) {
 		H_temp[i] = terrain_temp[i] + h_temp[i];
+		h_ref[i] = std::max(0.f, WATER_LEVEL - terrain_temp[i]);
 	}
 	gpu->UploadToGPU(terrain.tex, terrain_temp, GRIDSIZE);
 	gpu->UploadToGPU(h.tex, h_temp, GRIDSIZE);
 	gpu->UploadToGPU(H.tex, H_temp, GRIDSIZE);
+	gpu->UploadToGPU(href.tex, h_ref, GRIDSIZE);
 	gpu->UploadToGPU(hbar.tex, h_temp, GRIDSIZE);
 	gpu->UploadToGPU(hbarPast.tex, h_temp, GRIDSIZE);
 
@@ -182,6 +185,13 @@ void Sim::SimStep() {
 
 void Sim::DecompositionStep() {
 	/******* Bulk vs Surface Wave Decomposition ******/
+	// store values from last iteration
+	std::swap(hbar, hbarPast);
+	std::swap(qbar_x, qbarPast_x);
+	std::swap(qbar_y, qbarPast_y);
+	std::swap(qAdvect_x, qAdvectPast_x);
+	std::swap(qAdvect_y, qAdvectPast_y);
+
 	// Initialize values for diffusion step
     gpu->Dispatch(InitDecomp, 
 		{h.srv, q_x.srv, q_y.srv, terrain.srv}, 
@@ -208,9 +218,6 @@ void Sim::DecompositionStep() {
 	}
 
 	// final conversion to individual solver quantities
-	std::swap(hbar, hbarPast);
-	std::swap(qbar_x, qbarPast_x);
-	std::swap(qbar_y, qbarPast_y);
 	gpu->Dispatch(DecomposeFields, 
 		{H.srv, Q_x.srv, Q_y.srv, h.srv, q_x.srv, q_y.srv, terrain.srv}, 
 		{hbar.uav, qbar_x.uav, qbar_y.uav, htilde.uav, qtilde_x.uav, qtilde_y.uav});
@@ -277,8 +284,8 @@ void Sim::SWEStep() {
 		{ubar_x.srv, ubar_y.srv, hbar.srv, H.srv, delH_x.srv, delH_y.srv}, 
 		{ubarNew_x.uav, ubarNew_y.uav, qbar_x.uav, qbar_y.uav});
 	gpu->Dispatch(ApplyBoundaries, 
-		{ubar_x.srv, ubar_y.srv, ubar_x.srv, ubar_y.srv, qbarPast_x.srv, qbarPast_y.srv}, 
-		{ubarNew_x.uav, ubarNew_y.uav, qbar_x.uav, qbar_y.uav});	
+		{ubarNew_x.srv, ubarNew_y.srv, zero.srv, nullptr, ubar_x.srv, ubar_y.srv, qbarPast_x.srv, qbarPast_y.srv}, 
+		{nullptr, ubarNew_x.uav, ubarNew_y.uav, qbar_x.uav, qbar_y.uav});	
 }
 
 void Sim::TransportStep() {
@@ -292,7 +299,7 @@ void Sim::TransportStep() {
 			qtildePast_x.srv, qtildePast_y.srv, h.srv, htilde.srv},
 		{htilde.uav, qtilde_x.uav, qtilde_y.uav});	
 	gpu->Dispatch(ApplyBoundaries, 
-		{ubarNew_x.srv, ubarNew_y.srv, htildePast.srv, qtildePast_x.srv, qtildePast_y.srv}, 
+		{ubarNew_x.srv, ubarNew_y.srv, zero.srv, htildePast.srv, qtildePast_x.srv, qtildePast_y.srv}, 
 		{htilde.uav, qtilde_x.uav, qtilde_y.uav});
 	
 	// Advection of h through ubar:
@@ -300,7 +307,9 @@ void Sim::TransportStep() {
 	gpu->Dispatch(CalcQAdvect, 
 		{ubarNew_x.srv, ubarNew_y.srv, htilde.srv},
 		{qAdvect_x.uav, qAdvect_y.uav});
-	// apply boundaries?
+	gpu->Dispatch(ApplyBoundaries, 
+		{ubarNew_x.srv, ubarNew_y.srv, zero.srv, nullptr, qAdvectPast_x.srv, qAdvectPast_y.srv}, 
+		{nullptr, qAdvect_x.uav, qAdvect_y.uav});
 
 	std::swap(h, hPast);
 	std::swap(q_x, qPast_x);
@@ -312,9 +321,15 @@ void Sim::ComputeValues() {
 		{qbar_x.srv, qtilde_x.srv, qAdvect_x.srv, qbar_y.srv, qtilde_y.srv, qAdvect_y.srv, 
 			hPast.srv, terrain.srv}, 
 		{h.uav, q_x.uav, q_y.uav});
+	// gpu->Dispatch(ApplyBoundaries, 
+	// 	{ubarNew_x.srv, ubarNew_y.srv, hPast.srv, qPast_x.srv, qPast_y.srv}, 
+	// 	{h.uav, q_x.uav, q_y.uav});
 	gpu->Dispatch(ApplyBoundaries, 
-		{ubarNew_x.srv, ubarNew_y.srv, hPast.srv, qPast_x.srv, qPast_y.srv}, 
-		{h.uav, q_x.uav, q_y.uav});
+		{ubarNew_x.srv, ubarNew_y.srv, zero.srv, nullptr, qPast_x.srv, qPast_y.srv}, 
+		{nullptr, q_x.uav, q_y.uav});
+	gpu->Dispatch(ApplyBoundaries, 
+		{q_x.srv, q_y.srv, href.srv, hPast.srv}, 
+		{h.uav});
 
 	gpu->Dispatch(InitDecomp, 
 		{h.srv, nullptr, nullptr, terrain.srv}, 

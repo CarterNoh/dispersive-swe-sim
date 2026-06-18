@@ -672,5 +672,5 @@ void GPU::Render(const std::vector<ID3D11ShaderResourceView*>& srvs) {
     context->VSSetShaderResources(0, 1, &nullSRV);
 
     // Present the frame to the Window
-    swapChain->Present(1, 0); // (1, 0) = VSync on
+    swapChain->Present(0, 0); // (1, 0) = VSync on
 }
