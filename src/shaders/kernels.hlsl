@@ -183,38 +183,46 @@ void ApplyBoundaries(uint3 id : SV_DispatchThreadID) {
 
     // Pick a source interior cell depending on boundary side
     uint2 src; // cell to draw from
-    float w; // carrier velocity
+    float w; // carrier velocity, only take outflowing part
     if (left && bottom) {
         src = uint2(1, 1);
-        w = abs(min(0, in1[src])); // ambiguous, could be negative u_x or u_y.
+        float wx = min(0, in0[id.xy]); // negative (out-flowing) portion of u_x, if positive then zero
+        float wy = min(0, in1[id.xy]);
+        w = sqrt(pow(wx, 2) + pow(wy, 2)); // magnitude of vector (-)[u_x, u_y]
     }
     else if (left && top) {
         src = uint2(1, gridSize-2);
-        w = abs(min(0, in0[src])); // ambiguous, could be negative u_x or positive u_y.
+        float wx = min(0, in0[id.xy]); 
+        float wy = max(0, in1[uint2(0, gridSize-2)]);
+        w = sqrt(pow(wx, 2) + pow(wy, 2)); // magnitude of vector [(-)u_x, (+)u_y]
     }
     else if (right && bottom) {
         src = uint2(gridSize-2, 1);
-        w = abs(max(0, in0[src])); // ambiguous, could be positive u_x or negative u_y.
+        float wx = max(0, in0[uint2(gridSize-2, 0)]); 
+        float wy = min(0, in1[id.xy]);
+        w = sqrt(pow(wx, 2) + pow(wy, 2)); // magnitude of vector [(+)u_x, (-)u_y]
     }
     else if (right && top) {
         src = uint2(gridSize-2, gridSize-2);
-        w = abs(max(0, in1[src])); // ambiguous, could be positive u_x or u_y.
+        float wx = max(0, in0[uint2(gridSize-2, 0)]); 
+        float wy = max(0, in1[uint2(0, gridSize-2)]);
+        w = sqrt(pow(wx, 2) + pow(wy, 2)); // magnitude of vector (+)[u_x, u_y]
     }
     else if (left) {
         src = uint2(1, y);
-        w = abs(min(0.f, in0[src])); // negative u_x
+        w = max(0.f, abs(in0[id.xy])); // (-)u_x
     }
     else if (right) {
         src = uint2(gridSize-2, y);
-        w = abs(max(0.f, in0[src])); // positive u_x
+        w = max(0.f, abs(in0[src])); // (+)u_x
     }
     else if (bottom) {
         src = uint2(x, 1);
-        w = abs(min(0.f, in1[src])); // negative u_y
+        w = max(0.f, abs(in1[id.xy])); // (-)u_y
     }
     else { // top
         src = uint2(x, gridSize-2);
-        w = abs(max(0.f, in1[src])); // positive u_y
+        w = max(0.f, abs(in1[src])); // (+)u_y
     }
 
     // Apply boundary condition
@@ -234,18 +242,19 @@ void ApplyBoundaries(uint3 id : SV_DispatchThreadID) {
         out2[id.xy] = 2.0f * out2[src] - out2[src + dir];
         out3[id.xy] = 2.0f * out3[src] - out3[src + dir];
     }
-    else if (boundaryType == 2) { // advective boundary
+    else if (boundaryType == 2) { // advective boundary 
+        // see details here: (https://www.tfd.chalmers.se/~hani/kurser/OS_CFD_2022/LeandroLucchese/Report_Lucchese.pdf)
         // float c = 1500.f; // speed of sound, m/s
         // if (valX) w += c; // use for u_x, q_x
         float d_inf = 100;
         float field_inf = 0; // zero velocity, zero height
         float a = w * timeStep;
         float k = a / d_inf;
-        float denom = 1 + a + k;
-        out0[id.xy] = ((in2[id.xy] + k * field_inf) + out0[src] * a) / denom;
-        out0[id.xy] = ((in3[id.xy] + k * field_inf) + out1[src] * a) / denom;
-        out0[id.xy] = ((in4[id.xy] + k * field_inf) + out1[src] * a) / denom;
-        out0[id.xy] = ((in5[id.xy] + k * field_inf) + out1[src] * a) / denom;
+        float denom = 1 + a;// + k;
+        out0[id.xy] = ((in2[id.xy]) + out0[src] * a) / denom; // + k * field_inf
+        out1[id.xy] = ((in3[id.xy]) + out1[src] * a) / denom;
+        out2[id.xy] = ((in4[id.xy]) + out2[src] * a) / denom;
+        out3[id.xy] = ((in5[id.xy]) + out3[src] * a) / denom;
     }
 }
 
@@ -316,22 +325,6 @@ void DecomposeFields(uint3 id : SV_DispatchThreadID) {
     out3[id.xy] = in3[id.xy] - hbar;
     out4[id.xy] = in4[id.xy] - in1[id.xy];
     out5[id.xy] = in5[id.xy] - in2[id.xy];
-
-    // // Airy Only
-    // out0[id.xy] = max(0.f, in0[id.xy] - in6[id.xy]);
-    // out1[id.xy] = 0.f;
-    // out2[id.xy] = 0.f;
-    // out3[id.xy] = in3[id.xy] - out0[id.xy];
-    // out4[id.xy] = in4[id.xy];
-    // out5[id.xy] = in5[id.xy];
-
-    // // SWE Only
-    // out0[id.xy] = in3[id.xy];
-    // out1[id.xy] = in4[id.xy];
-    // out2[id.xy] = in5[id.xy];
-    // out3[id.xy] = 0;
-    // out4[id.xy] = 0;
-    // out5[id.xy] = 0;
 
     if (StopFlowOnTerrainBoundary(in3, in6, id.xy, false)) { // stop flow in x direction
         out1[id.xy] = 0.f;

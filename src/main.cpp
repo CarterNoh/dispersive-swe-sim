@@ -16,7 +16,7 @@ extern "C" {
 namespace fs = std::filesystem;
 
 // Parameters
-int numTicks = 2000; // Number of simulation steps to run
+int numTicks = 5000; // Number of simulation steps to run
 bool render = true; // Whether to render the simulation or just run it headless
 
 void SaveToCSV(const std::vector<float>& h, int size, int tick) {
@@ -110,7 +110,7 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
 RenderConstants InitCamera(int gridSize) {
     // These values must match those in the Vertex Shader
     float maxInitialHeight = 0.2f; 
-    float visualScale = 1.f;
+    float visualScale = 10.f;
     float trueMax = maxInitialHeight * visualScale;
 
     // Focus the camera on the center point
@@ -175,10 +175,8 @@ int RunWithRender() {
     // Set up a camera looking at the center of the grid
     RenderConstants rConsts = InitCamera(sim.GRIDSIZE);
     sim.gpu->UpdateRenderConstants(rConsts);
-    // sim.gpu->Render(sim.H.srv);
-    sim.gpu->Render({sim.h.srv, sim.disp_x.srv, sim.disp_y.srv});
+    // sim.gpu->Render({sim.H.srv, sim.disp_x.srv, sim.disp_y.srv});
     sim.SimStep();
-    sim.gpu->Render({sim.h.srv, sim.disp_x.srv, sim.disp_y.srv});
 
     // Loop
     MSG msg = {};
@@ -195,9 +193,7 @@ int RunWithRender() {
             DispatchMessage(&msg);
         }
         sim.SimStep();
-        // sim.gpu->Render(sim.H.srv);
-        // sim.gpu->Render({sim.H.srv, sim.disp_x.srv, sim.disp_y.srv});
-        // sim.gpu->Render({sim.H.srv});
+        sim.gpu->Render({sim.H.srv, sim.disp_x.srv, sim.disp_y.srv});
         tick++;
         if (tick >= numTicks) running = false;
     }

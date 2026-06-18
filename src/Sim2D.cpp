@@ -191,8 +191,7 @@ void Sim::DecompositionStep() {
     gpu->Dispatch(CalcDiffusionCoeffs, 
 		{H.srv, terrain.srv}, 
 		{alpha_H.uav, alpha_Q_x.uav, alpha_Q_y.uav});
-	// gpu->Dispatch(ApplyBoundaries, {},
-	// 	{alpha_H.uav, alpha_Q_x.uav, alpha_Q_y.uav});
+	// no apply boundaries, I don't care if diffusion coeff is a bit off on edge
 	
 	// Run diffusion to low-pass filter H and Q
 	for (int j = 0; (j < DIFFUSION_ITERATIONS); j++) {
@@ -205,8 +204,7 @@ void Sim::DecompositionStep() {
 		gpu->Dispatch(DiffusionStep, 
 			{terrain.srv, HPast.srv, QPast_x.srv, QPast_y.srv, alpha_H.srv, alpha_Q_x.srv, alpha_Q_y.srv}, 
 			{H.uav, Q_x.uav, Q_y.uav});
-		// gpu->Dispatch(ApplyBoundaries, {}, 
-		// 	{H.uav, Q_x.uav, Q_y.uav});
+		// no apply boundaries, diffusion doesn't need to be perfect
 	}
 
 	// final conversion to individual solver quantities
@@ -216,10 +214,6 @@ void Sim::DecompositionStep() {
 	gpu->Dispatch(DecomposeFields, 
 		{H.srv, Q_x.srv, Q_y.srv, h.srv, q_x.srv, q_y.srv, terrain.srv}, 
 		{hbar.uav, qbar_x.uav, qbar_y.uav, htilde.uav, qtilde_x.uav, qtilde_y.uav});
-	// gpu->Dispatch(ApplyBoundaries, {}, 
-	// 	{hbar.uav, qbar_x.uav, qbar_y.uav});
-	// gpu->Dispatch(ApplyBoundaries, {}, 
-	// 	{htilde.uav, qtilde_x.uav, qtilde_y.uav});
 
     // Recalculate H for use later (reusing shader)
 	gpu->Dispatch(InitDecomp, 
@@ -266,8 +260,6 @@ void Sim::eWaveStep() {
 	gpu->Dispatch(InterpQ,
 		{hbar.srv, qHat_x_array.srv, qHat_y_array.srv},
 		{qtilde_x.uav, qtilde_y.uav}, DEPTH_NUM);
-	// gpu->Dispatch(ApplyBoundaries, {_, _, qtildePast_x.srv, qtildePast_y.srv}, 
-	// 	{qtilde_x.uav, qtilde_y.uav});
 }
 
 void Sim::SWEStep() {
@@ -277,15 +269,16 @@ void Sim::SWEStep() {
 	gpu->Dispatch(CalcUbar, 
 		{qbar_x.srv, qbar_y.srv, hbarPast.srv,}, 
 		{ubar_x.uav, ubar_y.uav});
+	// apply boundaries? 
 		
 	// Compute time derivative of u_bar and integrate to get new u_bar, then 
 	// transfer back to flow rate using upwinding on most recent hbar
 	gpu->Dispatch(CalcSWE,
 		{ubar_x.srv, ubar_y.srv, hbar.srv, H.srv, delH_x.srv, delH_y.srv}, 
 		{ubarNew_x.uav, ubarNew_y.uav, qbar_x.uav, qbar_y.uav});
-	// gpu->Dispatch(ApplyBoundaries, 
-	// 	{ubar_x.srv, ubar_y.srv, ubar_x.srv, ubar_y.srv, qbarPast_x.srv, qbarPast_y.srv}, 
-	// 	{ubarNew_x.uav, ubarNew_y.uav, qbar_x.uav, qbar_y.uav});	
+	gpu->Dispatch(ApplyBoundaries, 
+		{ubar_x.srv, ubar_y.srv, ubar_x.srv, ubar_y.srv, qbarPast_x.srv, qbarPast_y.srv}, 
+		{ubarNew_x.uav, ubarNew_y.uav, qbar_x.uav, qbar_y.uav});	
 }
 
 void Sim::TransportStep() {
@@ -298,16 +291,16 @@ void Sim::TransportStep() {
 		{ubarNew_x.srv, ubar_x.srv, ubarNew_y.srv, ubar_y.srv, 
 			qtildePast_x.srv, qtildePast_y.srv, h.srv, htilde.srv},
 		{htilde.uav, qtilde_x.uav, qtilde_y.uav});	
-	// gpu->Dispatch(ApplyBoundaries, 
-	// 	{ubarNew_x.srv, ubarNew_y.srv, htildePast.srv, qtildePast_x.srv, qtildePast_y.srv}, 
-	// 	{htilde.uav, qtilde_x.uav, qtilde_y.uav});
+	gpu->Dispatch(ApplyBoundaries, 
+		{ubarNew_x.srv, ubarNew_y.srv, htildePast.srv, qtildePast_x.srv, qtildePast_y.srv}, 
+		{htilde.uav, qtilde_x.uav, qtilde_y.uav});
 	
 	// Advection of h through ubar:
 	// Construct q_advect = ubar * htilde sampled at cell edges using cubic sampling
 	gpu->Dispatch(CalcQAdvect, 
 		{ubarNew_x.srv, ubarNew_y.srv, htilde.srv},
 		{qAdvect_x.uav, qAdvect_y.uav});
-	// apply boundaries
+	// apply boundaries?
 
 	std::swap(h, hPast);
 	std::swap(q_x, qPast_x);
@@ -326,6 +319,4 @@ void Sim::ComputeValues() {
 	gpu->Dispatch(InitDecomp, 
 		{h.srv, nullptr, nullptr, terrain.srv}, 
 		{H.uav});
-
-	// gpu->Dispatch(PrepareRender, {h.srv, terrain.srv}, {HRender.srv});	
 }
