@@ -188,7 +188,7 @@ void ApplyBoundaries(uint3 id : SV_DispatchThreadID) {
         src = uint2(1, 1);
         float wx = min(0, in0[id.xy]); // negative (out-flowing) portion of u_x, if positive then zero
         float wy = min(0, in1[id.xy]);
-        w = sqrt(pow(wx, 2) + pow(wy, 2)); // magnitude of vector (-)[u_x, u_y]
+        w = -sqrt(pow(wx, 2) + pow(wy, 2)); // magnitude of vector (-)[u_x, u_y]
     }
     else if (left && top) {
         src = uint2(1, gridSize-2);
@@ -210,19 +210,19 @@ void ApplyBoundaries(uint3 id : SV_DispatchThreadID) {
     }
     else if (left) {
         src = uint2(1, y);
-        w = max(0.f, abs(in0[id.xy])); // (-)u_x
+        w = abs(min(0.f, in0[id.xy])); // (-)u_x
     }
     else if (right) {
         src = uint2(gridSize-2, y);
-        w = max(0.f, abs(in0[src])); // (+)u_x
+        w = abs(max(0.f, in0[src])); // (+)u_x
     }
     else if (bottom) {
         src = uint2(x, 1);
-        w = max(0.f, abs(in1[id.xy])); // (-)u_y
+        w = abs(max(0.f, in1[id.xy])); // (-)u_y
     }
     else { // top
         src = uint2(x, gridSize-2);
-        w = max(0.f, abs(in1[src])); // (+)u_y
+        w = abs(max(0.f, in1[src])); // (+)u_y
     }
 
     // Apply boundary condition
@@ -250,11 +250,11 @@ void ApplyBoundaries(uint3 id : SV_DispatchThreadID) {
         float field_inf = 0; // zero velocity, zero height
         float a = w * timeStep;
         float k = a / d_inf;
-        float denom = 1 + a;// + k;
-        out0[id.xy] = ((in2[id.xy]) + out0[src] * a) / denom; // + k * field_inf
-        out1[id.xy] = ((in3[id.xy]) + out1[src] * a) / denom;
-        out2[id.xy] = ((in4[id.xy]) + out2[src] * a) / denom;
-        out3[id.xy] = ((in5[id.xy]) + out3[src] * a) / denom;
+        float denom = 1 + a + k;
+        out0[id.xy] = ((in2[id.xy] + k * field_inf) + out0[src] * a) / denom;
+        out1[id.xy] = ((in3[id.xy] + k * field_inf) + out1[src] * a) / denom;
+        out2[id.xy] = ((in4[id.xy] + k * field_inf) + out2[src] * a) / denom;
+        out3[id.xy] = ((in5[id.xy] + k * field_inf) + out3[src] * a) / denom;
     }
 }
 

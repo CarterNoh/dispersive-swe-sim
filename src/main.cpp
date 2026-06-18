@@ -110,7 +110,7 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
 RenderConstants InitCamera(int gridSize) {
     // These values must match those in the Vertex Shader
     float maxInitialHeight = 0.2f; 
-    float visualScale = 10.f;
+    float visualScale = 2.f;
     float trueMax = maxInitialHeight * visualScale;
 
     // Focus the camera on the center point

@@ -67,8 +67,8 @@ std::vector<float> Sim::SetWater(std::vector<float>& terrain) {
 				// do nothing
 			}
 			else if (WATER_TYPE == 1) { // Step/Dam Break
-                if (xf < 0.3f) 
-					waterSurface += WATER_SCALE;
+                if (xf < 0.25f)
+					waterSurface += xf * WATER_SCALE / 0.25f;
             }
 			else if (WATER_TYPE == 2) { // Diagonal slope on 1st half
 				waterSurface += 2 * (1 - xf + yf) * WATER_SCALE; // maybe make this only on upper diagonal later or something

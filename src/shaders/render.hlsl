@@ -30,7 +30,7 @@ Pixel VSMain(Vertex input) {
     float h = HeightMap.SampleLevel(PointSampler, uv, 0);
     float dx = DispXMap.SampleLevel(PointSampler, uv, 0);
     float dy = DispYMap.SampleLevel(PointSampler, uv, 0);
-    float scale = 10.f;
+    float scale = 2.f;
     // float3 wPos = float3(input.position.x, h * scale, input.position.y);
     float3 wPos = float3(input.position.x + dx, h * scale, input.position.y + dy);
     
@@ -54,8 +54,8 @@ float4 PSMain(Pixel input) : SV_TARGET {
 
     // Normalize the height from 0.0 to 1.0
     // Adjust hMax depending on how high your water level / waves get!
-    float hMin = -5.f;
-    float hMax = 5.f; // Adjust based on your wave heights!
+    float hMin = -1.f;
+    float hMax = 1.f; // Adjust based on your wave heights!
     float t = saturate((input.height - hMin) / (hMax - hMin));
 
     // "viterbi" color scheme

@@ -22,7 +22,7 @@ def solve_quadratic(d):
     c = b0 #-0.14717654147795045
     return (-b + np.sqrt(b**2 - 4*a*(c-d))) / (2 * a)
 
-print(solve_quadratic(190))
+print(solve_quadratic(1)*1.5)
 
 # Note: stability also seems to be somewhat dependant on the timestep, but I didn't have time to do more testing. These results were for step = 1/60 s.
 
