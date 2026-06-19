@@ -51,8 +51,6 @@ struct alignas(16) FFTConstants {
     int BitsY;     // log2(Ny)
     int Inverse;   // 0 = forward DFT, 1 = inverse DFT
     int Row;       // Row = 1. Col = 0
-    int pad0;      // padding to 16-byte boundary
-    int pad1;
 };
 
 struct alignas(16) RenderConstants {
@@ -60,7 +58,6 @@ struct alignas(16) RenderConstants {
     float gridSizeX;
     float gridSizeY;
     float cellSize;
-    float _pad; // padding to make struct size a multiple of 16 bytes
 };
 
 struct GPUField {

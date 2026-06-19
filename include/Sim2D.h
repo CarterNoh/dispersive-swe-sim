@@ -125,5 +125,5 @@ private:
 							  SLOPE_LIMIT, CFL_CONDITION, GAMMA_TRANSPORT, DEPTH_NUM, // SWE & eWave Params
 							  FETCH, WIND_SPEED, WIND_ANGLE, SWELL, SWELL_ANGLE, CHOPPINESS, // FFT Params
 							  FILTER_SMALL, FILTER_BIG, FILTER_WIDTH, FILTER_MIN, DEPTH_CUTOFF};    
-	RenderConstants render_constants = {DirectX::XMMatrixIdentity(), (float)GRIDSIZE_X, (float)GRIDSIZE_Y, CELLSIZE, 0.0f};
+	RenderConstants render_constants = {DirectX::XMMatrixIdentity(), (float)GRIDSIZE_X, (float)GRIDSIZE_Y, CELLSIZE};
 };

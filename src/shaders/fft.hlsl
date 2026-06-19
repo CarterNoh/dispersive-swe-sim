@@ -13,8 +13,6 @@ cbuffer FFTConstants : register(b1) {
     int cb_BitsY;      // log2(cb_Ny)
     int cb_Inverse;    // 0 = forward DFT, 1 = inverse DFT
     int cb_IsRow;      // Row = 1, Col = 0
-    int cb_pad0;
-    int cb_pad1;
 };
 
 // Texture Registers
