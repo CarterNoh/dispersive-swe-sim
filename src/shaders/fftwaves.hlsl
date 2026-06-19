@@ -354,9 +354,10 @@ void PopulateSpectrum(uint3 id : SV_DispatchThreadID) {
     uint seed = Seed(kx, ky, 0);
     float2 unif = Rand2(seed);
     float2 norm = Randn2(seed); 
-    // Use 2D frequency spacing for amplitude conversion
-    float ampPos = norm.x * dKx * dKy * sqrt(2 * SPos);
-    float ampNeg = norm.y * dKx * dKy * sqrt(2 * SNeg);
+    // Use 2D frequency spacing for amplitude conversion (sqrt of area element)
+    float deltaK = sqrt(dKx * dKy);
+    float ampPos = norm.x * deltaK * sqrt(2 * SPos);
+    float ampNeg = norm.y * deltaK * sqrt(2 * SNeg);
     float phasePos = unif.x * 2 * PI;
     float phaseNeg = unif.y * 2 * PI;
 
