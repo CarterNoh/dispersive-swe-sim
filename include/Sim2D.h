@@ -11,8 +11,8 @@
 class Sim {
 public:
 	// Simulation parameters
-	static constexpr int GRIDSIZE_X = 256; // grid size in X dimension (# cells)
-	static constexpr int GRIDSIZE_Y = 512; // grid size in Y dimension (# cells)
+	static constexpr int GRIDSIZE_X = 400; // grid size in X dimension (# cells)
+	static constexpr int GRIDSIZE_Y = 400; // grid size in Y dimension (# cells)
 	static constexpr float CELLSIZE = 1.f;	// cell size in one dimension (meters/cell)
 	static constexpr float TIMESTEP = 1.f / 60.f;
 	static constexpr int BOUNDARY_TYPE = 0; // not in use any more, need to remove probably
@@ -90,6 +90,9 @@ public:
 	void SimStep();	// ticks the simulation by one timestep using the following substeps:
 
 private:
+	int paddedSizeX;
+	int paddedSizeY;
+
 	void Init(GPU* gpu);
     std::vector<float> SetTerrain();
 	std::vector<float> SetWater(std::vector<float>& terrain);
@@ -124,6 +127,7 @@ private:
 							  DIFFUSION_ITERATIONS, DELTA_T, DIFFUSION_PENALTY, // Diffusion Params
 							  SLOPE_LIMIT, CFL_CONDITION, GAMMA_TRANSPORT, DEPTH_NUM, // SWE & eWave Params
 							  FETCH, WIND_SPEED, WIND_ANGLE, SWELL, SWELL_ANGLE, CHOPPINESS, // FFT Params
-							  FILTER_SMALL, FILTER_BIG, FILTER_WIDTH, FILTER_MIN, DEPTH_CUTOFF};    
+							  FILTER_SMALL, FILTER_BIG, FILTER_WIDTH, FILTER_MIN, DEPTH_CUTOFF,
+							  0, 0, {0.0f, 0.0f, 0.0f}};    
 	RenderConstants render_constants = {DirectX::XMMatrixIdentity(), (float)GRIDSIZE_X, (float)GRIDSIZE_Y, CELLSIZE};
 };

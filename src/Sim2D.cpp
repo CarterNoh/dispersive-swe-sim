@@ -102,6 +102,12 @@ void Sim::Init(GPU* gpu) {
 		gpu->CompileComputeShader(L"shaders/kernels.hlsl", names[i], shaders[i]);
     for (int i=0; i < sizeof(waveShaders) / sizeof(waveShaders[0]); i++)
 		gpu->CompileComputeShader(L"shaders/fftwaves.hlsl", waveNames[i], waveShaders[i]);
+
+	paddedSizeX = gpu->GetPaddedSizeX();
+	paddedSizeY = gpu->GetPaddedSizeY();
+	constants.paddedGridSizeX = paddedSizeX;
+	constants.paddedGridSizeY = paddedSizeY;
+
 	gpu->UpdateConstants(constants);
 
 	// Create GPU Textures and Upload Initial Data
@@ -111,14 +117,14 @@ void Sim::Init(GPU* gpu) {
 		gpu->UploadToGPU(fields[i]->tex, temp, GRIDSIZE_X, GRIDSIZE_Y);
 	}
 	for (int i = 0; i < sizeof(fields_complex) / sizeof(fields_complex[0]); i++) {
-		gpu->CreateGridTexture(fields_complex[i], GRIDSIZE_X, GRIDSIZE_Y, true);
-		std::vector<float> temp(GRIDSIZE_X * GRIDSIZE_Y * 2, 0.0f);
-		gpu->UploadToGPU(fields_complex[i]->tex, temp, GRIDSIZE_X, GRIDSIZE_Y, true);
+		gpu->CreateGridTexture(fields_complex[i], paddedSizeX, paddedSizeY, true);
+		std::vector<float> temp(paddedSizeX * paddedSizeY * 2, 0.0f);
+		gpu->UploadToGPU(fields_complex[i]->tex, temp, paddedSizeX, paddedSizeY, true);
 	}
 	for (int i = 0; i < sizeof(fields_arrays) / sizeof(fields_arrays[0]); i++) {
-		gpu->CreateGridTexture(fields_arrays[i], GRIDSIZE_X, GRIDSIZE_Y, true, DEPTH_NUM);
-		std::vector<float> temp(GRIDSIZE_X * GRIDSIZE_Y * DEPTH_NUM * 2, 0.0f);
-		gpu->UploadToGPU(fields_arrays[i]->tex, temp, GRIDSIZE_X, GRIDSIZE_Y, true, DEPTH_NUM);
+		gpu->CreateGridTexture(fields_arrays[i], paddedSizeX, paddedSizeY, true, DEPTH_NUM);
+		std::vector<float> temp(paddedSizeX * paddedSizeY * DEPTH_NUM * 2, 0.0f);
+		gpu->UploadToGPU(fields_arrays[i]->tex, temp, paddedSizeX, paddedSizeY, true, DEPTH_NUM);
 	}
 	gpu->CreateBuffer(&depth, depths.data(), DEPTH_NUM);
 	gpu->BindSRV(8, depth.srv);
@@ -135,7 +141,7 @@ void Sim::Init(GPU* gpu) {
 	gpu->UploadToGPU(hbarOld.tex, h_temp, GRIDSIZE_X, GRIDSIZE_Y);
 
     // Initialize FFT Wave Spectrum
-    gpu->Dispatch(PopulateSpectrum, {}, 
+    gpu->DispatchPadded(PopulateSpectrum, {}, 
 		{HPos.uav, HNeg.uav}, DEPTH_NUM);
 }
 
@@ -226,14 +232,14 @@ void Sim::DecompositionStep() {
 
 void Sim::FFTStep() {
     // Propagate waves
-	gpu->Dispatch(PropagateWaves, 
+	gpu->DispatchPadded(PropagateWaves, 
 		{HPos.srv, HNeg.srv},
 		{HProp.uav, DelH_x.uav, DelH_y.uav, Disp_x.uav, Disp_y.uav}, DEPTH_NUM);
-	gpu->ExecuteFFT(HProp.uav,   GRIDSIZE_X, GRIDSIZE_Y, true, DEPTH_NUM);
-	gpu->ExecuteFFT(DelH_x.uav,  GRIDSIZE_X, GRIDSIZE_Y, true, DEPTH_NUM);
-	gpu->ExecuteFFT(DelH_y.uav,  GRIDSIZE_X, GRIDSIZE_Y, true, DEPTH_NUM);
-	gpu->ExecuteFFT(Disp_x.uav,  GRIDSIZE_X, GRIDSIZE_Y, true, DEPTH_NUM);
-	gpu->ExecuteFFT(Disp_y.uav,  GRIDSIZE_X, GRIDSIZE_Y, true, DEPTH_NUM);
+	gpu->ExecuteFFT(HProp.uav,   paddedSizeX, paddedSizeY, true, DEPTH_NUM);
+	gpu->ExecuteFFT(DelH_x.uav,  paddedSizeX, paddedSizeY, true, DEPTH_NUM);
+	gpu->ExecuteFFT(DelH_y.uav,  paddedSizeX, paddedSizeY, true, DEPTH_NUM);
+	gpu->ExecuteFFT(Disp_x.uav,  paddedSizeX, paddedSizeY, true, DEPTH_NUM);
+	gpu->ExecuteFFT(Disp_y.uav,  paddedSizeX, paddedSizeY, true, DEPTH_NUM);
 
 	// Interpolate outputs between depths
 	gpu->Dispatch(Interp, 
@@ -243,21 +249,21 @@ void Sim::FFTStep() {
 
 void Sim::eWaveStep() {
 	// Copy variables to fourier domain & perform FFT
-	gpu->Dispatch(TransferToFFT, 
+	gpu->DispatchPadded(TransferToFFT, 
 		{htilde.srv, qtilde_x.srv, qtilde_y.srv},
 		{htildeOld.uav, hHat.uav, qHat_x.uav, qHat_y.uav});
-	gpu->ExecuteFFT(hHat.uav, GRIDSIZE_X, GRIDSIZE_Y, false);
-	gpu->ExecuteFFT(qHat_x.uav, GRIDSIZE_X, GRIDSIZE_Y, false);
-	gpu->ExecuteFFT(qHat_y.uav, GRIDSIZE_X, GRIDSIZE_Y, false);
+	gpu->ExecuteFFT(hHat.uav, paddedSizeX, paddedSizeY, false);
+	gpu->ExecuteFFT(qHat_x.uav, paddedSizeX, paddedSizeY, false);
+	gpu->ExecuteFFT(qHat_y.uav, paddedSizeX, paddedSizeY, false);
 
 	// Compute eWave
-	gpu->Dispatch(CalcEWave, 
+	gpu->DispatchPadded(CalcEWave, 
 		{hHat.srv, qHat_x.srv, qHat_y.srv},
 		{qHat_x_array.uav, qHat_y_array.uav}, DEPTH_NUM);
 
 	// Inverse FFT fourier variables
-	gpu->ExecuteFFT(qHat_x_array.uav, GRIDSIZE_X, GRIDSIZE_Y, true, DEPTH_NUM);
-	gpu->ExecuteFFT(qHat_y_array.uav, GRIDSIZE_X, GRIDSIZE_Y, true, DEPTH_NUM);
+	gpu->ExecuteFFT(qHat_x_array.uav, paddedSizeX, paddedSizeY, true, DEPTH_NUM);
+	gpu->ExecuteFFT(qHat_y_array.uav, paddedSizeX, paddedSizeY, true, DEPTH_NUM);
 
 	// Interpolate between depths to get qtilde
 	gpu->Dispatch(InterpQ,

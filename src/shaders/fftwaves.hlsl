@@ -36,6 +36,9 @@ cbuffer Constants : register(b0) {
     float filterWidth;
     float filterMin;
     float depthCutoff;
+    int paddedGridSizeX;
+    int paddedGridSizeY;
+    float simConstantPadding[3];
 };
 
 #define G 9.80665f
@@ -302,7 +305,7 @@ RWTexture2DArray<float2> HNegOut: register(u1);
 [numthreads(16, 16, 1)]
 void PopulateSpectrum(uint3 id : SV_DispatchThreadID) {
     // Outputs: HPosOut = HPos, HNegOut = HNeg (complex amplitudes)
-    if (id.x >= (uint)(gridSizeX) || id.y >= (uint)(gridSizeY)) return;
+    if (id.x >= (uint)(paddedGridSizeX) || id.y >= (uint)(paddedGridSizeY)) return;
 
     if (id.x == 0 && id.y == 0) {
         HPosOut[id] = float2(0.f, 0.f);
@@ -312,15 +315,15 @@ void PopulateSpectrum(uint3 id : SV_DispatchThreadID) {
 
     ///// Wave Number ///////
     // Calculate the physical size of the grid and the frequency step (dK) in each dimension
-    float domainSizeX = (float)gridSizeX * cellSize;
-    float domainSizeY = (float)gridSizeY * cellSize;
+    float domainSizeX = (float)paddedGridSizeX * cellSize;
+    float domainSizeY = (float)paddedGridSizeY * cellSize;
     float dKx = 2.0f * PI / domainSizeX; 
     float dKy = 2.0f * PI / domainSizeY; 
-    float NXdiv2 = (float)gridSizeX / 2.0f;
-    float NYdiv2 = (float)gridSizeY / 2.0f;
+    float NXdiv2 = (float)paddedGridSizeX / 2.0f;
+    float NYdiv2 = (float)paddedGridSizeY / 2.0f;
     // Calculate the physical 2D wavenumber vector components (signed, handling the Nyquist wrap-around)
-    int freqX = ((float)id.x < NXdiv2) ? (int)id.x : (int)id.x - (int)gridSizeX;
-    int freqY = ((float)id.y < NYdiv2) ? (int)id.y : (int)id.y - (int)gridSizeY;
+    int freqX = ((float)id.x < NXdiv2) ? (int)id.x : (int)id.x - (int)paddedGridSizeX;
+    int freqY = ((float)id.y < NYdiv2) ? (int)id.y : (int)id.y - (int)paddedGridSizeY;
     float kx = (float)freqX * dKx; // spatial frequency: radians per meter
     float ky = (float)freqY * dKy;
     float k = sqrt(kx * kx + ky * ky);
@@ -366,9 +369,9 @@ void PopulateSpectrum(uint3 id : SV_DispatchThreadID) {
     ampPos *= filter;
     ampNeg *= filter;
 
-    // Scale by gridSizeX*gridSizeY, since iFFT will normalize by total sample count
-    ampPos *= (float)gridSizeX * (float)gridSizeY;
-    ampNeg *= (float)gridSizeX * (float)gridSizeY;
+    // Scale by paddedGridSizeX*paddedGridSizeY, since iFFT will normalize by total sample count
+    ampPos *= (float)paddedGridSizeX * (float)paddedGridSizeY;
+    ampNeg *= (float)paddedGridSizeX * (float)paddedGridSizeY;
 
     // Store results
     HPosOut[id] = ampPos * float2(cos(phasePos), -sin(phasePos));
@@ -384,6 +387,8 @@ RWTexture2DArray<float2> DispXOut : register(u3);
 RWTexture2DArray<float2> DispYOut : register(u4);
 [numthreads(16, 16, 1)]
 void PropagateWaves(uint3 id : SV_DispatchThreadID) {
+    if (id.x >= (uint)(paddedGridSizeX) || id.y >= (uint)(paddedGridSizeY)) return;
+
     if (id.x == 0 && id.y == 0) {
         HPropOut[id] = float2(0.f, 0.f);
         DelHxOut[id] = float2(0.f, 0.f);
@@ -394,14 +399,14 @@ void PropagateWaves(uint3 id : SV_DispatchThreadID) {
     }
 
     // Calculate Wavevector
-    float domainSizeX = (float)gridSizeX * cellSize;
-    float domainSizeY = (float)gridSizeY * cellSize;
+    float domainSizeX = (float)paddedGridSizeX * cellSize;
+    float domainSizeY = (float)paddedGridSizeY * cellSize;
     float dKx = 2.0f * PI / domainSizeX;
     float dKy = 2.0f * PI / domainSizeY;
-    float NXdiv2 = (float)gridSizeX / 2.0f;
-    float NYdiv2 = (float)gridSizeY / 2.0f;
-    int freqX = ((float)id.x < NXdiv2) ? (int)id.x : (int)id.x - (int)gridSizeX;
-    int freqY = ((float)id.y < NYdiv2) ? (int)id.y : (int)id.y - (int)gridSizeY;
+    float NXdiv2 = (float)paddedGridSizeX / 2.0f;
+    float NYdiv2 = (float)paddedGridSizeY / 2.0f;
+    int freqX = ((float)id.x < NXdiv2) ? (int)id.x : (int)id.x - (int)paddedGridSizeX;
+    int freqY = ((float)id.y < NYdiv2) ? (int)id.y : (int)id.y - (int)paddedGridSizeY;
     float kx = (float)freqX * dKx; // spatial frequency: radians per meter
     float ky = (float)freqY * dKy;
     float k = sqrt(kx * kx + ky * ky);

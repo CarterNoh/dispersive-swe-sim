@@ -21,6 +21,13 @@ GPU::~GPU() {
 }
 
 bool GPU::BaseInit(int sizeX, int sizeY) {
+    this->sizeX = sizeX;
+    this->sizeY = sizeY;
+    this->paddedSizeX = NextPowerOf2(sizeX);
+    this->paddedSizeY = NextPowerOf2(sizeY);
+    this->paddedGroupX = (this->paddedSizeX + 15) / 16;
+    this->paddedGroupY = (this->paddedSizeY + 15) / 16;
+
     /*** Compute Shaders ***/
     groupX = (sizeX + 15) / 16; // thread groups X for shader dispatch
     groupY = (sizeY + 15) / 16; // thread groups Y for shader dispatch
@@ -58,8 +65,8 @@ bool GPU::BaseInit(int sizeX, int sizeY) {
         std::cerr << "ERROR: Failed to create FFT Constant Buffer." << std::endl;
         return false;
     }
-    // Compile FFT Shaders
-    if (!CompileFFTShaders(sizeX, sizeY)) {
+    // Compile FFT Shaders with padded sizes
+    if (!CompileFFTShaders(paddedSizeX, paddedSizeY)) {
         std::cerr << "ERROR: Failed to create FFT shaders." << std::endl;
         return false;
     }
@@ -74,13 +81,7 @@ bool GPU::Init(int sizeX, int sizeY) {
                                    nullptr, 0, D3D11_SDK_VERSION, &device, &featureLevel, &context);
     if (FAILED(hr)) return false;
 
-    BaseInit(sizeX, sizeY);    
-
-    // store sizes
-    this->sizeX = sizeX;
-    this->sizeY = sizeY;
-
-    return true;
+    return BaseInit(sizeX, sizeY);    
 }
 
 bool GPU::Init(int sizeX, int sizeY, HWND hwnd) {
@@ -168,14 +169,7 @@ bool GPU::Init(int sizeX, int sizeY, HWND hwnd) {
     sampDesc.ComparisonFunc = D3D11_COMPARISON_NEVER;
     device->CreateSamplerState(&sampDesc, &samplerState);
 
-    /*** Everything Else ***/
-    BaseInit(sizeX, sizeY);
-
-    // store sizes
-    this->sizeX = sizeX;
-    this->sizeY = sizeY;
-
-    return true;
+    return BaseInit(sizeX, sizeY);
 }
 
 
@@ -429,6 +423,22 @@ void GPU::Dispatch(ID3D11ComputeShader* shader,
     context->CSSetShaderResources(0, srvs.size(), srvs.data());
     context->CSSetUnorderedAccessViews(0, uavs.size(), uavs.data(), nullptr);
     context->Dispatch(groupX, groupY, layers);
+
+    // Unbind to prevent read/write hazards
+    std::vector<ID3D11ShaderResourceView*> nullSRVs(srvs.size(), nullptr);
+    std::vector<ID3D11UnorderedAccessView*> nullUAVs(uavs.size(), nullptr);
+    context->CSSetShaderResources(0, nullSRVs.size(), nullSRVs.data());
+    context->CSSetUnorderedAccessViews(0, nullUAVs.size(), nullUAVs.data(), nullptr);
+}
+
+void GPU::DispatchPadded(ID3D11ComputeShader* shader, 
+                         const std::vector<ID3D11ShaderResourceView*>& srvs, 
+                         const std::vector<ID3D11UnorderedAccessView*>& uavs, 
+                         int layers) {
+    context->CSSetShader(shader, nullptr, 0);
+    context->CSSetShaderResources(0, srvs.size(), srvs.data());
+    context->CSSetUnorderedAccessViews(0, uavs.size(), uavs.data(), nullptr);
+    context->Dispatch(paddedGroupX, paddedGroupY, layers);
 
     // Unbind to prevent read/write hazards
     std::vector<ID3D11ShaderResourceView*> nullSRVs(srvs.size(), nullptr);

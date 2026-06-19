@@ -262,12 +262,12 @@ int RunHeadless() {
     // for (int tick = 1; tick < numTicks; ++tick) {
     //     auto start = std::chrono::high_resolution_clock::now();
     //     sim.SimStep();
-    //     sim.gpu->DownloadFromGPU(sim.H.tex, H, size);
-    //     SaveToCSV(H, size, tick);
-    //     // sim.gpu->DownloadFromGPU(sim.H.tex, hHat, size);
-    //     // SaveToCSV(hHat, size, tick);
-    //     // sim.gpu->DownloadFromGPU(sim.qHat_x_array.tex, array, size, arraySize);
-    //     // SaveToCSV(array, size, arraySize, tick);
+    //     sim.gpu->DownloadFromGPU(sim.H.tex, H, sizeX, sizeY);
+    //     SaveToCSV(H, sizeX, tick); // Note: SaveToCSV expects square sizes, this needs correction if uncommented
+    //     // sim.gpu->DownloadFromGPU(sim.H.tex, hHat, sizeX, sizeY);
+    //     // SaveToCSV(hHat, sizeX, tick);
+    //     // sim.gpu->DownloadFromGPU(sim.qHat_x_array.tex, array, sizeX, sizeY, arraySize);
+    //     // SaveToCSV(array, sizeX, sizeY, arraySize, tick);
 
     //     auto sim_time = std::chrono::high_resolution_clock::now();
     //     std::chrono::duration<double, std::milli> elapsed = sim_time - start;

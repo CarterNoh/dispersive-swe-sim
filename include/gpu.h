@@ -42,6 +42,9 @@ struct alignas(16) SimConstants {
     float filterWidth;
     float filterMin;
     float depthCutoff;
+    int paddedGridSizeX;
+    int paddedGridSizeY;
+    float simConstantPadding[3]; // Align to 16 bytes
 };
 
 struct alignas(16) FFTConstants {
@@ -81,6 +84,9 @@ public:
     bool Init(int sizeX, int sizeY); // For headless compute
     bool Init(int sizeX, int sizeY, HWND hwnd); // For rendering
 
+    int GetPaddedSizeX() const { return paddedSizeX; }
+    int GetPaddedSizeY() const { return paddedSizeY; }
+
     // Compute Shaders    
     void UpdateConstants(const SimConstants& constants);
     bool CreateGridTexture(GPUField* field, int width, int height, bool isComplex = false, int arraySize = 1);
@@ -96,6 +102,10 @@ public:
                   const std::vector<ID3D11ShaderResourceView*>& srvs, 
                   const std::vector<ID3D11UnorderedAccessView*>& uavs,
                   int layers = 1);
+    void DispatchPadded(ID3D11ComputeShader* shader, 
+                        const std::vector<ID3D11ShaderResourceView*>& srvs, 
+                        const std::vector<ID3D11UnorderedAccessView*>& uavs,
+                        int layers = 1);
 
     // FFT
     void UpdateFFTConstants(const FFTConstants& constants);
@@ -113,11 +123,22 @@ public:
     
 
 private:
+    static int NextPowerOf2(int n) {
+        if (n <= 0) return 1;
+        int p = 1;
+        while (p < n) p <<= 1;
+        return p;
+    }
+
     // Compute Shaders
     int sizeX;   // simulation grid width
     int sizeY;   // simulation grid height
+    int paddedSizeX;
+    int paddedSizeY;
     UINT groupX; // number of thread groups in X to dispatch for compute shaders, assuming 16x16 threads per group
     UINT groupY; // number of thread groups in Y
+    UINT paddedGroupX;
+    UINT paddedGroupY;
 
     ID3D11Device* device = nullptr;
     ID3D11DeviceContext* context = nullptr;

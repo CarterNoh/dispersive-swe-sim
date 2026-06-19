@@ -33,6 +33,9 @@ cbuffer Constants : register(b0) {
     float filterWidth;
     float filterMin;
     float depthCutoff;
+    int paddedGridSizeX;
+    int paddedGridSizeY;
+    float simConstantPadding[3];
 };
 
 #define GRAVITY 9.80665
@@ -541,7 +544,14 @@ RWTexture2D<float2> qHat_y: register(u3); // Complex
 void TransferToFFT(uint3 id : SV_DispatchThreadID) {
     // Inputs: in0 = htilde, in1 = qtilde_x, in2 = qtilde_y
     // Outputs: out0 = htildeOld, out1 = hHat, out2 = qHat_x, out3 = qHat_y
-    if (id.x >= (uint)(gridSizeX) || id.y >= (uint)(gridSizeY)) return;
+    if (id.x >= (uint)(paddedGridSizeX) || id.y >= (uint)(paddedGridSizeY)) return;
+
+    if (id.x >= (uint)(gridSizeX) || id.y >= (uint)(gridSizeY)) {
+        hHat[id.xy]   = float2(0.0f, 0.0f);
+        qHat_x[id.xy] = float2(0.0f, 0.0f);
+        qHat_y[id.xy] = float2(0.0f, 0.0f);
+        return;
+    }
 
     // Average htilde in time to get on same timestep as q, then prep variables for FFT
     float h_real = 0.5 * (in0[id.xy] + out0[id.xy]);
@@ -562,7 +572,7 @@ RWTexture2DArray<float2> qhat_y_array: register(u1);
 void CalcEWave(uint3 id : SV_DispatchThreadID) {
     // Inputs: in0 = hHat, in1 = qHat_x, in2 = qHat_y, in3 = depth
     // Outputs: out0 = qHat_x_array, qHat_y_array
-    if (id.x >= (uint)(gridSizeX) || id.y >= (uint)(gridSizeY)) return;
+    if (id.x >= (uint)(paddedGridSizeX) || id.y >= (uint)(paddedGridSizeY)) return;
 
     // Early return for DC component 
     if (id.x == 0 && id.y == 0) {
@@ -573,15 +583,15 @@ void CalcEWave(uint3 id : SV_DispatchThreadID) {
 
     ///// Wave Number ///////
     // Calculate the physical size of the grid and the frequency step (dK) in each dimension
-    float domainSizeX = (float)gridSizeX * cellSize;
-    float domainSizeY = (float)gridSizeY * cellSize;
+    float domainSizeX = (float)paddedGridSizeX * cellSize;
+    float domainSizeY = (float)paddedGridSizeY * cellSize;
     float dKx = 2.0f * PI / domainSizeX; 
     float dKy = 2.0f * PI / domainSizeY;
-    float NXdiv2 = (float)gridSizeX / 2.0f;
-    float NYdiv2 = (float)gridSizeY / 2.0f;
+    float NXdiv2 = (float)paddedGridSizeX / 2.0f;
+    float NYdiv2 = (float)paddedGridSizeY / 2.0f;
     // Calculate the physical 2D wavenumber vector components (signed, handling the Nyquist wrap-around)
-    int freqX = (id.x < NXdiv2) ? (int)id.x : (int)id.x - (int)gridSizeX;
-    int freqY = (id.y < NYdiv2) ? (int)id.y : (int)id.y - (int)gridSizeY;
+    int freqX = (id.x < NXdiv2) ? (int)id.x : (int)id.x - (int)paddedGridSizeX;
+    int freqY = (id.y < NYdiv2) ? (int)id.y : (int)id.y - (int)paddedGridSizeY;
     float kx = (float)freqX * dKx; // spatial frequency: radians per meter
     float ky = (float)freqY * dKy;
     float k = sqrt(kx * kx + ky * ky);
