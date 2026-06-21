@@ -1,7 +1,8 @@
 // --- RENDER CONSTANTS ---
 cbuffer RenderParams : register(b0) {
     matrix viewProjection; // Camera matrix
-    float gridSize;
+    float gridSizeX;
+    float gridSizeY;
     float cellSize;
 };
 
@@ -26,7 +27,7 @@ Pixel VSMain(Vertex input) {
     Pixel output;
     
     // Convert flat vertex position to texture UV coordinates (0.0 to 1.0)
-    float2 uv = input.position / (gridSize - 1);
+    float2 uv = input.position / float2(gridSizeX - 1, gridSizeY - 1);
     float h = HeightMap.SampleLevel(PointSampler, uv, 0);
     float dx = DispXMap.SampleLevel(PointSampler, uv, 0);
     float dy = DispYMap.SampleLevel(PointSampler, uv, 0);

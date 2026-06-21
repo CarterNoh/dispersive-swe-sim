@@ -7,12 +7,12 @@
 // ********************************************************************************************************************
 
 std::vector<float> Sim::SetTerrain() {
-	std::vector<float> terrain(GRIDSIZE * GRIDSIZE, 0.0f);
+	std::vector<float> terrain(GRIDSIZE_X * GRIDSIZE_Y, 0.0f);
 	float boundary = 2.f * abs(TERRAIN_HEIGHT);
-    for (int y = 0; y < GRIDSIZE; y++) {
-        for (int x = 0; x < GRIDSIZE; x++) {
-            float xf = (float)x / (GRIDSIZE - 1);
-            float yf = (float)y / (GRIDSIZE - 1);
+    for (int y = 0; y < GRIDSIZE_Y; y++) {
+        for (int x = 0; x < GRIDSIZE_X; x++) {
+            float xf = (float)x / (GRIDSIZE_X - 1);
+            float yf = (float)y / (GRIDSIZE_Y - 1);
             int i = idx(x,y);
 
             if (TERRAIN_TYPE == 0) { // Flat
@@ -56,11 +56,11 @@ std::vector<float> Sim::SetTerrain() {
 }
 
 std::vector<float> Sim::SetWater(std::vector<float>& terrain) {
-    std::vector<float> h(GRIDSIZE * GRIDSIZE, 0.0f);
-    for (int y = 0; y < GRIDSIZE; y++) {
-        for (int x = 0; x < GRIDSIZE; x++) {
-            float xf = (float)x / (GRIDSIZE - 1);
-            float yf = (float)y / (GRIDSIZE - 1);
+    std::vector<float> h(GRIDSIZE_X * GRIDSIZE_Y, 0.0f);
+    for (int y = 0; y < GRIDSIZE_Y; y++) {
+        for (int x = 0; x < GRIDSIZE_X; x++) {
+            float xf = (float)x / (GRIDSIZE_X - 1);
+            float yf = (float)y / (GRIDSIZE_Y - 1);
             int i = idx(x,y);
 			float waterSurface = WATER_LEVEL;
 			if (WATER_TYPE == 0) { // Flat
@@ -84,9 +84,9 @@ std::vector<float> Sim::SetWater(std::vector<float>& terrain) {
             else if (WATER_TYPE == 5) { // Basin Flood
                 // Fill only the left basin (xf < 0.5)
 				if (xf < 0.25f)
-                    waterSurface = std::max(WATER_LEVEL, terrain[idx(GRIDSIZE/2, y)] + 2.0f);
+                    waterSurface = std::max(WATER_LEVEL, terrain[idx(GRIDSIZE_X/2, y)] + 2.0f);
                 else if (xf < 0.5f) 
-					waterSurface = std::max(WATER_LEVEL, terrain[idx(GRIDSIZE/2, y)]);
+					waterSurface = std::max(WATER_LEVEL, terrain[idx(GRIDSIZE_X/2, y)]);
                 else 
 					waterSurface = terrain[i]; // Start dry
             }
@@ -102,60 +102,66 @@ void Sim::Init(GPU* gpu) {
 		gpu->CompileComputeShader(L"shaders/kernels.hlsl", names[i], shaders[i]);
     for (int i=0; i < sizeof(waveShaders) / sizeof(waveShaders[0]); i++)
 		gpu->CompileComputeShader(L"shaders/fftwaves.hlsl", waveNames[i], waveShaders[i]);
+
+	paddedSizeX = gpu->GetPaddedSizeX();
+	paddedSizeY = gpu->GetPaddedSizeY();
+	constants.paddedGridSizeX = paddedSizeX;
+	constants.paddedGridSizeY = paddedSizeY;
+
 	gpu->UpdateConstants(constants);
 
 	// Create GPU Textures and Upload Initial Data
 	for (int i=0; i < sizeof(fields) / sizeof(fields[0]); i++) {
-		gpu->CreateGridTexture(fields[i], GRIDSIZE);
-		std::vector<float> temp(GRIDSIZE * GRIDSIZE, 0.0f);
-		gpu->UploadToGPU(fields[i]->tex, temp, GRIDSIZE);
+		gpu->CreateGridTexture(fields[i], GRIDSIZE_X, GRIDSIZE_Y);
+		std::vector<float> temp(GRIDSIZE_X * GRIDSIZE_Y, 0.0f);
+		gpu->UploadToGPU(fields[i]->tex, temp, GRIDSIZE_X, GRIDSIZE_Y);
 	}
 	for (int i = 0; i < sizeof(fields_complex) / sizeof(fields_complex[0]); i++) {
-		gpu->CreateGridTexture(fields_complex[i], GRIDSIZE, true);
-		std::vector<float> temp(GRIDSIZE * GRIDSIZE * 2, 0.0f);
-		gpu->UploadToGPU(fields_complex[i]->tex, temp, GRIDSIZE, true);
+		gpu->CreateGridTexture(fields_complex[i], paddedSizeX, paddedSizeY, true);
+		std::vector<float> temp(paddedSizeX * paddedSizeY * 2, 0.0f);
+		gpu->UploadToGPU(fields_complex[i]->tex, temp, paddedSizeX, paddedSizeY, true);
 	}
 	for (int i = 0; i < sizeof(fields_arrays) / sizeof(fields_arrays[0]); i++) {
-		gpu->CreateGridTexture(fields_arrays[i], GRIDSIZE, true, DEPTH_NUM);
-		std::vector<float> temp(GRIDSIZE * GRIDSIZE * DEPTH_NUM * 2, 0.0f);
-		gpu->UploadToGPU(fields_arrays[i]->tex, temp, GRIDSIZE, true, DEPTH_NUM);
+		gpu->CreateGridTexture(fields_arrays[i], paddedSizeX, paddedSizeY, true, DEPTH_NUM);
+		std::vector<float> temp(paddedSizeX * paddedSizeY * DEPTH_NUM * 2, 0.0f);
+		gpu->UploadToGPU(fields_arrays[i]->tex, temp, paddedSizeX, paddedSizeY, true, DEPTH_NUM);
 	}
 	gpu->CreateBuffer(&depth, depths.data(), DEPTH_NUM);
 	gpu->BindSRV(8, depth.srv);
 	std::vector<float> terrain_temp = SetTerrain();
 	std::vector<float> h_temp = SetWater(terrain_temp);
-	std::vector<float> H_temp(GRIDSIZE*GRIDSIZE, 0.0f);
-	for (int i = 0; i < GRIDSIZE*GRIDSIZE; i++) {
+	std::vector<float> H_temp(GRIDSIZE_X * GRIDSIZE_Y, 0.0f);
+	for (int i = 0; i < GRIDSIZE_X * GRIDSIZE_Y; i++) {
 		H_temp[i] = terrain_temp[i] + h_temp[i];
 	}
-	gpu->UploadToGPU(terrain.tex, terrain_temp, GRIDSIZE);
-	gpu->UploadToGPU(h.tex, h_temp, GRIDSIZE);
-	gpu->UploadToGPU(H.tex, H_temp, GRIDSIZE);
-	gpu->UploadToGPU(hbar.tex, h_temp, GRIDSIZE);
-	gpu->UploadToGPU(hbarOld.tex, h_temp, GRIDSIZE);
+	gpu->UploadToGPU(terrain.tex, terrain_temp, GRIDSIZE_X, GRIDSIZE_Y);
+	gpu->UploadToGPU(h.tex, h_temp, GRIDSIZE_X, GRIDSIZE_Y);
+	gpu->UploadToGPU(H.tex, H_temp, GRIDSIZE_X, GRIDSIZE_Y);
+	gpu->UploadToGPU(hbar.tex, h_temp, GRIDSIZE_X, GRIDSIZE_Y);
+	gpu->UploadToGPU(hbarOld.tex, h_temp, GRIDSIZE_X, GRIDSIZE_Y);
 
     // Initialize FFT Wave Spectrum
-    gpu->Dispatch(PopulateSpectrum, {}, 
+    gpu->DispatchPadded(PopulateSpectrum, {}, 
 		{HPos.uav, HNeg.uav}, DEPTH_NUM);
 }
 
 Sim::Sim() {
 	// Init GPU
 	gpu = new GPU();
-	if (!gpu->Init(GRIDSIZE)) std::cerr << "GPU INIT FAILED" << std::endl;
+	if (!gpu->Init(GRIDSIZE_X, GRIDSIZE_Y)) std::cerr << "GPU INIT FAILED" << std::endl;
 	Sim::Init(gpu);
 }
 
 Sim::Sim(HWND hwnd = nullptr) {
 	gpu = new GPU();
-	if (!gpu->Init(GRIDSIZE, hwnd)) std::cerr << "GPU INIT FAILED" << std::endl;
+	if (!gpu->Init(GRIDSIZE_X, GRIDSIZE_Y, hwnd)) std::cerr << "GPU INIT FAILED" << std::endl;
 	Sim::Init(gpu);
 
 	// Set up rendering shaders and mesh
 	gpu->CompileVertexShader(L"shaders/render.hlsl", "VSMain");
 	gpu->CompilePixelShader(L"shaders/render.hlsl", "PSMain");
-	gpu->CreateGridMesh(GRIDSIZE);
-	gpu->CreateGridVertexBuffer(GRIDSIZE);
+	gpu->CreateGridMesh(GRIDSIZE_X, GRIDSIZE_Y);
+	gpu->CreateGridVertexBuffer(GRIDSIZE_X, GRIDSIZE_Y);
 }
 
 int Sim::Release(void) {
@@ -226,14 +232,14 @@ void Sim::DecompositionStep() {
 
 void Sim::FFTStep() {
     // Propagate waves
-	gpu->Dispatch(PropagateWaves, 
+	gpu->DispatchPadded(PropagateWaves, 
 		{HPos.srv, HNeg.srv},
 		{HProp.uav, DelH_x.uav, DelH_y.uav, Disp_x.uav, Disp_y.uav}, DEPTH_NUM);
-	gpu->ExecuteFFT(HProp.uav,   GRIDSIZE, true, DEPTH_NUM);
-	gpu->ExecuteFFT(DelH_x.uav,  GRIDSIZE, true, DEPTH_NUM);
-	gpu->ExecuteFFT(DelH_y.uav,  GRIDSIZE, true, DEPTH_NUM);
-	gpu->ExecuteFFT(Disp_x.uav,  GRIDSIZE, true, DEPTH_NUM);
-	gpu->ExecuteFFT(Disp_y.uav,  GRIDSIZE, true, DEPTH_NUM);
+	gpu->ExecuteFFT(HProp.uav,   paddedSizeX, paddedSizeY, true, DEPTH_NUM);
+	gpu->ExecuteFFT(DelH_x.uav,  paddedSizeX, paddedSizeY, true, DEPTH_NUM);
+	gpu->ExecuteFFT(DelH_y.uav,  paddedSizeX, paddedSizeY, true, DEPTH_NUM);
+	gpu->ExecuteFFT(Disp_x.uav,  paddedSizeX, paddedSizeY, true, DEPTH_NUM);
+	gpu->ExecuteFFT(Disp_y.uav,  paddedSizeX, paddedSizeY, true, DEPTH_NUM);
 
 	// Interpolate outputs between depths
 	gpu->Dispatch(Interp, 
@@ -243,21 +249,21 @@ void Sim::FFTStep() {
 
 void Sim::eWaveStep() {
 	// Copy variables to fourier domain & perform FFT
-	gpu->Dispatch(TransferToFFT, 
+	gpu->DispatchPadded(TransferToFFT, 
 		{htilde.srv, qtilde_x.srv, qtilde_y.srv},
 		{htildeOld.uav, hHat.uav, qHat_x.uav, qHat_y.uav});
-	gpu->ExecuteFFT(hHat.uav, GRIDSIZE, false);
-	gpu->ExecuteFFT(qHat_x.uav, GRIDSIZE, false);
-	gpu->ExecuteFFT(qHat_y.uav, GRIDSIZE, false);
+	gpu->ExecuteFFT(hHat.uav, paddedSizeX, paddedSizeY, false);
+	gpu->ExecuteFFT(qHat_x.uav, paddedSizeX, paddedSizeY, false);
+	gpu->ExecuteFFT(qHat_y.uav, paddedSizeX, paddedSizeY, false);
 
 	// Compute eWave
-	gpu->Dispatch(CalcEWave, 
+	gpu->DispatchPadded(CalcEWave, 
 		{hHat.srv, qHat_x.srv, qHat_y.srv},
 		{qHat_x_array.uav, qHat_y_array.uav}, DEPTH_NUM);
 
 	// Inverse FFT fourier variables
-	gpu->ExecuteFFT(qHat_x_array.uav, GRIDSIZE, true, DEPTH_NUM);
-	gpu->ExecuteFFT(qHat_y_array.uav, GRIDSIZE, true, DEPTH_NUM);
+	gpu->ExecuteFFT(qHat_x_array.uav, paddedSizeX, paddedSizeY, true, DEPTH_NUM);
+	gpu->ExecuteFFT(qHat_y_array.uav, paddedSizeX, paddedSizeY, true, DEPTH_NUM);
 
 	// Interpolate between depths to get qtilde
 	gpu->Dispatch(InterpQ,

@@ -2,6 +2,7 @@
 #pragma comment(lib, "d3dcompiler.lib")
 
 #include "gpu.h"
+#include <algorithm>
 
 GPU::GPU() {}
 
@@ -9,17 +10,27 @@ GPU::~GPU() {
     if (stagingTex) stagingTex->Release();
     if (constantBuffer) constantBuffer->Release();
     if (fftConstantBuffer) fftConstantBuffer->Release();
-    if (fftShader) fftShader->Release();
-    if (fftArrayShader) fftArrayShader->Release();
+    if (fftShaderX) fftShaderX->Release();
+    if (fftShaderY) fftShaderY->Release();
+    if (fftArrayShaderX) fftArrayShaderX->Release();
+    if (fftArrayShaderY) fftArrayShaderY->Release();
     if (vertexShader) vertexShader->Release();
     if (pixelShader) pixelShader->Release();
     if (context) context->Release();
     if (device) device->Release();
 }
 
-bool GPU::BaseInit(int size) {
+bool GPU::BaseInit(int sizeX, int sizeY) {
+    this->sizeX = sizeX;
+    this->sizeY = sizeY;
+    this->paddedSizeX = NextPowerOf2(sizeX);
+    this->paddedSizeY = NextPowerOf2(sizeY);
+    this->paddedGroupX = (this->paddedSizeX + 15) / 16;
+    this->paddedGroupY = (this->paddedSizeY + 15) / 16;
+
     /*** Compute Shaders ***/
-    group = (size + 15) / 16; // size for shader dispatch
+    groupX = (sizeX + 15) / 16; // thread groups X for shader dispatch
+    groupY = (sizeY + 15) / 16; // thread groups Y for shader dispatch
     // Create Compute Constant Buffer
     if (sizeof(SimConstants) % 16 != 0) {
         std::cerr << "CRITICAL ERROR: SimConstants is " << sizeof(SimConstants) 
@@ -54,15 +65,15 @@ bool GPU::BaseInit(int size) {
         std::cerr << "ERROR: Failed to create FFT Constant Buffer." << std::endl;
         return false;
     }
-    // Compile FFT Shader
-    if (!CompileFFTShaders(size)) {
+    // Compile FFT Shaders with padded sizes
+    if (!CompileFFTShaders(paddedSizeX, paddedSizeY)) {
         std::cerr << "ERROR: Failed to create FFT shaders." << std::endl;
         return false;
     }
     return true;
 }
 
-bool GPU::Init(int size) {
+bool GPU::Init(int sizeX, int sizeY) {
     // Create a headless D3D11 device
     UINT createDeviceFlags = 0;
     D3D_FEATURE_LEVEL featureLevel;
@@ -70,12 +81,10 @@ bool GPU::Init(int size) {
                                    nullptr, 0, D3D11_SDK_VERSION, &device, &featureLevel, &context);
     if (FAILED(hr)) return false;
 
-    BaseInit(size);    
-
-    return true;
+    return BaseInit(sizeX, sizeY);    
 }
 
-bool GPU::Init(int size, HWND hwnd) {
+bool GPU::Init(int sizeX, int sizeY, HWND hwnd) {
     /*** Create Device ***/
     // Create a headless D3D11 device
     UINT createDeviceFlags = 0;
@@ -160,10 +169,7 @@ bool GPU::Init(int size, HWND hwnd) {
     sampDesc.ComparisonFunc = D3D11_COMPARISON_NEVER;
     device->CreateSamplerState(&sampDesc, &samplerState);
 
-    /*** Everything Else ***/
-    BaseInit(size);
-
-    return true;
+    return BaseInit(sizeX, sizeY);
 }
 
 
@@ -184,14 +190,13 @@ void GPU::UpdateConstants(const SimConstants& constants) {
     }
 }
 
-bool GPU::CreateGridTexture(GPUField* field, int size, bool isComplex, int arraySize) {
+bool GPU::CreateGridTexture(GPUField* field, int width, int height, bool isComplex, int arraySize) {
     D3D11_TEXTURE2D_DESC desc = {};
-    desc.Width = size;
-    desc.Height = size;
+    desc.Width = width;
+    desc.Height = height;
     desc.MipLevels = 1;
     desc.ArraySize = arraySize;
     desc.Format = isComplex ? DXGI_FORMAT_R32G32_FLOAT : DXGI_FORMAT_R32_FLOAT;
-    desc.ArraySize = arraySize;
     desc.SampleDesc.Count = 1;
     desc.Usage = D3D11_USAGE_DEFAULT;
     desc.BindFlags = D3D11_BIND_UNORDERED_ACCESS | D3D11_BIND_SHADER_RESOURCE;
@@ -226,15 +231,15 @@ bool GPU::CreateGridTexture(GPUField* field, int size, bool isComplex, int array
     return true;
 }
 
-bool GPU::UploadToGPU(ID3D11Texture2D* tex, const std::vector<float>& data, int gridSize, bool isComplex, int arraySize) {
+bool GPU::UploadToGPU(ID3D11Texture2D* tex, const std::vector<float>& data, int width, int height, bool isComplex, int arraySize) {
     int floatsPerPixel = isComplex ? 2 : 1; // If complex, there are 2 floats per pixel.
-    int rowPitch = gridSize * sizeof(float) * floatsPerPixel; // byte size of a single row
-    int layerPitch = gridSize * rowPitch; // byte size of a single 2D layer
+    int rowPitch = width * sizeof(float) * floatsPerPixel; // byte size of a single row
+    int layerPitch = height * rowPitch; // byte size of a single 2D layer
 
     // Upload each layer one by one
     for (int i = 0; i < arraySize; ++i) {
         // Find the starting memory address for this specific layer in the flat vector
-        int floatOffset = i * (gridSize * gridSize * floatsPerPixel);
+        int floatOffset = i * (width * height * floatsPerPixel);
         const float* pLayerData = data.data() + floatOffset;
 
         // Upload to subresource 'i'
@@ -244,7 +249,7 @@ bool GPU::UploadToGPU(ID3D11Texture2D* tex, const std::vector<float>& data, int 
     return true;
 }
 
-bool GPU::DownloadFromGPU(ID3D11Texture2D* tex, std::vector<float>& data, int size) {
+bool GPU::DownloadFromGPU(ID3D11Texture2D* tex, std::vector<float>& data, int width, int height) {
     // Lazy initialize staging texture
     if (!stagingTex) {
         D3D11_TEXTURE2D_DESC stDesc = {};
@@ -259,8 +264,8 @@ bool GPU::DownloadFromGPU(ID3D11Texture2D* tex, std::vector<float>& data, int si
     D3D11_MAPPED_SUBRESOURCE mapped;
     if (SUCCEEDED(context->Map(stagingTex, 0, D3D11_MAP_READ, 0, &mapped))) {
         float* pData = reinterpret_cast<float*>(mapped.pData);
-        for (int y = 0; y < size; ++y) {
-            memcpy(&data[y * size], pData + y * (mapped.RowPitch / sizeof(float)), size * sizeof(float));
+        for (int y = 0; y < height; ++y) {
+            memcpy(&data[y * width], pData + y * (mapped.RowPitch / sizeof(float)), width * sizeof(float));
         }
         context->Unmap(stagingTex, 0);
         return true;
@@ -268,7 +273,7 @@ bool GPU::DownloadFromGPU(ID3D11Texture2D* tex, std::vector<float>& data, int si
     return false;
 }
 
-bool GPU::DownloadFromGPU(ID3D11Texture2D* tex, std::vector<std::complex<float>>& data, int size) {
+bool GPU::DownloadFromGPU(ID3D11Texture2D* tex, std::vector<std::complex<float>>& data, int width, int height) {
     if (!stagingComplexTex) {
         D3D11_TEXTURE2D_DESC stDesc = {};
         tex->GetDesc(&stDesc);
@@ -280,13 +285,13 @@ bool GPU::DownloadFromGPU(ID3D11Texture2D* tex, std::vector<std::complex<float>>
     context->CopyResource(stagingComplexTex, tex);
     D3D11_MAPPED_SUBRESOURCE mapped;
     if (SUCCEEDED(context->Map(stagingComplexTex, 0, D3D11_MAP_READ, 0, &mapped))) {
-        if (data.size() < size * size) data.resize(size * size);
+        if (data.size() < width * height) data.resize(width * height);
         // Safely cast the raw VRAM bytes to the standard complex type
         std::complex<float>* pData = reinterpret_cast<std::complex<float>*>(mapped.pData);
-        for (int y = 0; y < size; ++y) {
-            memcpy(&data[y * size], 
+        for (int y = 0; y < height; ++y) {
+            memcpy(&data[y * width], 
                    pData + y * (mapped.RowPitch / sizeof(std::complex<float>)), 
-                   size * sizeof(std::complex<float>));
+                   width * sizeof(std::complex<float>));
         }
         context->Unmap(stagingComplexTex, 0);
         return true;
@@ -294,7 +299,7 @@ bool GPU::DownloadFromGPU(ID3D11Texture2D* tex, std::vector<std::complex<float>>
     return false;
 }
 
-bool GPU::DownloadFromGPU(ID3D11Texture2D* tex, std::vector<std::complex<float>>& data, int size, int arraySize) {
+bool GPU::DownloadFromGPU(ID3D11Texture2D* tex, std::vector<std::complex<float>>& data, int width, int height, int arraySize) {
     if (!stagingComplexArrayTex) {
         D3D11_TEXTURE2D_DESC stDesc = {};
         tex->GetDesc(&stDesc);
@@ -304,7 +309,7 @@ bool GPU::DownloadFromGPU(ID3D11Texture2D* tex, std::vector<std::complex<float>>
         device->CreateTexture2D(&stDesc, nullptr, &stagingComplexArrayTex);
     }
     context->CopyResource(stagingComplexArrayTex, tex);
-    int elementsPerLayer = size * size;
+    int elementsPerLayer = width * height;
     int totalElements = elementsPerLayer * arraySize;
     if (data.size() < totalElements) {
         data.resize(totalElements);
@@ -315,10 +320,10 @@ bool GPU::DownloadFromGPU(ID3D11Texture2D* tex, std::vector<std::complex<float>>
         if (SUCCEEDED(context->Map(stagingComplexArrayTex, subresource, D3D11_MAP_READ, 0, &mapped))) {
             std::complex<float>* pData = reinterpret_cast<std::complex<float>*>(mapped.pData);
             int sliceMemoryOffset = slice * elementsPerLayer;
-            for (int y = 0; y < size; ++y) {
-                memcpy(&data[sliceMemoryOffset + (y * size)], 
+            for (int y = 0; y < height; ++y) {
+                memcpy(&data[sliceMemoryOffset + (y * width)], 
                        pData + y * (mapped.RowPitch / sizeof(std::complex<float>)), 
-                       size * sizeof(std::complex<float>));
+                       width * sizeof(std::complex<float>));
             }
             context->Unmap(stagingComplexArrayTex, subresource);
         } else {
@@ -413,11 +418,27 @@ void GPU::BindSRV(int slot, ID3D11ShaderResourceView* srv) {
 void GPU::Dispatch(ID3D11ComputeShader* shader, 
                    const std::vector<ID3D11ShaderResourceView*>& srvs, 
                    const std::vector<ID3D11UnorderedAccessView*>& uavs, 
-                   int size) {
+                   int layers) {
     context->CSSetShader(shader, nullptr, 0);
     context->CSSetShaderResources(0, srvs.size(), srvs.data());
     context->CSSetUnorderedAccessViews(0, uavs.size(), uavs.data(), nullptr);
-    context->Dispatch(group, group, size);
+    context->Dispatch(groupX, groupY, layers);
+
+    // Unbind to prevent read/write hazards
+    std::vector<ID3D11ShaderResourceView*> nullSRVs(srvs.size(), nullptr);
+    std::vector<ID3D11UnorderedAccessView*> nullUAVs(uavs.size(), nullptr);
+    context->CSSetShaderResources(0, nullSRVs.size(), nullSRVs.data());
+    context->CSSetUnorderedAccessViews(0, nullUAVs.size(), nullUAVs.data(), nullptr);
+}
+
+void GPU::DispatchPadded(ID3D11ComputeShader* shader, 
+                         const std::vector<ID3D11ShaderResourceView*>& srvs, 
+                         const std::vector<ID3D11UnorderedAccessView*>& uavs, 
+                         int layers) {
+    context->CSSetShader(shader, nullptr, 0);
+    context->CSSetShaderResources(0, srvs.size(), srvs.data());
+    context->CSSetUnorderedAccessViews(0, uavs.size(), uavs.data(), nullptr);
+    context->Dispatch(paddedGroupX, paddedGroupY, layers);
 
     // Unbind to prevent read/write hazards
     std::vector<ID3D11ShaderResourceView*> nullSRVs(srvs.size(), nullptr);
@@ -444,63 +465,104 @@ void GPU::UpdateFFTConstants(const FFTConstants& constants) {
     }
 }
 
-bool GPU::CompileFFTShaders(int size) {
+bool GPU::CompileFFTShaders(int sizeX, int sizeY) {
     // if (!CompileComputeShader(L"shaders/fft.hlsl", "FFTKernel_1D", &fftShader))
     //     return false;
 
     ID3DBlob* shaderBlob = nullptr;
     ID3DBlob* errorBlob = nullptr;
-    D3D_SHADER_MACRO singleMacros[] = {
-        { "FFT_SIZE", std::to_string(size).c_str() },
+
+    ///// Shaders for single grid in X and Y
+    // Prepare persistent strings for macro values to avoid dangling c_str() pointers
+    std::string fftSizeXStr = std::to_string(sizeX);
+    std::string fftSizeYStr = std::to_string(sizeY);
+
+    // X Direction
+    D3D_SHADER_MACRO singleMacrosX[] = {
+        { "FFT_SIZE", fftSizeXStr.c_str() },
         { NULL, NULL }};
-    HRESULT hr = D3DCompileFromFile(L"shaders/fft.hlsl", singleMacros, nullptr, "FFTKernel_1D", "cs_5_0", 0, 0, &shaderBlob, &errorBlob);
-    if (FAILED(hr)) {
-        if (errorBlob) std::cerr << "Shader Error: " << (char*)errorBlob->GetBufferPointer() << std::endl;
+    HRESULT hrX = D3DCompileFromFile(L"shaders/fft.hlsl", singleMacrosX, nullptr, "FFTKernel_1D", "cs_5_0", 0, 0, &shaderBlob, &errorBlob);
+    if (FAILED(hrX)) {
+        if (errorBlob) std::cerr << "Shader Error Single X: " << (char*)errorBlob->GetBufferPointer() << std::endl;
         return false;
     }
-    device->CreateComputeShader(shaderBlob->GetBufferPointer(), shaderBlob->GetBufferSize(), nullptr, &fftShader);
+    device->CreateComputeShader(shaderBlob->GetBufferPointer(), shaderBlob->GetBufferSize(), nullptr, &fftShaderX);
     shaderBlob->Release();
 
-    D3D_SHADER_MACRO arrayMacros[] = {
-    { "FFT_SIZE", std::to_string(size).c_str() },
-    { "IS_ARRAY", "1" },
-    { NULL, NULL }};
-    HRESULT hr1 = D3DCompileFromFile(L"shaders/fft.hlsl", arrayMacros, nullptr, "FFTKernel_1D", "cs_5_0", 0, 0, &shaderBlob, &errorBlob);
-    if (FAILED(hr1)) {
-        if (errorBlob) std::cerr << "Shader Error: " << (char*)errorBlob->GetBufferPointer() << std::endl;
+    // Y Direction
+    D3D_SHADER_MACRO singleMacrosY[] = {
+        { "FFT_SIZE", fftSizeYStr.c_str() },
+        { NULL, NULL }};
+    HRESULT hrY = D3DCompileFromFile(L"shaders/fft.hlsl", singleMacrosY, nullptr, "FFTKernel_1D", "cs_5_0", 0, 0, &shaderBlob, &errorBlob);
+    if (FAILED(hrY)) {
+        if (errorBlob) std::cerr << "Shader Error Single Y: " << (char*)errorBlob->GetBufferPointer() << std::endl;
         return false;
     }
-    device->CreateComputeShader(shaderBlob->GetBufferPointer(), shaderBlob->GetBufferSize(), nullptr, &fftArrayShader);
+    device->CreateComputeShader(shaderBlob->GetBufferPointer(), shaderBlob->GetBufferSize(), nullptr, &fftShaderY);
+    shaderBlob->Release();
+
+    ///// Shaders for arrays of grids in X and Y
+    // X Direction
+    D3D_SHADER_MACRO arrayMacrosX[] = {
+        { "FFT_SIZE", fftSizeXStr.c_str() },
+        { "IS_ARRAY", "1" },
+        { NULL, NULL }};
+    HRESULT hrAX = D3DCompileFromFile(L"shaders/fft.hlsl", arrayMacrosX, nullptr, "FFTKernel_1D", "cs_5_0", 0, 0, &shaderBlob, &errorBlob);
+    if (FAILED(hrAX)) {
+        if (errorBlob) std::cerr << "Shader Error Array X: " << (char*)errorBlob->GetBufferPointer() << std::endl;
+        return false;
+    }
+    device->CreateComputeShader(shaderBlob->GetBufferPointer(), shaderBlob->GetBufferSize(), nullptr, &fftArrayShaderX);
+    shaderBlob->Release();
+
+    // Y Direction
+    D3D_SHADER_MACRO arrayMacrosY[] = {
+        { "FFT_SIZE", fftSizeYStr.c_str() },
+        { "IS_ARRAY", "1" },
+        { NULL, NULL }};
+    HRESULT hrAY = D3DCompileFromFile(L"shaders/fft.hlsl", arrayMacrosY, nullptr, "FFTKernel_1D", "cs_5_0", 0, 0, &shaderBlob, &errorBlob);
+    if (FAILED(hrAY)) {
+        if (errorBlob) std::cerr << "Shader Error Array Y: " << (char*)errorBlob->GetBufferPointer() << std::endl;
+        return false;
+    }
+    device->CreateComputeShader(shaderBlob->GetBufferPointer(), shaderBlob->GetBufferSize(), nullptr, &fftArrayShaderY);
     shaderBlob->Release();
 
     return true;
 }
 
-void GPU::ExecuteFFT(ID3D11UnorderedAccessView* fftBufferUAV, int size, bool inverse, int numLayers) {
-    // Setup
-    if (numLayers > 1)
-        context->CSSetShader(fftArrayShader, nullptr, 0);
-    else
-        context->CSSetShader(fftShader, nullptr, 0);
+void GPU::ExecuteFFT(ID3D11UnorderedAccessView* fftBufferUAV, int sizeX, int sizeY, bool inverse, int numLayers) {
+    // Set UAV
     context->CSSetUnorderedAccessViews(0, 1, &fftBufferUAV, nullptr);
 
+    // Prepare FFT constants with separate X/Y sizes and bit counts
     FFTConstants constants = {};
-    constants.N = size;
+    constants.Nx = sizeX;
+    constants.Ny = sizeY;
     constants.Inverse = inverse ? 1 : 0;
-    unsigned int bits = 0; // integer Log2
-    int temp = size;
-    while (temp >>= 1) ++bits;
-    constants.Bits = bits;
 
-    // Row pass
-    constants.Row = true;
-    UpdateFFTConstants(constants);
-    context->Dispatch(1, size, numLayers); // One group per row
+    // compute log2 for each dimension (assumes power-of-two sizes)
+    unsigned int bitsX = 0, bitsY = 0;
+    int tmpX = sizeX;
+    while (tmpX >>= 1) ++bitsX;
+    int tmpY = sizeY;
+    while (tmpY >>= 1) ++bitsY;
+    constants.BitsX = bitsX;
+    constants.BitsY = bitsY;
 
-    // Column pass
-    constants.Row = false;
+    // Row pass: transform each ROW (length = sizeX). There are sizeY rows.
+    constants.Row = 1; // Row pass (tid runs across X, GID.y selects row index Y)
     UpdateFFTConstants(constants);
-    context->Dispatch(1, size, numLayers); // One group per column
+    if (numLayers > 1) context->CSSetShader(fftArrayShaderX, nullptr, 0);
+    else               context->CSSetShader(fftShaderX, nullptr, 0);
+    context->Dispatch(1, sizeY, numLayers); // One group per ROW: GID.y ∈ [0..sizeY-1]
+
+    // Column pass: transform each COLUMN (length = sizeY). There are sizeX columns.
+    constants.Row = 0; // Column pass (tid runs across Y, GID.y selects column index X)
+    UpdateFFTConstants(constants);
+    if (numLayers > 1) context->CSSetShader(fftArrayShaderY, nullptr, 0);
+    else               context->CSSetShader(fftShaderY, nullptr, 0);
+    context->Dispatch(1, sizeX, numLayers); // One group per COLUMN: GID.y ∈ [0..sizeX-1]
 
     // Unbind
     ID3D11UnorderedAccessView* nullUAV = nullptr;
@@ -524,11 +586,11 @@ void GPU::UpdateRenderConstants(const RenderConstants& constants) {
     }
 }
 
-bool GPU::CreateGridVertexBuffer(int gridSize) {
+bool GPU::CreateGridVertexBuffer(int width, int height) {
     std::vector<float> vertices;
     // Generate a flat grid of X, Y coordinates
-    for (int y = 0; y < gridSize; ++y) {
-        for (int x = 0; x < gridSize; ++x) {
+    for (int y = 0; y < height; ++y) {
+        for (int x = 0; x < width; ++x) {
             vertices.push_back((float)x);
             vertices.push_back((float)y);
         }
@@ -547,12 +609,12 @@ bool GPU::CreateGridVertexBuffer(int gridSize) {
     return SUCCEEDED(hr);
 }
 
-bool GPU::CreateGridMesh(int gridSize) {
+bool GPU::CreateGridMesh(int width, int height) {
     // 1. Generate the Vertices (Same as before)
     std::vector<float> vertices;
-    vertices.reserve(gridSize * gridSize * 2);
-    for (int y = 0; y < gridSize; ++y) {
-        for (int x = 0; x < gridSize; ++x) {
+    vertices.reserve(width * height * 2);
+    for (int y = 0; y < height; ++y) {
+        for (int x = 0; x < width; ++x) {
             vertices.push_back((float)x);
             vertices.push_back((float)y);
         }
@@ -569,15 +631,15 @@ bool GPU::CreateGridMesh(int gridSize) {
 
     // 2. Generate the Indices (The "Map" of Triangles)
     std::vector<unsigned int> indices;
-    indices.reserve(gridSize * gridSize * 6);
-    // We loop to gridSize - 1 because we are building squares BETWEEN the points
-    for (int y = 0; y < gridSize - 1; ++y) {
-        for (int x = 0; x < gridSize - 1; ++x) {
+    indices.reserve(width * height * 6);
+    // We loop to width/height - 1 because we are building squares BETWEEN the points
+    for (int y = 0; y < height - 1; ++y) {
+        for (int x = 0; x < width - 1; ++x) {
             // Find the four corners of the current square (quad)
-            unsigned int topLeft     = y * gridSize + x;
-            unsigned int topRight    = y * gridSize + (x + 1);
-            unsigned int bottomLeft  = (y + 1) * gridSize + x;
-            unsigned int bottomRight = (y + 1) * gridSize + (x + 1);
+            unsigned int topLeft     = y * width + x;
+            unsigned int topRight    = y * width + (x + 1);
+            unsigned int bottomLeft  = (y + 1) * width + x;
+            unsigned int bottomRight = (y + 1) * width + (x + 1);
 
             // Triangle 1 (Top-Left, Top-Right, Bottom-Left)
             indices.push_back(topLeft);
