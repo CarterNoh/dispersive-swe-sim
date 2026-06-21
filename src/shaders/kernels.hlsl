@@ -158,6 +158,14 @@ float SampleCubicClamped2D(Texture2D<float> dataField, float2 samplePos) {
     return clamp(result, minVal, maxVal);
 }
 
+float GetSpongeDamping(uint2 pos) {
+    float thickness = 16.0f; // Width of sponge layer in cells
+    // float dist = min(min(pos.x, (uint)gridSizeX - 1 - pos.x), min(pos.y, (uint)gridSizeY - 1 - pos.y));
+    float dist = min((uint)gridSizeX - 1 - pos.x, (uint)gridSizeY - 1 - pos.y);
+    float t = thickness - min(thickness, dist);
+    return 1 - pow(t / thickness, 2); // Quadratic damping
+}
+
 float2 ComplexMul(float2 a, float2 b) {
     return float2(a.x * b.x - a.y * b.y,
                   a.x * b.y + a.y * b.x);
@@ -173,7 +181,7 @@ float SafeTanh(float x) {
 
 // Apply Boundary Conditions
 [numthreads(16, 16, 1)]
-void ApplyBoundaries(uint3 id : SV_DispatchThreadID){
+void ApplyBoundaries(uint3 id : SV_DispatchThreadID) {
     uint x = id.x;
     uint y = id.y;
     if (x >= (uint)(gridSizeX) || y >= (uint)(gridSizeY)) return;
@@ -559,6 +567,12 @@ void TransferToFFT(uint3 id : SV_DispatchThreadID) {
     hHat[id.xy]   = float2(h_real, 0.0f);
     qHat_x[id.xy] = float2(in1[id.xy], 0.0f);
     qHat_y[id.xy] = float2(in2[id.xy], 0.0f);
+
+    // Dampen on right/top edges using sponge layer to eliminate discontinuity with zero-padding
+    float damping = GetSpongeDamping(id.xy);
+    hHat[id.xy] *= damping;
+    qHat_x[id.xy] *= damping;
+    qHat_y[id.xy] *= damping;
 }
 
 Texture2D<float2> hhat   : register(t0);
