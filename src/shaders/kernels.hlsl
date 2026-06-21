@@ -241,19 +241,32 @@ void CalcDiffusionCoeffs(uint3 id : SV_DispatchThreadID) {
     if (id.x >= (uint)(gridSizeX) || id.y >= (uint)(gridSizeY)) return;
 
     uint2 curr  = id.xy;
-    uint2 right = uint2(min(id.x + 1, gridSizeX - 1), id.y);
-    uint2 up    = uint2(id.x, min(id.y + 1, gridSizeY - 1));
-
-    // float max_ground = max(in1[curr], in1[right], in1[up]);
-    // float min_water = min(in0[curr], in0[right], in0[up]); // or average of these 3
-    float h = in0[curr] - in1[curr]; // min_water - max_ground;
-    float hr = in0[right] - in1[right];
-    float hu = in0[up] - in1[up];
+    float h = in0[curr] - in1[curr];
+    float hr;
+    float hu;
+    float grad_x;
+    float grad_y;
+    if (id.x < gridSizeX-1) {
+        uint2 right = uint2(min(id.x + 1, gridSizeX - 1), id.y);
+        hr = in0[right] - in1[right];
+        grad_x = (in0[right] - in0[curr]) / cellSize;
+    } else { // extrapolate assuming constant slope
+        uint2 left = uint2(min(id.x - 1, 0), id.y);
+        hr = 2 * h - (in0[left] - in1[left]);
+        grad_x = (in0[curr] - in0[left]) / cellSize;
+    }
+    if (id.y < gridSizeY-1) {
+        uint2 up = uint2(id.x, min(id.y + 1, gridSizeY - 1));
+        hu = in0[up] - in1[up];
+        grad_y = (in0[up] - in0[curr]) / cellSize;
+    } else {
+        uint2 down = uint2(id.x, min(id.y + 1, gridSizeY - 1));
+        hu = 2 * h - (in0[down] - in1[down]);
+        grad_y = (in0[curr] - in0[down]) / cellSize;
+    }
     hr = (h + hr) / 2;
     hu = (h + hu) / 2;
     float denom = 2.0f * deltaT * diffusionIterations;
-    float grad_x = (in0[right] - in0[curr]) / cellSize;
-    float grad_y = (in0[up] - in0[curr]) / cellSize;
     float penalty = exp(- diffusionPenalty * (grad_x * grad_x + grad_y * grad_y));
     float max_alpha = (cellSize * cellSize) / (4.0f * deltaT); // Von Neumann Stability Condition
     out0[curr] = min(max_alpha, h * h   / denom) * penalty;
@@ -289,22 +302,6 @@ void DecomposeFields(uint3 id : SV_DispatchThreadID) {
     out3[id.xy] = in3[id.xy] - hbar;
     out4[id.xy] = in4[id.xy] - in1[id.xy];
     out5[id.xy] = in5[id.xy] - in2[id.xy];
-
-    // // Airy Only
-    // out0[id.xy] = max(0.f, in0[id.xy] - in6[id.xy]);
-    // out1[id.xy] = 0.f;
-    // out2[id.xy] = 0.f;
-    // out3[id.xy] = in3[id.xy] - out0[id.xy];
-    // out4[id.xy] = in4[id.xy];
-    // out5[id.xy] = in5[id.xy];
-
-    // // SWE Only
-    // out0[id.xy] = in3[id.xy];
-    // out1[id.xy] = in4[id.xy];
-    // out2[id.xy] = in5[id.xy];
-    // out3[id.xy] = 0;
-    // out4[id.xy] = 0;
-    // out5[id.xy] = 0;
 
     if (StopFlowOnTerrainBoundary(in3, in6, id.xy, false)) { // stop flow in x direction
         out1[id.xy] = 0.f;
