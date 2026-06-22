@@ -489,16 +489,14 @@ void CalcQAdvect(uint3 id : SV_DispatchThreadID) {
     out1[id.xy] = in1[id.xy] * h_sample;
 }
 
-float Sponge(float val, uint id, float gridSize) {
-    uint thickness = asuint(floor(0.4f * gridSize)); // cells
-    float alpha = 1.f;
-    float dir = (id < gridSize/2) ? -1 : 1; 
-    uint dist = thickness - min(thickness, (id < gridSize/2) ? id : gridSize-1-id);
-
+float Sponge(float val, float id, float gridSize) {
+    float thickness = 0.5f * gridSize; // 100.f // cells per side
+    float dist = min(thickness, (id < gridSize / 2) ? id : gridSize - id);
+    float dir = (id < gridSize / 2) ? -1.f : 1.f; 
     if (sign(val) == sign(dir)) // only damp negative flow at lower bound, positive flow at upper bound
-        return 1 - alpha * pow(dist / (thickness+0), 2);
+        return 1.f - pow((thickness - dist) / thickness, 10.f);
     else
-        return 1;
+        return 1.f;
 }
 
 [numthreads(16, 16, 1)]
@@ -533,10 +531,10 @@ void IntegrateH(uint3 id : SV_DispatchThreadID) {
         q_ym = 0.f;
 
     // sponge layer: damp q near edges to absorb waves, simulate an open boundary
-    q_x  *= Sponge(q_x,  id.x, (float)gridSizeX);
-    q_xm *= Sponge(q_xm, id.x, (float)gridSizeX);
-    q_y  *= Sponge(q_y,  id.y, (float)gridSizeY);
-    q_ym *= Sponge(q_ym, id.y, (float)gridSizeY);
+    q_x  *= Sponge(q_x,  (float)id.x, (float)gridSizeX);
+    q_xm *= Sponge(q_xm, (float)id.x, (float)gridSizeX);
+    q_y  *= Sponge(q_y,  (float)id.y, (float)gridSizeY);
+    q_ym *= Sponge(q_ym, (float)id.y, (float)gridSizeY);
 
     float div_q = (q_x - q_xm + q_y - q_ym) / cellSize;
 	out0[curr] = max(0.f, in6[curr] - timeStep * div_q);
