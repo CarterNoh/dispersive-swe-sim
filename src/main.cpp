@@ -176,8 +176,8 @@ int RunWithRender() {
     RenderConstants rConsts = InitCamera(sim.GRIDSIZE);
     sim.gpu->UpdateRenderConstants(rConsts);
     // sim.gpu->Render({sim.H.srv, sim.disp_x.srv, sim.disp_y.srv});
-    for (int i = 0; i < 5000; i++)
-        sim.SimStep();
+    // for (int i = 0; i < 5000; i++)
+    //     sim.SimStep();
 
     // Loop
     MSG msg = {};

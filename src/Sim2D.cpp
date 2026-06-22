@@ -298,18 +298,18 @@ void Sim::TransportStep() {
 		{ubarNew_x.srv, ubar_x.srv, ubarNew_y.srv, ubar_y.srv, 
 			qtildePast_x.srv, qtildePast_y.srv, h.srv, htilde.srv},
 		{htilde.uav, qtilde_x.uav, qtilde_y.uav});	
-	gpu->Dispatch(ApplyBoundaries, 
-		{ubarNew_x.srv, ubarNew_y.srv, zero.srv, htildePast.srv, qtildePast_x.srv, qtildePast_y.srv}, 
-		{htilde.uav, qtilde_x.uav, qtilde_y.uav});
+	// gpu->Dispatch(ApplyBoundaries, 
+	// 	{ubarNew_x.srv, ubarNew_y.srv, zero.srv, htildePast.srv, qtildePast_x.srv, qtildePast_y.srv}, 
+	// 	{htilde.uav, qtilde_x.uav, qtilde_y.uav});
 	
 	// Advection of h through ubar:
 	// Construct q_advect = ubar * htilde sampled at cell edges using cubic sampling
 	gpu->Dispatch(CalcQAdvect, 
 		{ubarNew_x.srv, ubarNew_y.srv, htilde.srv},
 		{qAdvect_x.uav, qAdvect_y.uav});
-	gpu->Dispatch(ApplyBoundaries, 
-		{ubarNew_x.srv, ubarNew_y.srv, zero.srv, nullptr, qAdvectPast_x.srv, qAdvectPast_y.srv}, 
-		{nullptr, qAdvect_x.uav, qAdvect_y.uav});
+	// gpu->Dispatch(ApplyBoundaries, 
+	// 	{ubarNew_x.srv, ubarNew_y.srv, zero.srv, nullptr, qAdvectPast_x.srv, qAdvectPast_y.srv}, 
+	// 	{nullptr, qAdvect_x.uav, qAdvect_y.uav});
 
 	std::swap(h, hPast);
 	std::swap(q_x, qPast_x);
@@ -324,12 +324,12 @@ void Sim::ComputeValues() {
 	// gpu->Dispatch(ApplyBoundaries, 
 	// 	{ubarNew_x.srv, ubarNew_y.srv, hPast.srv, qPast_x.srv, qPast_y.srv}, 
 	// 	{h.uav, q_x.uav, q_y.uav});
-	gpu->Dispatch(ApplyBoundaries, 
-		{ubarNew_x.srv, ubarNew_y.srv, zero.srv, nullptr, qPast_x.srv, qPast_y.srv}, 
-		{nullptr, q_x.uav, q_y.uav});
-	gpu->Dispatch(ApplyBoundaries, 
-		{q_x.srv, q_y.srv, href.srv, hPast.srv}, 
-		{h.uav});
+	// gpu->Dispatch(ApplyBoundaries, 
+	// 	{ubarNew_x.srv, ubarNew_y.srv, zero.srv, nullptr, qPast_x.srv, qPast_y.srv}, 
+	// 	{nullptr, q_x.uav, q_y.uav});
+	// gpu->Dispatch(ApplyBoundaries, 
+	// 	{ubarNew_x.srv, ubarNew_y.srv, href.srv, hPast.srv}, 
+	// 	{h.uav});
 
 	gpu->Dispatch(InitDecomp, 
 		{h.srv, nullptr, nullptr, terrain.srv}, 

@@ -44,10 +44,10 @@ public:
     // FFT Parameters
     float time = 0.f;
     static constexpr float FETCH        = 10.f;    // kilometers
-    static constexpr float WIND_SPEED   = 1.f;     // m/s, at 10 meters above surface
-    static constexpr float WIND_ANGLE   = 180.f;    // degrees from x-axis
+    static constexpr float WIND_SPEED   = 3.f;     // m/s, at 10 meters above surface
+    static constexpr float WIND_ANGLE   = 90.f;    // degrees from x-axis
     static constexpr float SWELL        = 0.3f;     // [0, 1] // this has issues at 0 but it shouldn't, I can't find the bug, hunt down later
-    static constexpr float SWELL_ANGLE  = 180.f;    // degrees from x-axis
+    static constexpr float SWELL_ANGLE  = 90.f;    // degrees from x-axis
     static constexpr float CHOPPINESS   = 1.f;      // Amount of horizontal displacement in waves
     static constexpr float FILTER_SMALL = 0.f;      // Set to really wide, not really using this right now 
     static constexpr float FILTER_BIG   = 10000.f;  // 
