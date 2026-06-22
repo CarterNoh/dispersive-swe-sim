@@ -10,7 +10,7 @@ cbuffer Constants : register(b0) {
     int gridSizeY; 
     float cellSize;
     float timeStep;
-    int boundaryType;
+    int spongeThickness;
     float minWaterHeight;
     float surfaceTension;
     float density;

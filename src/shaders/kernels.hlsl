@@ -7,7 +7,7 @@ cbuffer Constants : register(b0) {
     int gridSizeY; 
     float cellSize;
     float timeStep;
-    int boundaryType;
+    int spongeThickness;
     float minWaterHeight;
     float surfaceTension;
     float density;
@@ -60,17 +60,6 @@ RWTexture2D<float> out5: register(u5);
 
 
 //////////////////// HELPER FUNCTIONS /////////////////////////
-float CalcDiffusion(Texture2D<float> f, Texture2D<float> a, uint2 curr) {
-    uint2 right = uint2(min(curr.x + 1, gridSizeX - 1), curr.y);
-    uint2 left  = uint2(max(curr.x - 1, 0), curr.y);
-    uint2 up    = uint2(curr.x, min(curr.y + 1, gridSizeY - 1));
-    uint2 down  = uint2(curr.x, max(curr.y - 1, 0));
-    float dF_x = a[curr] * (f[right] - f[curr]) - a[left] * (f[curr] - f[left]);
-    float dF_y = a[curr] * (f[up] - f[curr]) - a[down] * (f[curr] - f[down]);
-    float dFdX = (dF_x + dF_y) / (cellSize * cellSize);
-    return dFdX;
-}
-
 bool StopFlowOnTerrainBoundary(Texture2D<float> h, Texture2D<float> terrain, uint2 curr, bool isYDirection=false) {
     uint2 xplus = uint2(min(curr.x + 1, gridSizeX - 1), curr.y);
     uint2 yplus = uint2(curr.x, min(curr.y + 1, gridSizeY - 1));
@@ -169,58 +158,28 @@ float SafeTanh(float x) {
     else                return tanh(x);
 }
 
-//////////////////// COMPUTE SHADERS /////////////////////////
-
-// Apply Boundary Conditions
-[numthreads(16, 16, 1)]
-void ApplyBoundaries(uint3 id : SV_DispatchThreadID){
-    uint x = id.x;
-    uint y = id.y;
-    if (x >= (uint)(gridSizeX) || y >= (uint)(gridSizeY)) return;
-
-    bool left   = (x == 0);
-    bool right  = (x == (uint)gridSizeX - 1);
-    bool bottom = (y == 0);
-    bool top    = (y == (uint)gridSizeY - 1);
-    if (!(left || right || top || bottom)) return;
-
-    // Pick a source interior cell depending on boundary side
-    uint2 src;
-    if (left && bottom)
-        src = uint2(1, 1);
-    else if (left && top)
-        src = uint2(1, gridSizeY-2);
-    else if (right && bottom)
-        src = uint2(gridSizeX-2, 1);
-    else if (right && top)
-        src = uint2(gridSizeX-2, gridSizeY-2);
-    else if (left)
-        src = uint2(1, y);
-    else if (right)
-        src = uint2(gridSizeX-2, y);
-    else if (bottom)
-        src = uint2(x, 1);
-    else // top
-        src = uint2(x, gridSizeY-2);
-
-    // Apply boundary condition
-    if (boundaryType == 0) { // wall (copy neighbor)
-        out0[id.xy] = out0[src];
-        out1[id.xy] = out1[src];
-        out2[id.xy] = out2[src];
-        out3[id.xy] = out3[src];
-    }
-    else if (boundaryType == 1) {// free (linear interpolation)
-        uint2 dir = uint2(
-            (left ? 1 : right ? -1 : 0),
-            (bottom ? 1 : top ? -1 : 0)
-        );
-        out0[id.xy] = 2.0f * out0[src] - out0[src + dir];
-        out1[id.xy] = 2.0f * out1[src] - out1[src + dir];
-        out2[id.xy] = 2.0f * out2[src] - out2[src + dir];
-        out3[id.xy] = 2.0f * out3[src] - out3[src + dir];
-    }
+float CalcDiffusion(Texture2D<float> f, Texture2D<float> a, uint2 curr) {
+    uint2 right = uint2(min(curr.x + 1, gridSizeX - 1), curr.y);
+    uint2 left  = uint2(max(curr.x - 1, 0), curr.y);
+    uint2 up    = uint2(curr.x, min(curr.y + 1, gridSizeY - 1));
+    uint2 down  = uint2(curr.x, max(curr.y - 1, 0));
+    float dF_x = a[curr] * (f[right] - f[curr]) - a[left] * (f[curr] - f[left]);
+    float dF_y = a[curr] * (f[up] - f[curr]) - a[down] * (f[curr] - f[down]);
+    float dFdX = (dF_x + dF_y) / (cellSize * cellSize);
+    return dFdX;
 }
+
+float SpongeDamping(uint2 id, bool isYDir) {
+    float x = (float)id.x;
+    float y = (float)id.y;
+    float distX = min(spongeThickness, (x < gridSizeX / 2) ? x : gridSizeX - x);
+    float distY = min(spongeThickness, (y < gridSizeY / 2) ? y : gridSizeY - y);
+    float dampX = 1.f - pow((spongeThickness - distX) / spongeThickness, 2);
+    float dampY = 1.f - pow((spongeThickness - distY) / spongeThickness, 2);
+    return dampX * dampY;
+}
+
+//////////////////// COMPUTE SHADERS /////////////////////////
 
 /////////// Decomposition ///////////
 
@@ -507,6 +466,15 @@ void IntegrateH(uint3 id : SV_DispatchThreadID) {
     float q_y  = in3[curr] + in4[curr] + in5[curr];
     float q_xm = in0[left] + in1[left] + in2[left];
     float q_ym = in3[down] + in4[down] + in5[down];
+
+    // sponge layer: damp q near edges to absorb waves, simulate an open boundary
+    float dampingX = SpongeDamping(id.xy, false);
+    float dampingY = SpongeDamping(id.xy, true);
+    q_x  *= dampingX;
+    q_xm *= dampingX;
+    q_y  *= dampingY;
+    q_ym *= dampingY;
+
     q_x  = LimitFlowRate(q_x,  in6[curr], in6[right]);
     q_y  = LimitFlowRate(q_y,  in6[curr], in6[up]);
     q_xm = LimitFlowRate(q_xm, in6[left], in6[curr]);

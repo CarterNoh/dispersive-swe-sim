@@ -16,7 +16,7 @@ struct alignas(16) SimConstants {
     int gridSizeY; 
     float cellSize;
     float timeStep;
-    int boundaryType;
+    int spongeThickness;
     float minWaterHeight;
     float surfaceTension;
     float density;
