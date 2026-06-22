@@ -407,15 +407,15 @@ void CalcSWE(uint3 id : SV_DispatchThreadID) {
 
     // Use upwinding to evaluate q_(i-0.5,j), q_(i+0.5,j), q_(i+1.5,j) 
     // for x direction to get q_x_(i,j), q_x_(i+1,j)
-    float q_x_m05 = in0_left * ((in0_left >= 0.f) ? in2_left : in2[CURR]);
+    float q_x_m05 = in0_left  * ((in0_left  >= 0.f) ? in2_left  : in2[CURR]);
     float q_x_p05 = in0[CURR] * ((in0[CURR] >= 0.f) ? in2[CURR] : in2_right);
-    float q_x_p15 = in0_right* ((in0_right>= 0.f) ? in2_right: in2_r2);
+    float q_x_p15 = in0_right * ((in0_right >= 0.f) ? in2_right : in2_r2);
     float q_x_0 = 0.5f * (q_x_m05 + q_x_p05);
     float q_x_1 = 0.5f * (q_x_p05 + q_x_p15);
     
-    float q_y_m05 = in1_down * ((in1_down >= 0.f) ? in2_down : in2[CURR]);
+    float q_y_m05 = in1_down  * ((in1_down  >= 0.f) ? in2_down  : in2[CURR]);
     float q_y_p05 = in1[CURR] * ((in1[CURR] >= 0.f) ? in2[CURR] : in2_up);
-    float q_y_p15 = in1_up   * ((in1_up   >= 0.f) ? in2_up   : in2_u2);
+    float q_y_p15 = in1_up    * ((in1_up    >= 0.f) ? in2_up    : in2_u2);
     float q_y_0 = 0.5f * (q_y_m05 + q_y_p05);
     float q_y_1 = 0.5f * (q_y_p05 + q_y_p15);
     
