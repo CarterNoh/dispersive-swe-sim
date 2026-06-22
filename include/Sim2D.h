@@ -11,8 +11,8 @@
 class Sim {
 public:
 	// Simulation parameters
-	static constexpr int GRIDSIZE_X = 400; // grid size in X dimension (# cells)
-	static constexpr int GRIDSIZE_Y = 400; // grid size in Y dimension (# cells)
+	static constexpr int GRIDSIZE_X = 256; // grid size in X dimension (# cells)
+	static constexpr int GRIDSIZE_Y = 256; // grid size in Y dimension (# cells)
 	static constexpr float CELLSIZE = 1.f;	// cell size in one dimension (meters/cell)
 	static constexpr float TIMESTEP = 1.f / 60.f;
 	static constexpr int BOUNDARY_TYPE = 0; // not in use any more, need to remove probably
