@@ -25,7 +25,7 @@ public:
 	static constexpr float TERRAIN_SCALE = 1.7f;    // scale of terrain features (meters)
 	static constexpr int WATER_TYPE   = 3; 		   // 0 = flat, 1 = step/dam break, 2 = diagonal slope, 3 = splash, 4 = ripples, 5 = basin flood
 	static constexpr float WATER_LEVEL = 0.f; 	   // level of water free surface at start (H)
-	static constexpr float WATER_SCALE = 1.f;     // scale of water height features
+	static constexpr float WATER_SCALE = 0.f;     // scale of water height features
 	
 	// Decomposition Parameters
 	static constexpr int DIFFUSION_ITERATIONS = 128;  // number of iterations for diffusion step, more iterations means more stable but also more expensive
@@ -43,9 +43,9 @@ public:
 
     // FFT Parameters
     float time = 0.f;
-    static constexpr float FETCH        = 0.001f;    // kilometers
+    static constexpr float FETCH        = 10.f;    // kilometers
     static constexpr float WIND_SPEED   = 1.f;     // m/s, at 10 meters above surface
-    static constexpr float WIND_ANGLE   = 90.f;    // degrees from x-axis
+    static constexpr float WIND_ANGLE   = 180.f;    // degrees from x-axis
     static constexpr float SWELL        = 0.3f;     // [0, 1] // this has issues at 0 but it shouldn't, I can't find the bug, hunt down later
     static constexpr float SWELL_ANGLE  = 180.f;    // degrees from x-axis
     static constexpr float CHOPPINESS   = 1.f;      // Amount of horizontal displacement in waves

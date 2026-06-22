@@ -249,34 +249,54 @@ void ApplyBoundaries(uint3 id : SV_DispatchThreadID) {
         
         float a = w * timeStep / cellSize;
         float k = a / d_inf;
-        float denom = 1 + a + k;
+        float denom = 1 + a;
+        float denom_k = denom + k;
 
         float c = 1500.f; // speed of sound in water, m/s
         float wc = w + c;
         float ac = wc * timeStep / cellSize;
         float kc = ac / d_inf;
-        float denomc = 1 + ac + kc;
-        
-        out0[id.xy] = (in3[id.xy] + a * out0[src] + k * field_inf) / denom; // first field is always scalar field
-        // out1[id.xy] = (in4[id.xy] + ac * out1[src] + kc * field_inf) / denomc; // first field is always scalar field
-        // out2[id.xy] = (in5[id.xy] + ac * out2[src] + kc * field_inf) / denomc; // first field is always scalar field
-        // out3[id.xy] = (in6[id.xy] + ac * out3[src] + kc * field_inf) / denomc; // first field is always scalar field
-        // out4[id.xy] = (in7[id.xy] + ac * out4[src] + kc * field_inf) / denomc; // first field is always scalar field
+        float denom_c = 1 + ac;
+        float denom_kc = denom_c + kc;
 
-        if (left || right) { // x-dir variables use c, y-dir variables don't
-            out1[id.xy] = (in4[id.xy] + ac * out1[src] + kc * field_inf) / denomc;
-            out2[id.xy] = (in5[id.xy] + a * out2[src] + k * field_inf) / denom;
-            out3[id.xy] = (in6[id.xy] + ac * out3[src] + kc * field_inf) / denomc;
-            out4[id.xy] = (in7[id.xy] + a * out4[src] + k * field_inf) / denom;
-        }
-        else if (bottom || top) { // y-dir variables use c, x-dir variables don't
-            out1[id.xy] = (in4[id.xy] + a * out1[src] + k * field_inf) / denom;
-            out2[id.xy] = (in5[id.xy] + ac * out2[src] + kc * field_inf) / denomc;
-            out3[id.xy] = (in6[id.xy] + a * out3[src] + k * field_inf) / denom;
-            out4[id.xy] = (in7[id.xy] + ac * out4[src] + kc * field_inf) / denomc;
-        }
+        // out0[id.xy] = (in3[id.xy] + a * out0[src]) / denom; 
+        // out1[id.xy] = (in4[id.xy] + a * out1[src]) / denom; 
+        // out2[id.xy] = (in5[id.xy] + a * out2[src]) / denom; 
+        // out3[id.xy] = (in6[id.xy] + a * out3[src]) / denom; 
+        // out4[id.xy] = (in7[id.xy] + a * out4[src]) / denom; 
+
+        out0[id.xy] = (in3[id.xy] + ac * out0[src]) / denom_c; 
+        out1[id.xy] = (in4[id.xy] + ac * out1[src]) / denom_c; 
+        out2[id.xy] = (in5[id.xy] + ac * out2[src]) / denom_c; 
+        out3[id.xy] = (in6[id.xy] + ac * out3[src]) / denom_c; 
+        out4[id.xy] = (in7[id.xy] + ac * out4[src]) / denom_c; 
+
+        // out0[id.xy] = (in3[id.xy] + a * out0[src] + k * field_inf) / denom_k; 
+        // out1[id.xy] = (in4[id.xy] + a * out1[src] + k * field_inf) / denom_k; 
+        // out2[id.xy] = (in5[id.xy] + a * out2[src] + k * field_inf) / denom_k; 
+        // out3[id.xy] = (in6[id.xy] + a * out3[src] + k * field_inf) / denom_k; 
+        // out4[id.xy] = (in7[id.xy] + a * out4[src] + k * field_inf) / denom_k; 
         
+        // out0[id.xy] = (in3[id.xy] + ac * out0[src] + kc * field_inf) / denom_kc; 
+        // out1[id.xy] = (in4[id.xy] + ac * out1[src] + kc * field_inf) / denom_kc; 
+        // out2[id.xy] = (in5[id.xy] + ac * out2[src] + kc * field_inf) / denom_kc; 
+        // out3[id.xy] = (in6[id.xy] + ac * out3[src] + kc * field_inf) / denom_kc; 
+        // out4[id.xy] = (in7[id.xy] + ac * out4[src] + kc * field_inf) / denom_kc; 
+
         
+
+        // if (left || right) { // x-dir variables use c, y-dir variables don't
+        //     out1[id.xy] = (in4[id.xy] + ac * out1[src] + kc * field_inf) / denom_kc;
+        //     out2[id.xy] = (in5[id.xy] + a * out2[src] + k * field_inf) / denom_k;
+        //     out3[id.xy] = (in6[id.xy] + ac * out3[src] + kc * field_inf) / denom_kc;
+        //     out4[id.xy] = (in7[id.xy] + a * out4[src] + k * field_inf) / denom;
+        // }
+        // else if (bottom || top) { // y-dir variables use c, x-dir variables don't
+        //     out1[id.xy] = (in4[id.xy] + a * out1[src] + k * field_inf) / denom_k;
+        //     out2[id.xy] = (in5[id.xy] + ac * out2[src] + kc * field_inf) / denom_kc;
+        //     out3[id.xy] = (in6[id.xy] + a * out3[src] + k * field_inf) / denom_k;
+        //     out4[id.xy] = (in7[id.xy] + ac * out4[src] + kc * field_inf) / denom_kc;
+        // }
     }
 }
 
