@@ -79,25 +79,25 @@ float GetExtrapolatedValue(Texture2D<float> tex, int2 coord) {
     int y0 = clamp(ty, 0, gridSizeY - 1);
     
     if (boundaryType == 0) { // wall (copy neighbor / clamp coordinate)
-        return tex[uint2((uint)x0, (uint)y0)];
+        return tex[uint2(x0, y0)];
     }
+    // else if (boundaryType == 1) { // free (constant-slope linear extrapolation)
+        int x1 = (tx < 0) ? 1 : (tx >= gridSizeX) ? gridSizeX - 2 : x0;
+        int y1 = (ty < 0) ? 1 : (ty >= gridSizeY) ? gridSizeY - 2 : y0;
+        
+        float wx0 = (tx < 0 || tx >= gridSizeX) ? 2.0f : 1.0f;
+        float wx1 = (tx < 0 || tx >= gridSizeX) ? -1.0f : 0.0f;
+        
+        float wy0 = (ty < 0 || ty >= gridSizeY) ? 2.0f : 1.0f;
+        float wy1 = (ty < 0 || ty >= gridSizeY) ? -1.0f : 0.0f;
+        
+        float v00 = tex[uint2(x0, y0)];
+        float v10 = tex[uint2(x1, y0)];
+        float v01 = tex[uint2(x0, y1)];
+        float v11 = tex[uint2(x1, y1)];
     
-    // free (constant-slope linear extrapolation)
-    int x1 = (tx < 0) ? 1 : (tx >= gridSizeX) ? gridSizeX - 2 : x0;
-    int y1 = (ty < 0) ? 1 : (ty >= gridSizeY) ? gridSizeY - 2 : y0;
-    
-    float wx0 = (tx < 0 || tx >= gridSizeX) ? 2.0f : 1.0f;
-    float wx1 = (tx < 0 || tx >= gridSizeX) ? -1.0f : 0.0f;
-    
-    float wy0 = (ty < 0 || ty >= gridSizeY) ? 2.0f : 1.0f;
-    float wy1 = (ty < 0 || ty >= gridSizeY) ? -1.0f : 0.0f;
-    
-    float v00 = tex[uint2((uint)x0, (uint)y0)];
-    float v10 = tex[uint2((uint)x1, (uint)y0)];
-    float v01 = tex[uint2((uint)x0, (uint)y1)];
-    float v11 = tex[uint2((uint)x1, (uint)y1)];
-    
-    return wy0 * (wx0 * v00 + wx1 * v10) + wy1 * (wx0 * v01 + wx1 * v11);
+        return wy0 * (wx0 * v00 + wx1 * v10) + wy1 * (wx0 * v01 + wx1 * v11);
+    // }
 }
 
 float CalcDiffusion(Texture2D<float> f, Texture2D<float> a, int2 curr) {
@@ -116,23 +116,33 @@ float CalcDiffusion(Texture2D<float> f, Texture2D<float> a, int2 curr) {
 }
 
 bool StopFlowOnTerrainBoundary(Texture2D<float> h, Texture2D<float> terrain, int2 curr, bool isYDirection=false) {
-    float h_curr = GetExtrapolatedValue(h, curr);
-    float terrain_curr = GetExtrapolatedValue(terrain, curr);
+    int2 check_curr = curr;
+    float h_curr;
+    float terrain_curr;
+    if (boundaryType == 0) { // wall (clamp coordinate)
+        check_curr = clamp(curr, int2(0, 0), int2(gridSizeX - 1, gridSizeY - 1));
+        h_curr = h[check_curr];
+        terrain_curr = terrain[check_curr];
+    } else {
+        h_curr = GetExtrapolatedValue(h, check_curr);
+        terrain_curr = GetExtrapolatedValue(terrain, check_curr);
+    }
+    
     if (!isYDirection) {
-        float h_xplus = GetExtrapolatedValue(h, curr + int2(1, 0));
-        float terrain_xplus = GetExtrapolatedValue(terrain, curr + int2(1, 0));
-        if ((h_curr <= minWaterHeight) && (terrain_curr >= terrain_xplus + h_xplus)) // positive q_x
+        float h_right = GetExtrapolatedValue(h, check_curr + int2(1, 0));
+        float terrain_right = GetExtrapolatedValue(terrain, check_curr + int2(1, 0));
+        if ((h_curr <= minWaterHeight) && (terrain_curr >= terrain_right + h_right)) // positive q_x
             return true;
-        if ((h_xplus <= minWaterHeight) && (terrain_xplus > terrain_curr + h_curr)) // negative q_x
+        if ((h_right <= minWaterHeight) && (terrain_right > terrain_curr + h_curr)) // negative q_x
             return true;
         return false;
     }
     else {
-        float h_yplus = GetExtrapolatedValue(h, curr + int2(0, 1));
-        float terrain_yplus = GetExtrapolatedValue(terrain, curr + int2(0, 1));
-        if ((h_curr <= minWaterHeight) && (terrain_curr >= terrain_yplus + h_yplus)) // positive q_y
+        float h_up = GetExtrapolatedValue(h, check_curr + int2(0, 1));
+        float terrain_up = GetExtrapolatedValue(terrain, check_curr + int2(0, 1));
+        if ((h_curr <= minWaterHeight) && (terrain_curr >= terrain_up + h_up)) // positive q_y
             return true;
-        if ((h_yplus <= minWaterHeight) && (terrain_yplus > terrain_curr + h_curr)) // negative q_y
+        if ((h_up <= minWaterHeight) && (terrain_up > terrain_curr + h_curr)) // negative q_y
             return true;
         return false;
     }
