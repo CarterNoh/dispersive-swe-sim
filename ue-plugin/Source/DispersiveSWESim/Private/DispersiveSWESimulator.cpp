@@ -518,28 +518,48 @@ void UDispersiveSWESimulator::ExecuteSimulation_RenderThread(
 
 	// Diffusion loop - low pass filter H and Q
 	{
+		FRDGTextureRef H_Src = H_RDG;
+		FRDGTextureRef H_Dst = HPast;
+		FRDGTextureRef Qx_Src = Qx_RDG;
+		FRDGTextureRef Qx_Dst = QPastX;
+		FRDGTextureRef Qy_Src = Qy_RDG;
+		FRDGTextureRef Qy_Dst = QPastY;
+
+		// Copy initial states to buffer destinations
+		AddCopyTexturePass(GraphBuilder, H_Src, H_Dst);
+		AddCopyTexturePass(GraphBuilder, Qx_Src, Qx_Dst);
+		AddCopyTexturePass(GraphBuilder, Qy_Src, Qy_Dst);
+
 		TShaderMapRef<FDiffusionStepCS> Shader(ShaderMap);
 		for (int32 j = 0; j < Constants.diffusionIterations; j++)
 		{
-			// Copy current to past
-			AddCopyTexturePass(GraphBuilder, H_RDG, HPast);
-			AddCopyTexturePass(GraphBuilder, Qx_RDG, QPastX);
-			AddCopyTexturePass(GraphBuilder, Qy_RDG, QPastY);
-
 			FDiffusionStepCS::FParameters* Params = GraphBuilder.AllocParameters<FDiffusionStepCS::FParameters>();
 			Params->SimConstants = ConstantBuffer;
 			Params->in0 = GraphBuilder.CreateSRV(Terrain_RDG);
-			Params->in1 = GraphBuilder.CreateSRV(HPast);
-			Params->in2 = GraphBuilder.CreateSRV(QPastX);
-			Params->in3 = GraphBuilder.CreateSRV(QPastY);
+			Params->in1 = GraphBuilder.CreateSRV(H_Src);
+			Params->in2 = GraphBuilder.CreateSRV(Qx_Src);
+			Params->in3 = GraphBuilder.CreateSRV(Qy_Src);
 			Params->in4 = GraphBuilder.CreateSRV(alpha_H);
 			Params->in5 = GraphBuilder.CreateSRV(alpha_Qx);
 			Params->in6 = GraphBuilder.CreateSRV(alpha_Qy);
-			Params->out0 = GraphBuilder.CreateUAV(H_RDG);
-			Params->out1 = GraphBuilder.CreateUAV(Qx_RDG);
-			Params->out2 = GraphBuilder.CreateUAV(Qy_RDG);
+			Params->out0 = GraphBuilder.CreateUAV(H_Dst);
+			Params->out1 = GraphBuilder.CreateUAV(Qx_Dst);
+			Params->out2 = GraphBuilder.CreateUAV(Qy_Dst);
 
 			FComputeShaderUtils::AddPass(GraphBuilder, RDG_EVENT_NAME("SWE_Decomp_Diffusion"), ERDGPassFlags::Compute, Shader, Params, GridGroups);
+
+			// Swap sources and destinations for next loop iteration
+			Swap(H_Src, H_Dst);
+			Swap(Qx_Src, Qx_Dst);
+			Swap(Qy_Src, Qy_Dst);
+		}
+
+		// Ensure final result is in H_RDG, Qx_RDG, Qy_RDG
+		if (H_Src != H_RDG)
+		{
+			AddCopyTexturePass(GraphBuilder, H_Src, H_RDG);
+			AddCopyTexturePass(GraphBuilder, Qx_Src, Qx_RDG);
+			AddCopyTexturePass(GraphBuilder, Qy_Src, Qy_RDG);
 		}
 	}
 
