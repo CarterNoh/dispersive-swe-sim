@@ -101,7 +101,7 @@ float SampleCubicClamped2D(Texture2D<float> dataField, float2 samplePos) {
     
     // 2. Safely clamp all 4x4 grid indices to the domain boundaries
     int2 maxGrid = int2(gridSizeX - 1, gridSizeY - 1);
-    int2 id0 = clamp(id_start + 0, int2(0,0), maxGrid);
+    int2 id0 = clamp(id_start,     int2(0,0), maxGrid);
     int2 id1 = clamp(id_start + 1, int2(0,0), maxGrid);
     int2 id2 = clamp(id_start + 2, int2(0,0), maxGrid);
     int2 id3 = clamp(id_start + 3, int2(0,0), maxGrid);
@@ -122,27 +122,39 @@ float SampleCubicClamped2D(Texture2D<float> dataField, float2 samplePos) {
          frac3.y - frac2.y
     ) * 0.5f;
 
-    // 4. Sample the 4x4 grid and interpolate along X for each row
-    int4 xIndices = int4(id0.x, id1.x, id2.x, id3.x);
-    float row0 = wX.x * dataField[int2(xIndices.x, id0.y)] + wX.y * dataField[int2(xIndices.y, id0.y)] + 
-                 wX.z * dataField[int2(xIndices.z, id0.y)] + wX.w * dataField[int2(xIndices.w, id0.y)];
-    float row1 = wX.x * dataField[int2(xIndices.x, id1.y)] + wX.y * dataField[int2(xIndices.y, id1.y)] + 
-                 wX.z * dataField[int2(xIndices.z, id1.y)] + wX.w * dataField[int2(xIndices.w, id1.y)];
-    float row2 = wX.x * dataField[int2(xIndices.x, id2.y)] + wX.y * dataField[int2(xIndices.y, id2.y)] + 
-                 wX.z * dataField[int2(xIndices.z, id2.y)] + wX.w * dataField[int2(xIndices.w, id2.y)];
-    float row3 = wX.x * dataField[int2(xIndices.x, id3.y)] + wX.y * dataField[int2(xIndices.y, id3.y)] + 
-                 wX.z * dataField[int2(xIndices.z, id3.y)] + wX.w * dataField[int2(xIndices.w, id3.y)];
+    // 4. Load the 16 values explicitly (reusing registers)
+    float v00 = dataField[int2(id0.x, id0.y)];
+    float v10 = dataField[int2(id1.x, id0.y)];
+    float v20 = dataField[int2(id2.x, id0.y)];
+    float v30 = dataField[int2(id3.x, id0.y)];
 
-    // 5. Interpolate the 4 row results along Y
+    float v01 = dataField[int2(id0.x, id1.y)];
+    float v11 = dataField[int2(id1.x, id1.y)]; // c00
+    float v21 = dataField[int2(id2.x, id1.y)]; // c10
+    float v31 = dataField[int2(id3.x, id1.y)];
+
+    float v02 = dataField[int2(id0.x, id2.y)];
+    float v12 = dataField[int2(id1.x, id2.y)]; // c01
+    float v22 = dataField[int2(id2.x, id2.y)]; // c11
+    float v32 = dataField[int2(id3.x, id2.y)];
+
+    float v03 = dataField[int2(id0.x, id3.y)];
+    float v13 = dataField[int2(id1.x, id3.y)];
+    float v23 = dataField[int2(id2.x, id3.y)];
+    float v33 = dataField[int2(id3.x, id3.y)];
+
+    // 5. Interpolate along X for each row
+    float row0 = wX.x * v00 + wX.y * v10 + wX.z * v20 + wX.w * v30;
+    float row1 = wX.x * v01 + wX.y * v11 + wX.z * v21 + wX.w * v31;
+    float row2 = wX.x * v02 + wX.y * v12 + wX.z * v22 + wX.w * v32;
+    float row3 = wX.x * v03 + wX.y * v13 + wX.z * v23 + wX.w * v33;
+
+    // 6. Interpolate the 4 row results along Y
     float result = wY.x * row0 + wY.y * row1 + wY.z * row2 + wY.w * row3;
 
-    // 6. Monotonicity clamp: limit result to the bounding box of the 4 immediate neighbors (id1, id2)
-    float c00 = dataField[int2(id1.x, id1.y)];
-    float c10 = dataField[int2(id2.x, id1.y)];
-    float c01 = dataField[int2(id1.x, id2.y)];
-    float c11 = dataField[int2(id2.x, id2.y)];
-    float minVal = min(min(c00, c10), min(c01, c11));
-    float maxVal = max(max(c00, c10), max(c01, c11));
+    // 7. Monotonicity clamp (reusing the already-loaded values)
+    float minVal = min(min(v11, v21), min(v12, v22));
+    float maxVal = max(max(v11, v21), max(v12, v22));
 
     return clamp(result, minVal, maxVal);
 }

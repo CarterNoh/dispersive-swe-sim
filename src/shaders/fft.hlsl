@@ -48,14 +48,8 @@ float2 twiddle_factor(uint k, uint N, bool inverse) {
 }
 
 uint bit_reverse(uint x, uint bits) {
-    // Bit-reversal of the lower `bits` bits of x.
-    uint result = 0;
-    for (uint i = 0; i < bits; ++i)
-    {
-        result = (result << 1) | (x & 1);
-        x >>= 1;
-    }
-    return result;
+    // Bit-reversal of the lower `bits` bits of x using hardware reversebits.
+    return reversebits(x) >> (32 - bits);
 }
 
 // ---------------------------------------------------------------------------
