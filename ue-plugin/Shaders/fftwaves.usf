@@ -1,3 +1,5 @@
+#include "/Engine/Public/Platform.ush"
+
 /*
 Implementation of FFT waves. Based on Cougar's FFTWave implementation in HoloOcean
 and the paper "Empirical Directional Wave Spectra for Computer Graphics". 

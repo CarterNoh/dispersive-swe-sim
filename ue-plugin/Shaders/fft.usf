@@ -1,3 +1,5 @@
+#include "/Engine/Public/Platform.ush"
+
 // Butterfly FFT compute shader for 2-D fluid surface simulation.
 
 #ifndef FFT_SIZE

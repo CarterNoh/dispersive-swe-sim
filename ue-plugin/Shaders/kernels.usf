@@ -1,3 +1,5 @@
+#include "/Engine/Public/Platform.ush"
+
 // Shaders executing steps of algorithm outlined in "Generalizing Shallow Water Simulations with Dispersive Surface Waves"
 
 // Simulation parameters mapped to Unreal shader parameters
