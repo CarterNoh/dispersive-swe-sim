@@ -25,9 +25,9 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SWE Simulation")
 	int32 GridSizeY = 400;
 
-	// Physical cell size in meters per cell
+	// Physical cell size in centimeters per cell
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SWE Simulation")
-	float CellSize = 1.0f;
+	float CellSize = 100.0f;
 
 	// Time step of the simulation in seconds
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SWE Simulation")
@@ -41,11 +41,11 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SWE Simulation")
 	int32 SpongeThickness = 8;
 
-	// Minimum water height for solver stability
+	// Minimum water height in centimeters for solver stability
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SWE Simulation")
-	float MinWaterHeight = 0.001f;
+	float MinWaterHeight = 0.1f;
 
-	// Initial water free surface level
+	// Initial water free surface level in centimeters
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SWE Simulation")
 	float WaterLevel = 0.0f;
 

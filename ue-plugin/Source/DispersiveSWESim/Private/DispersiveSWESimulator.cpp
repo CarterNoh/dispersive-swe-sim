@@ -114,7 +114,7 @@ void UDispersiveSWESimulator::SetupInitialStates(FRHICommandListImmediate& RHICm
 		// Run the compute shader to initialize water height on GPU
 		TShaderMapRef<FInitializeWaterHeightCS> InitWaterHeightCS(GetGlobalShaderMap(GMaxRHIFeatureLevel));
 		FInitializeWaterHeightCS::FParameters* InitParams = GraphBuilder.AllocParameters<FInitializeWaterHeightCS::FParameters>();
-		InitParams->WaterLevel = WaterLevel;
+		InitParams->WaterLevel = WaterLevel * 0.01f; // Convert cm to meters
 		InitParams->gridSizeX = GridSizeX;
 		InitParams->gridSizeY = GridSizeY;
 		InitParams->in3 = GraphBuilder.CreateSRV(Terrain_RDG);
@@ -147,10 +147,10 @@ void UDispersiveSWESimulator::SetupInitialStates(FRHICommandListImmediate& RHICm
 		CPUConstants.time = 0.0f;
 		CPUConstants.gridSizeX = GridSizeX;
 		CPUConstants.gridSizeY = GridSizeY;
-		CPUConstants.cellSize = CellSize;
+		CPUConstants.cellSize = CellSize * 0.01f; // Convert cm to meters
 		CPUConstants.timeStep = TimeStep;
 		CPUConstants.spongeThickness = SpongeThickness;
-		CPUConstants.minWaterHeight = MinWaterHeight;
+		CPUConstants.minWaterHeight = MinWaterHeight * 0.01f; // Convert cm to meters
 		CPUConstants.surfaceTension = SurfaceTension;
 		CPUConstants.density = Density;
 		CPUConstants.diffusionIterations = DiffusionIterations;
@@ -205,7 +205,7 @@ void UDispersiveSWESimulator::SetupInitialStates(FRHICommandListImmediate& RHICm
 
 		float TerrainHeight = -13.0f;
 		float TerrainScale = 20.0f;
-		float WaterLevelLocal = 0.0f;
+		float WaterLevelLocal = WaterLevel * 0.01f; // Convert cm to meters
 
 		for (int32 y = 0; y < GridSizeY; y++)
 		{
@@ -261,10 +261,10 @@ void UDispersiveSWESimulator::SetupInitialStates(FRHICommandListImmediate& RHICm
 		CPUConstants.time = 0.0f;
 		CPUConstants.gridSizeX = GridSizeX;
 		CPUConstants.gridSizeY = GridSizeY;
-		CPUConstants.cellSize = CellSize;
+		CPUConstants.cellSize = CellSize * 0.01f; // Convert cm to meters
 		CPUConstants.timeStep = TimeStep;
 		CPUConstants.spongeThickness = SpongeThickness;
-		CPUConstants.minWaterHeight = MinWaterHeight;
+		CPUConstants.minWaterHeight = MinWaterHeight * 0.01f; // Convert cm to meters
 		CPUConstants.surfaceTension = SurfaceTension;
 		CPUConstants.density = Density;
 		CPUConstants.diffusionIterations = DiffusionIterations;
@@ -322,10 +322,10 @@ void UDispersiveSWESimulator::TickComponent(float DeltaTime, ELevelTick TickType
 	Constants.time = SimulationTime;
 	Constants.gridSizeX = GridSizeX;
 	Constants.gridSizeY = GridSizeY;
-	Constants.cellSize = CellSize;
+	Constants.cellSize = CellSize * 0.01f; // Convert cm to meters
 	Constants.timeStep = TimeStep;
 	Constants.spongeThickness = SpongeThickness;
-	Constants.minWaterHeight = MinWaterHeight;
+	Constants.minWaterHeight = MinWaterHeight * 0.01f; // Convert cm to meters
 	Constants.surfaceTension = SurfaceTension;
 	Constants.density = Density;
 	Constants.diffusionIterations = DiffusionIterations;
@@ -800,64 +800,71 @@ void UDispersiveSWESimulator::ExecuteSimulation_RenderThread(
 	// Copy height field (h + hFFT)
 	if (HeightOutputRT && HeightOutputRT->GetRenderTargetResource())
 	{
-		// Compute final visual height including high-frequency FFT waves
-		FRDGTextureRef FinalHeight = GraphBuilder.CreateTexture(FloatDesc, TEXT("SWE_FinalVisualHeight"));
-
-		// We can reuse a simple pass or write a tiny inline compute pass. 
-		// For the simplest implementation, we add a quick pass to add h + hFFT:
-		// We'll write a simple custom block using GraphBuilder.AddPass.
-		// Wait, a quick custom pass to add textures or copy:
-		// Since we want to display (h + hFFT) in the output, we can add a pass to do:
-		// TargetTexture[id] = h[id] + hFFT[id].
-		// But wait! Instead of custom shader, is it easier to just export h and hFFT separately, or add them?
-		// We can add them! Let's write a quick pass that runs on the render thread and combines them,
-		// or copy h_RDG to the Render Target directly. 
-		// Actually, to make it realistic-looking, the final water height should indeed be h + hFFT.
-		// Let's create an inline RDG pass to add them!
-		// Let's declare a simple copy pass or write it.
-		// Wait, can we just copy h_RDG to HeightOutputRT, and let the material handle the addition of h and hFFT (since the material can sample both height RT and FFT displacement RT)?
-		// Yes! That is much more flexible! The material can sample the base height RT (for bulk water height) and the FFT displacement RT (which has 3D offsets) separately, and combine them. 
-		// That is the standard displacement mapping pipeline.
-		// So we will just export h_RDG to HeightOutputRT, and dispX/dispY/hFFT to DisplacementOutputRT.
-		// That is extremely clean!
 		FRDGTextureRef SrcHeightTexture = h_RDG;
 		FRDGTextureRef ExportHeightDest = GraphBuilder.RegisterExternalTexture(CreateRenderTarget(HeightOutputRT->GetRenderTargetResource()->GetTexture2DRHI(), TEXT("SWE_HeightExport")));
-		AddCopyTexturePass(GraphBuilder, SrcHeightTexture, ExportHeightDest);
+		
+		TShaderMapRef<FScaleCopyTextureCS> ScaleCopyCS(GetGlobalShaderMap(GMaxRHIFeatureLevel));
+		FScaleCopyTextureCS::FParameters* PassParams = GraphBuilder.AllocParameters<FScaleCopyTextureCS::FParameters>();
+		PassParams->ScaleFactor = 100.0f; // m to cm
+		PassParams->gridSizeX = GridSizeX;
+		PassParams->gridSizeY = GridSizeY;
+		PassParams->in0 = GraphBuilder.CreateSRV(SrcHeightTexture);
+		PassParams->out0 = GraphBuilder.CreateUAV(ExportHeightDest);
+
+		FComputeShaderUtils::AddPass(
+			GraphBuilder,
+			RDG_EVENT_NAME("SWE_ExportHeight_Scale"),
+			ERDGPassFlags::Compute,
+			ScaleCopyCS,
+			PassParams,
+			FIntVector(FMath::DivideAndRoundUp(GridSizeX, 16), FMath::DivideAndRoundUp(GridSizeY, 16), 1)
+		);
 	}
 
 	if (DisplacementOutputRT && DisplacementOutputRT->GetRenderTargetResource())
 	{
-		// Export 3D displacement vector (dispX, dispY, hFFT)
-		// We can combine them into a single RGBA format texture.
-		// Let's create a combined transient RGBA texture, run a small pass to populate it, and copy it to DisplacementOutputRT.
-		// Let's see: we have dispX, dispY, hFFT.
-		// We can write a custom pass. Let's write a simple RDG pass that populates an RGBA16F or RGBA32F render target!
-		// Wait, we can write a simple lambda pass inside RDG in UE5:
 		FRDGTextureRef ExportDispDest = GraphBuilder.RegisterExternalTexture(CreateRenderTarget(DisplacementOutputRT->GetRenderTargetResource()->GetTexture2DRHI(), TEXT("SWE_DispExport")));
+		FRDGTextureRef SrcDispTexture = dispX;
 
-		// In UE5, we can use GraphBuilder.AddPass to queue a simple copy or render-thread execution.
-		// But even easier: we can just copy dispX to the export target if they are simple formats, or write a custom pass.
-		// Let's write a custom pass that copies dispX, dispY, hFFT directly using a simple compute pass,
-		// or to keep it simple, we can copy hFFT directly to DisplacementOutputRT (treating it as vertical displacement),
-		// and copy dispX/dispY to another channel.
-		// For the simplest implementation, we copy hFFT to the HeightOutputRT (with bulk height) or just copy the height and displacement directly.
-		// Let's just copy hFFT directly to HeightOutputRT, and dispX/dispY to DisplacementOutputRT as 2D vectors!
-		// Wait, yes!
-		// HeightOutputRT = h_RDG (or h_RDG + hFFT).
-		// DisplacementOutputRT = dispX/dispY.
-		// Let's copy them directly:
-		FRDGTextureRef SrcDispTexture = dispX; // Let's copy dispX for horizontal, or we can use AddCopyTexturePass.
-		AddCopyTexturePass(GraphBuilder, SrcDispTexture, ExportDispDest);
+		TShaderMapRef<FScaleCopyTextureCS> ScaleCopyCS(GetGlobalShaderMap(GMaxRHIFeatureLevel));
+		FScaleCopyTextureCS::FParameters* PassParams = GraphBuilder.AllocParameters<FScaleCopyTextureCS::FParameters>();
+		PassParams->ScaleFactor = 100.0f; // m to cm
+		PassParams->gridSizeX = GridSizeX;
+		PassParams->gridSizeY = GridSizeY;
+		PassParams->in0 = GraphBuilder.CreateSRV(SrcDispTexture);
+		PassParams->out0 = GraphBuilder.CreateUAV(ExportDispDest);
+
+		FComputeShaderUtils::AddPass(
+			GraphBuilder,
+			RDG_EVENT_NAME("SWE_ExportDisp_Scale"),
+			ERDGPassFlags::Compute,
+			ScaleCopyCS,
+			PassParams,
+			FIntVector(FMath::DivideAndRoundUp(GridSizeX, 16), FMath::DivideAndRoundUp(GridSizeY, 16), 1)
+		);
 	}
 
 	if (FoamOutputRT && FoamOutputRT->GetRenderTargetResource())
 	{
-		// Export Jacobian folding/foam map.
-		// For now, let's copy delHx to FoamOutputRT as a placeholder for foam, or write a quick calculation.
-		// Let's use delHx as a representation of wave steepness.
 		FRDGTextureRef SrcFoamTexture = delHx;
 		FRDGTextureRef ExportFoamDest = GraphBuilder.RegisterExternalTexture(CreateRenderTarget(FoamOutputRT->GetRenderTargetResource()->GetTexture2DRHI(), TEXT("SWE_FoamExport")));
-		AddCopyTexturePass(GraphBuilder, SrcFoamTexture, ExportFoamDest);
+
+		TShaderMapRef<FScaleCopyTextureCS> ScaleCopyCS(GetGlobalShaderMap(GMaxRHIFeatureLevel));
+		FScaleCopyTextureCS::FParameters* PassParams = GraphBuilder.AllocParameters<FScaleCopyTextureCS::FParameters>();
+		PassParams->ScaleFactor = 1.0f; // Keep dimensionless ratio as is
+		PassParams->gridSizeX = GridSizeX;
+		PassParams->gridSizeY = GridSizeY;
+		PassParams->in0 = GraphBuilder.CreateSRV(SrcFoamTexture);
+		PassParams->out0 = GraphBuilder.CreateUAV(ExportFoamDest);
+
+		FComputeShaderUtils::AddPass(
+			GraphBuilder,
+			RDG_EVENT_NAME("SWE_ExportFoam_Copy"),
+			ERDGPassFlags::Compute,
+			ScaleCopyCS,
+			PassParams,
+			FIntVector(FMath::DivideAndRoundUp(GridSizeX, 16), FMath::DivideAndRoundUp(GridSizeY, 16), 1)
+		);
 	}
 
 	GraphBuilder.Execute();

@@ -663,8 +663,17 @@ void InitializeWaterHeight(uint3 id : SV_DispatchThreadID) {
     // Inputs: in3 = terrain
     // Outputs: out0 = h (water height), out1 = H (total elevation)
     if (id.x >= (uint)(gridSizeX) || id.y >= (uint)(gridSizeY)) return;
-    float terrainHeight = in3[id.xy];
+    float terrainHeight = in3[id.xy] * 0.01f;
     float h_val = max(0.f, WaterLevel - terrainHeight);
     out0[id.xy] = h_val;
     out1[id.xy] = terrainHeight + h_val;
+}
+
+// Shader parameter for texture scaling and copying
+float ScaleFactor;
+
+[numthreads(16, 16, 1)]
+void ScaleCopyTexture(uint3 id : SV_DispatchThreadID) {
+    if (id.x >= (uint)(gridSizeX) || id.y >= (uint)(gridSizeY)) return;
+    out0[id.xy] = in0[id.xy] * ScaleFactor;
 }
