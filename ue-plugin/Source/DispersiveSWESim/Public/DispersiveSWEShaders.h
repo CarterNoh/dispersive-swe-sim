@@ -376,3 +376,19 @@ public:
 		OutEnvironment.SetDefine(TEXT("IS_ARRAY"), PermutationVector.Get<FIsArrayDim>() ? 1 : 0);
 	}
 };
+
+class FInitializeWaterHeightCS : public FDispersiveSWEComputeShader
+{
+public:
+	DECLARE_GLOBAL_SHADER(FInitializeWaterHeightCS);
+	SHADER_USE_PARAMETER_STRUCT(FInitializeWaterHeightCS, FDispersiveSWEComputeShader);
+
+	BEGIN_SHADER_PARAMETER_STRUCT(FParameters, )
+		SHADER_PARAMETER(float, WaterLevel)
+		SHADER_PARAMETER(int32, gridSizeX)
+		SHADER_PARAMETER(int32, gridSizeY)
+		SHADER_PARAMETER_RDG_TEXTURE_SRV(Texture2D<float>, in3)
+		SHADER_PARAMETER_RDG_TEXTURE_UAV(RWTexture2D<float>, out0)
+		SHADER_PARAMETER_RDG_TEXTURE_UAV(RWTexture2D<float>, out1)
+	END_SHADER_PARAMETER_STRUCT()
+};

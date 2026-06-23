@@ -45,6 +45,10 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SWE Simulation")
 	float MinWaterHeight = 0.001f;
 
+	// Initial water free surface level
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SWE Simulation")
+	float WaterLevel = 0.0f;
+
 	// Surface tension coefficient
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SWE Simulation")
 	float SurfaceTension = 0.001f;
@@ -117,6 +121,10 @@ public:
 	// Discrete water depths for wave dispersion calculations
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SWE Simulation|eWave")
 	TArray<float> DepthLevels = { 1.0f, 2.0f, 4.0f, 16.0f, 64.0f };
+
+	// Input Render Target containing the level's terrain/height capture map
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SWE Inputs")
+	UTextureRenderTarget2D* TerrainHeightInputRT = nullptr;
 
 	// Output target textures containing wave fields
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SWE Outputs")

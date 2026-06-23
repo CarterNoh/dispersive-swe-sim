@@ -654,3 +654,17 @@ void InterpQ(uint3 id : SV_DispatchThreadID) {
     qtilde_x[id.xy] = sx * qHat_x_array[uint3(id.x, id.y, d1_x)].x + (1.f - sx) * qHat_x_array[uint3(id.x, id.y, d2_x)].x;
     qtilde_y[id.xy] = sy * qHat_y_array[uint3(id.x, id.y, d1_y)].x + (1.f - sy) * qHat_y_array[uint3(id.x, id.y, d2_y)].x;
 }
+
+// Shader parameter for water level initialization
+float WaterLevel;
+
+[numthreads(16, 16, 1)]
+void InitializeWaterHeight(uint3 id : SV_DispatchThreadID) {
+    // Inputs: in3 = terrain
+    // Outputs: out0 = h (water height), out1 = H (total elevation)
+    if (id.x >= (uint)(gridSizeX) || id.y >= (uint)(gridSizeY)) return;
+    float terrainHeight = in3[id.xy];
+    float h_val = max(0.f, WaterLevel - terrainHeight);
+    out0[id.xy] = h_val;
+    out1[id.xy] = terrainHeight + h_val;
+}

@@ -20,3 +20,4 @@ IMPLEMENT_GLOBAL_SHADER(FPropagateWavesCS,      "/Plugin/DispersiveSWESim/fftwav
 IMPLEMENT_GLOBAL_SHADER(FInterpCS,              "/Plugin/DispersiveSWESim/fftwaves.usf", "Interp",                 SF_Compute);
 
 IMPLEMENT_GLOBAL_SHADER(FFFTKernel1DCS,         "/Plugin/DispersiveSWESim/fft.usf",      "FFTKernel_1D",           SF_Compute);
+IMPLEMENT_GLOBAL_SHADER(FInitializeWaterHeightCS, "/Plugin/DispersiveSWESim/kernels.usf",  "InitializeWaterHeight",  SF_Compute);
