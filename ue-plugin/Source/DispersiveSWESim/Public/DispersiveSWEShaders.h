@@ -385,9 +385,8 @@ public:
 	SHADER_USE_PARAMETER_STRUCT(FInitializeWaterHeightCS, FDispersiveSWEComputeShader);
 
 	BEGIN_SHADER_PARAMETER_STRUCT(FParameters, )
+		SHADER_PARAMETER_STRUCT_REF(FSimConstants, SimConstants)
 		SHADER_PARAMETER(float, WaterLevel)
-		SHADER_PARAMETER(int32, gridSizeX)
-		SHADER_PARAMETER(int32, gridSizeY)
 		SHADER_PARAMETER_RDG_TEXTURE_SRV(Texture2D<float>, in3)
 		SHADER_PARAMETER_RDG_TEXTURE_UAV(RWTexture2D<float>, out0)
 		SHADER_PARAMETER_RDG_TEXTURE_UAV(RWTexture2D<float>, out1)
@@ -401,9 +400,8 @@ public:
 	SHADER_USE_PARAMETER_STRUCT(FScaleCopyTextureCS, FDispersiveSWEComputeShader);
 
 	BEGIN_SHADER_PARAMETER_STRUCT(FParameters, )
+		SHADER_PARAMETER_STRUCT_REF(FSimConstants, SimConstants)
 		SHADER_PARAMETER(float, ScaleFactor)
-		SHADER_PARAMETER(int32, gridSizeX)
-		SHADER_PARAMETER(int32, gridSizeY)
 		SHADER_PARAMETER_RDG_TEXTURE_SRV(Texture2D<float>, in0)
 		SHADER_PARAMETER_RDG_TEXTURE_UAV(RWTexture2D<float>, out0)
 	END_SHADER_PARAMETER_STRUCT()

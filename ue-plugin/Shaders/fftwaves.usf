@@ -5,36 +5,36 @@ Implementation of FFT waves. Based on Cougar's FFTWave implementation in HoloOce
 and the paper "Empirical Directional Wave Spectra for Computer Graphics". 
  */
 
-// Simulation parameters mapped to Unreal shader parameters
-float time;
-int gridSizeX; 
-int gridSizeY; 
-float cellSize;
-float timeStep;
-int spongeThickness;
-float minWaterHeight;
-float surfaceTension;
-float density;
-int diffusionIterations;
-float deltaT;
-float diffusionPenalty;
-float slopeLimit;
-float cflCondition;
-float gammaTransport;
-int depthNum;
-float fetch;
-float windSpeed;
-float windAngle;
-float swell;
-float swellAngle;
-float choppiness;
-float filterSmall;
-float filterBig;
-float filterWidth;
-float filterMin;
-float depthCutoff;
-int paddedGridSizeX;
-int paddedGridSizeY;
+// Simulation parameters redirected to the SimConstants constant buffer
+#define time SimConstants.time
+#define gridSizeX SimConstants.gridSizeX
+#define gridSizeY SimConstants.gridSizeY
+#define cellSize SimConstants.cellSize
+#define timeStep SimConstants.timeStep
+#define spongeThickness SimConstants.spongeThickness
+#define minWaterHeight SimConstants.minWaterHeight
+#define surfaceTension SimConstants.surfaceTension
+#define density SimConstants.density
+#define diffusionIterations SimConstants.diffusionIterations
+#define deltaT SimConstants.deltaT
+#define diffusionPenalty SimConstants.diffusionPenalty
+#define slopeLimit SimConstants.slopeLimit
+#define cflCondition SimConstants.cflCondition
+#define gammaTransport SimConstants.gammaTransport
+#define depthNum SimConstants.depthNum
+#define fetch SimConstants.fetch
+#define windSpeed SimConstants.windSpeed
+#define windAngle SimConstants.windAngle
+#define swell SimConstants.swell
+#define swellAngle SimConstants.swellAngle
+#define choppiness SimConstants.choppiness
+#define filterSmall SimConstants.filterSmall
+#define filterBig SimConstants.filterBig
+#define filterWidth SimConstants.filterWidth
+#define filterMin SimConstants.filterMin
+#define depthCutoff SimConstants.depthCutoff
+#define paddedGridSizeX SimConstants.paddedGridSizeX
+#define paddedGridSizeY SimConstants.paddedGridSizeY
 
 #define G 9.80665f
 #define PI 3.14159265358979323846f

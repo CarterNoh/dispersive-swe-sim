@@ -126,38 +126,8 @@ void UDispersiveSWESimulator::SetupInitialStates(FRHICommandListImmediate& RHICm
 		FRDGTextureRef HPos_RDG = GraphBuilder.RegisterExternalTexture(TexHPos);
 		FRDGTextureRef HNeg_RDG = GraphBuilder.RegisterExternalTexture(TexHNeg);
 
-		// Run the compute shader to initialize water height on GPU
-		TShaderMapRef<FInitializeWaterHeightCS> InitWaterHeightCS(GetGlobalShaderMap(GMaxRHIFeatureLevel));
-		FInitializeWaterHeightCS::FParameters* InitParams = GraphBuilder.AllocParameters<FInitializeWaterHeightCS::FParameters>();
-		InitParams->WaterLevel = WaterLevel * 0.01f; // Convert cm to meters
-		InitParams->gridSizeX = GridSizeX;
-		InitParams->gridSizeY = GridSizeY;
-		InitParams->in3 = GraphBuilder.CreateSRV(Terrain_RDG);
-		InitParams->out0 = GraphBuilder.CreateUAV(h_RDG);
-		InitParams->out1 = GraphBuilder.CreateUAV(H_RDG);
-
-		FComputeShaderUtils::AddPass(
-			GraphBuilder,
-			RDG_EVENT_NAME("SWE_InitializeWaterHeight_GPU"),
-			ERDGPassFlags::Compute,
-			InitWaterHeightCS,
-			InitParams,
-			FIntVector(FMath::DivideAndRoundUp(GridSizeX, 16), FMath::DivideAndRoundUp(GridSizeY, 16), 1)
-		);
-
-		// Copy the computed water height h to hbar and hbarOld
-		AddCopyTexturePass(GraphBuilder, h_RDG, hbar_RDG);
-		AddCopyTexturePass(GraphBuilder, h_RDG, hbarOld_RDG);
-
-		// Initialize the Populated Spectrum on startup
+		// Setup uniform buffer
 		TArray<float> LocalDepths = DepthLevels;
-		FRDGBufferRef DepthBufferRDG = GraphBuilder.CreateBuffer(
-			FRDGBufferDesc::CreateStructuredDesc(sizeof(float), LocalDepths.Num()),
-			TEXT("SWE_DepthBuffer")
-		);
-		GraphBuilder.QueueBufferUpload(DepthBufferRDG, LocalDepths.GetData(), sizeof(float) * LocalDepths.Num(), ERDGInitialDataFlags::None);
-		FRDGBufferSRVRef DepthSRV = GraphBuilder.CreateSRV(DepthBufferRDG);
-
 		FSimConstants CPUConstants = {};
 		CPUConstants.time = 0.0f;
 		CPUConstants.gridSizeX = GridSizeX;
@@ -190,6 +160,36 @@ void UDispersiveSWESimulator::SetupInitialStates(FRHICommandListImmediate& RHICm
 		CPUConstants.paddedGridSizeY = PaddedSizeY;
 
 		TUniformBufferRef<FSimConstants> ConstantBuffer = CreateUniformBufferImmediate(CPUConstants, EUniformBufferUsage::UniformBuffer_SingleFrame);
+
+		// Run the compute shader to initialize water height on GPU
+		TShaderMapRef<FInitializeWaterHeightCS> InitWaterHeightCS(GetGlobalShaderMap(GMaxRHIFeatureLevel));
+		FInitializeWaterHeightCS::FParameters* InitParams = GraphBuilder.AllocParameters<FInitializeWaterHeightCS::FParameters>();
+		InitParams->SimConstants = ConstantBuffer;
+		InitParams->WaterLevel = WaterLevel * 0.01f; // Convert cm to meters
+		InitParams->in3 = GraphBuilder.CreateSRV(Terrain_RDG);
+		InitParams->out0 = GraphBuilder.CreateUAV(h_RDG);
+		InitParams->out1 = GraphBuilder.CreateUAV(H_RDG);
+
+		FComputeShaderUtils::AddPass(
+			GraphBuilder,
+			RDG_EVENT_NAME("SWE_InitializeWaterHeight_GPU"),
+			ERDGPassFlags::Compute,
+			InitWaterHeightCS,
+			InitParams,
+			FIntVector(FMath::DivideAndRoundUp(GridSizeX, 16), FMath::DivideAndRoundUp(GridSizeY, 16), 1)
+		);
+
+		// Copy the computed water height h to hbar and hbarOld
+		AddCopyTexturePass(GraphBuilder, h_RDG, hbar_RDG);
+		AddCopyTexturePass(GraphBuilder, h_RDG, hbarOld_RDG);
+
+		// Initialize the Populated Spectrum on startup
+		FRDGBufferRef DepthBufferRDG = GraphBuilder.CreateBuffer(
+			FRDGBufferDesc::CreateStructuredDesc(sizeof(float), LocalDepths.Num()),
+			TEXT("SWE_DepthBuffer")
+		);
+		GraphBuilder.QueueBufferUpload(DepthBufferRDG, LocalDepths.GetData(), sizeof(float) * LocalDepths.Num(), ERDGInitialDataFlags::None);
+		FRDGBufferSRVRef DepthSRV = GraphBuilder.CreateSRV(DepthBufferRDG);
 
 		TShaderMapRef<FPopulateSpectrumCS> PopulateSpectrumCS(GetGlobalShaderMap(GMaxRHIFeatureLevel));
 		FPopulateSpectrumCS::FParameters* PassParams = GraphBuilder.AllocParameters<FPopulateSpectrumCS::FParameters>();
@@ -840,9 +840,8 @@ void UDispersiveSWESimulator::ExecuteSimulation_RenderThread(
 		
 		TShaderMapRef<FScaleCopyTextureCS> ScaleCopyCS(GetGlobalShaderMap(GMaxRHIFeatureLevel));
 		FScaleCopyTextureCS::FParameters* PassParams = GraphBuilder.AllocParameters<FScaleCopyTextureCS::FParameters>();
+		PassParams->SimConstants = ConstantBuffer;
 		PassParams->ScaleFactor = 100.0f; // m to cm
-		PassParams->gridSizeX = GridSizeX;
-		PassParams->gridSizeY = GridSizeY;
 		PassParams->in0 = GraphBuilder.CreateSRV(SrcHeightTexture);
 		PassParams->out0 = GraphBuilder.CreateUAV(ExportHeightDest);
 
@@ -863,9 +862,8 @@ void UDispersiveSWESimulator::ExecuteSimulation_RenderThread(
 
 		TShaderMapRef<FScaleCopyTextureCS> ScaleCopyCS(GetGlobalShaderMap(GMaxRHIFeatureLevel));
 		FScaleCopyTextureCS::FParameters* PassParams = GraphBuilder.AllocParameters<FScaleCopyTextureCS::FParameters>();
+		PassParams->SimConstants = ConstantBuffer;
 		PassParams->ScaleFactor = 100.0f; // m to cm
-		PassParams->gridSizeX = GridSizeX;
-		PassParams->gridSizeY = GridSizeY;
 		PassParams->in0 = GraphBuilder.CreateSRV(SrcDispTexture);
 		PassParams->out0 = GraphBuilder.CreateUAV(ExportDispDest);
 
@@ -886,9 +884,8 @@ void UDispersiveSWESimulator::ExecuteSimulation_RenderThread(
 
 		TShaderMapRef<FScaleCopyTextureCS> ScaleCopyCS(GetGlobalShaderMap(GMaxRHIFeatureLevel));
 		FScaleCopyTextureCS::FParameters* PassParams = GraphBuilder.AllocParameters<FScaleCopyTextureCS::FParameters>();
+		PassParams->SimConstants = ConstantBuffer;
 		PassParams->ScaleFactor = 1.0f; // Keep dimensionless ratio as is
-		PassParams->gridSizeX = GridSizeX;
-		PassParams->gridSizeY = GridSizeY;
 		PassParams->in0 = GraphBuilder.CreateSRV(SrcFoamTexture);
 		PassParams->out0 = GraphBuilder.CreateUAV(ExportFoamDest);
 
