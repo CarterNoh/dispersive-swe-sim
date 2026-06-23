@@ -60,10 +60,11 @@ RWTexture2D<float> out5: register(u5);
 
 
 //////////////////// HELPER FUNCTIONS /////////////////////////
-bool StopFlowOnTerrainBoundary(Texture2D<float> h, Texture2D<float> terrain, uint2 curr, bool isYDirection=false) {
+bool StopFlowOnTerrainBoundary(Texture2D<float> h, Texture2D<float> terrain, int2 curr, bool isYDirection=false) {
+    int2 maxGrid = int2(gridSizeX - 1, gridSizeY - 1);
     // test if the terrain boundary stops any flow across x+0.5
 	if (!isYDirection) {
-        uint2 xplus = uint2(min(curr.x + 1, gridSizeX - 1), curr.y);
+        int2 xplus = clamp(curr + int2(1, 0), int2(0, 0), maxGrid);
 		if ((h[curr] <= minWaterHeight) && (terrain[curr] >= terrain[xplus] + h[xplus])) // positive q_x
 			return true;
 		if ((h[xplus] <= minWaterHeight) && (terrain[xplus] > terrain[curr] + h[curr])) // negative q_x
@@ -71,7 +72,7 @@ bool StopFlowOnTerrainBoundary(Texture2D<float> h, Texture2D<float> terrain, uin
 		return false;
 	}
 	else {
-        uint2 yplus = uint2(curr.x, min(curr.y + 1, gridSizeY - 1));
+        int2 yplus = clamp(curr + int2(0, 1), int2(0, 0), maxGrid);
 		if ((h[curr] <= minWaterHeight) && (terrain[curr] >= terrain[yplus] + h[yplus])) // positive q_y
 			return true;
 		if ((h[yplus] <= minWaterHeight) && (terrain[yplus] > terrain[curr] + h[curr])) // negative q_y
@@ -170,13 +171,27 @@ float SafeTanh(float x) {
     else                return tanh(x);
 }
 
+float LoadClamped(Texture2D<float> tex, int2 coord) {
+    int x = clamp(coord.x, 0, gridSizeX - 1);
+    int y = clamp(coord.y, 0, gridSizeY - 1);
+    return tex[uint2(x, y)];
+}
+
 float CalcDiffusion(Texture2D<float> f, Texture2D<float> a, uint2 curr, float invCellSizeSq) {
-    uint2 right = uint2(min(curr.x + 1, gridSizeX - 1), curr.y);
-    uint2 left  = uint2(max(curr.x - 1, 0), curr.y);
-    uint2 up    = uint2(curr.x, min(curr.y + 1, gridSizeY - 1));
-    uint2 down  = uint2(curr.x, max(curr.y - 1, 0));
-    float dF_x = a[curr] * (f[right] - f[curr]) - a[left] * (f[curr] - f[left]);
-    float dF_y = a[curr] * (f[up] - f[curr]) - a[down] * (f[curr] - f[down]);
+    int2 id = int2(curr);
+    float f_curr = f[curr];
+    float a_curr = a[curr];
+
+    float f_right = LoadClamped(f, id + int2(1, 0));
+    float f_left  = LoadClamped(f, id + int2(-1, 0));
+    float f_up    = LoadClamped(f, id + int2(0, 1));
+    float f_down  = LoadClamped(f, id + int2(0, -1));
+
+    float a_left  = LoadClamped(a, id + int2(-1, 0));
+    float a_down  = LoadClamped(a, id + int2(0, -1));
+
+    float dF_x = a_curr * (f_right - f_curr) - a_left * (f_curr - f_left);
+    float dF_y = a_curr * (f_up - f_curr) - a_down * (f_curr - f_down);
     float dFdX = (dF_x + dF_y) * invCellSizeSq;
     return dFdX;
 }
@@ -219,9 +234,10 @@ void CalcDiffusionCoeffs(uint3 id : SV_DispatchThreadID) {
     // Outputs: out0 = alpha_H, out1 = alpha_Q_x, out2 = alpha_Q_y
     if (id.x >= (uint)(gridSizeX) || id.y >= (uint)(gridSizeY)) return;
 
-    uint2 curr  = id.xy;
-    uint2 right = uint2(min(id.x + 1, gridSizeX - 1), id.y);
-    uint2 up    = uint2(id.x, min(id.y + 1, gridSizeY - 1));
+    int2 curr  = int2(id.xy);
+    int2 maxGrid = int2(gridSizeX - 1, gridSizeY - 1);
+    int2 right = clamp(curr + int2(1, 0), int2(0, 0), maxGrid);
+    int2 up    = clamp(curr + int2(0, 1), int2(0, 0), maxGrid);
 
     // float max_ground = max(in1[curr], in1[right], in1[up]);
     // float min_water = min(in0[curr], in0[right], in0[up]); // or average of these 3
@@ -286,11 +302,11 @@ void DecomposeFields(uint3 id : SV_DispatchThreadID) {
     // out4[id.xy] = 0;
     // out5[id.xy] = 0;
 
-    if (StopFlowOnTerrainBoundary(in3, in6, id.xy, false)) { // stop flow in x direction
+    if (StopFlowOnTerrainBoundary(in3, in6, int2(id.xy), false)) { // stop flow in x direction
         out1[id.xy] = 0.f;
         out4[id.xy] = 0.f;
     }
-    if (StopFlowOnTerrainBoundary(in3, in6, id.xy, true)) { // stop flow in y direction
+    if (StopFlowOnTerrainBoundary(in3, in6, int2(id.xy), true)) { // stop flow in y direction
         out2[id.xy] = 0.f;
         out5[id.xy] = 0.f;
     }
@@ -305,18 +321,20 @@ void CalcUbar(uint3 id : SV_DispatchThreadID) {
     // Outputs: out0 = ubar_x, out1 = ubar_y
     if (id.x >= (uint)(gridSizeX) || id.y >= (uint)(gridSizeY)) return;
 
-    uint2 right = uint2(min(id.x + 1, gridSizeX - 1), id.y);
-    uint2 up    = uint2(id.x, min(id.y + 1, gridSizeY - 1));
+    int2 curr = int2(id.xy);
+    int2 maxGrid = int2(gridSizeX - 1, gridSizeY - 1);
+    int2 right = clamp(curr + int2(1, 0), int2(0, 0), maxGrid);
+    int2 up    = clamp(curr + int2(0, 1), int2(0, 0), maxGrid);
 
     // First-Order Up-Winding
-    float hx = (in0[id.xy] >= 0.f || id.x == gridSizeX-1) ? in2[id.xy] : in2[right];
-    float hy = (in1[id.xy] >= 0.f || id.y == gridSizeY-1) ? in2[id.xy] : in2[up];
-    float ubar_x = in0[id.xy] / max(minWaterHeight, hx);
-    float ubar_y = in1[id.xy] / max(minWaterHeight, hy);
+    float hx = (in0[curr] >= 0.f || curr.x == gridSizeX-1) ? in2[curr] : in2[right];
+    float hy = (in1[curr] >= 0.f || curr.y == gridSizeY-1) ? in2[curr] : in2[up];
+    float ubar_x = in0[curr] / max(minWaterHeight, hx);
+    float ubar_y = in1[curr] / max(minWaterHeight, hy);
 
     // Enforcing CFL condition for later surface waves advection
-    out0[id.xy] = LimitVelocity(ubar_x);  
-    out1[id.xy] = LimitVelocity(ubar_y); 
+    out0[curr] = LimitVelocity(ubar_x);  
+    out1[curr] = LimitVelocity(ubar_y); 
 }
 
 [numthreads(16, 16, 1)]
@@ -325,13 +343,14 @@ void CalcSWE(uint3 id : SV_DispatchThreadID) {
     // Outputs: out0 = ubarNew_x, out1 = ubarNew_y, out2 = qbar_x, out3 = qbar_y
     if (id.x >= (uint)(gridSizeX) || id.y >= (uint)(gridSizeY)) return;
 
-    uint2 curr = id.xy;
-    uint2 right = uint2(min(id.x + 1, gridSizeX - 1), id.y);
-    uint2 left  = uint2(max(id.x - 1, 0), id.y);
-    uint2 up    = uint2(id.x, min(id.y + 1, gridSizeY - 1));
-    uint2 down  = uint2(id.x, max(id.y - 1, 0));
-    uint2 r2 = uint2(min(id.x + 2, gridSizeX - 1), id.y);
-    uint2 u2 = uint2(id.x, min(id.y + 2, gridSizeY - 1));
+    int2 curr = int2(id.xy);
+    int2 maxGrid = int2(gridSizeX - 1, gridSizeY - 1);
+    int2 right = clamp(curr + int2(1, 0), int2(0, 0), maxGrid);
+    int2 left  = clamp(curr + int2(-1, 0), int2(0, 0), maxGrid);
+    int2 up    = clamp(curr + int2(0, 1), int2(0, 0), maxGrid);
+    int2 down  = clamp(curr + int2(0, -1), int2(0, 0), maxGrid);
+    int2 r2    = clamp(curr + int2(2, 0), int2(0, 0), maxGrid);
+    int2 u2    = clamp(curr + int2(0, 2), int2(0, 0), maxGrid);
     // Compute intermediate values needed for du/dt calculations
     // Need: q_x/y_ij, q_x_i-0.5_j, q_y_i_j-0.5, 
     // 	     h_i+0.5_j, h_i_j+0.5, h_ij=hbar[x,y], h_i+1_j=hbar[x+1,y], h_i_j+1=hbar[x,y+1],
@@ -402,13 +421,14 @@ void UpdateTilde(uint3 id : SV_DispatchThreadID) {
     // Outputs: out0 = htilde, out1 = qtilde_x, out2 = qtilde_y
     if (id.x >= (uint)(gridSizeX) || id.y >= (uint)(gridSizeY)) return;
 
-    uint2 curr = id.xy;
-    uint2 right = uint2(min(id.x + 1, gridSizeX - 1), id.y);
-    uint2 left  = uint2(max(id.x - 1, 0), id.y);
-    uint2 up    = uint2(id.x, min(id.y + 1, gridSizeY - 1));
-    uint2 down  = uint2(id.x, max(id.y - 1, 0));
-    uint2 rdown = uint2(min(id.x + 1, gridSizeX - 1), max(id.y - 1, 0));
-    uint2 uleft = uint2(max(id.x - 1, 0), min(id.y + 1, gridSizeY - 1));
+    int2 curr = int2(id.xy);
+    int2 maxGrid = int2(gridSizeX - 1, gridSizeY - 1);
+    int2 right = clamp(curr + int2(1, 0), int2(0, 0), maxGrid);
+    int2 left  = clamp(curr + int2(-1, 0), int2(0, 0), maxGrid);
+    int2 up    = clamp(curr + int2(0, 1), int2(0, 0), maxGrid);
+    int2 down  = clamp(curr + int2(0, -1), int2(0, 0), maxGrid);
+    int2 rdown = clamp(curr + int2(1, -1), int2(0, 0), maxGrid);
+    int2 uleft = clamp(curr + int2(-1, 1), int2(0, 0), maxGrid);
 
     // integrate at midpoint of timestep 
     float ubar_x_avg = 0.5f * (in0[curr] + in1[curr]); 
@@ -476,11 +496,12 @@ void IntegrateH(uint3 id : SV_DispatchThreadID) {
     // Outputs: out0 = h, out1 = q_x, out2 = q_y
     if (id.x >= (uint)(gridSizeX) || id.y >= (uint)(gridSizeY)) return;
 
-    uint2 curr  = id.xy;
-    uint2 right = uint2(min(id.x + 1, gridSizeX - 1), id.y);
-    uint2 left  = uint2(max(id.x - 1, 0), id.y);
-    uint2 up    = uint2(id.x, min(id.y + 1, gridSizeY - 1));
-    uint2 down  = uint2(id.x, max(id.y - 1, 0));
+    int2 curr  = int2(id.xy);
+    int2 maxGrid = int2(gridSizeX - 1, gridSizeY - 1);
+    int2 right = clamp(curr + int2(1, 0), int2(0, 0), maxGrid);
+    int2 left  = clamp(curr + int2(-1, 0), int2(0, 0), maxGrid);
+    int2 up    = clamp(curr + int2(0, 1), int2(0, 0), maxGrid);
+    int2 down  = clamp(curr + int2(0, -1), int2(0, 0), maxGrid);
 
     // q = qbar + qtilde + qAdvect
     float q_x  = in0[curr] + in1[curr] + in2[curr];
