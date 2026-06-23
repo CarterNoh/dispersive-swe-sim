@@ -61,10 +61,9 @@ RWTexture2D<float> out5: register(u5);
 
 //////////////////// HELPER FUNCTIONS /////////////////////////
 bool StopFlowOnTerrainBoundary(Texture2D<float> h, Texture2D<float> terrain, uint2 curr, bool isYDirection=false) {
-    uint2 xplus = uint2(min(curr.x + 1, gridSizeX - 1), curr.y);
-    uint2 yplus = uint2(curr.x, min(curr.y + 1, gridSizeY - 1));
     // test if the terrain boundary stops any flow across x+0.5
 	if (!isYDirection) {
+        uint2 xplus = uint2(min(curr.x + 1, gridSizeX - 1), curr.y);
 		if ((h[curr] <= minWaterHeight) && (terrain[curr] >= terrain[xplus] + h[xplus])) // positive q_x
 			return true;
 		if ((h[xplus] <= minWaterHeight) && (terrain[xplus] > terrain[curr] + h[curr])) // negative q_x
@@ -72,6 +71,7 @@ bool StopFlowOnTerrainBoundary(Texture2D<float> h, Texture2D<float> terrain, uin
 		return false;
 	}
 	else {
+        uint2 yplus = uint2(curr.x, min(curr.y + 1, gridSizeY - 1));
 		if ((h[curr] <= minWaterHeight) && (terrain[curr] >= terrain[yplus] + h[yplus])) // positive q_y
 			return true;
 		if ((h[yplus] <= minWaterHeight) && (terrain[yplus] > terrain[curr] + h[curr])) // negative q_y
@@ -170,14 +170,14 @@ float SafeTanh(float x) {
     else                return tanh(x);
 }
 
-float CalcDiffusion(Texture2D<float> f, Texture2D<float> a, uint2 curr) {
+float CalcDiffusion(Texture2D<float> f, Texture2D<float> a, uint2 curr, float invCellSizeSq) {
     uint2 right = uint2(min(curr.x + 1, gridSizeX - 1), curr.y);
     uint2 left  = uint2(max(curr.x - 1, 0), curr.y);
     uint2 up    = uint2(curr.x, min(curr.y + 1, gridSizeY - 1));
     uint2 down  = uint2(curr.x, max(curr.y - 1, 0));
     float dF_x = a[curr] * (f[right] - f[curr]) - a[left] * (f[curr] - f[left]);
     float dF_y = a[curr] * (f[up] - f[curr]) - a[down] * (f[curr] - f[down]);
-    float dFdX = (dF_x + dF_y) / (cellSize * cellSize);
+    float dFdX = (dF_x + dF_y) * invCellSizeSq;
     return dFdX;
 }
 
@@ -239,10 +239,11 @@ void DiffusionStep(uint3 id : SV_DispatchThreadID) {
     // Outputs: out0 = H, out1 = Q_x, out3 = Q_y
     if (id.x >= (uint)(gridSizeX) || id.y >= (uint)(gridSizeY)) return;
 
-    float newH = in1[id.xy] + deltaT * CalcDiffusion(in1, in4, id.xy);
+    float invCellSizeSq = 1.0f / (cellSize * cellSize);
+    float newH = in1[id.xy] + deltaT * CalcDiffusion(in1, in4, id.xy, invCellSizeSq);
     out0[id.xy] = max(in0[id.xy], newH);
-    out1[id.xy] = in2[id.xy] + deltaT * CalcDiffusion(in2, in5, id.xy);
-    out2[id.xy] = in3[id.xy] + deltaT * CalcDiffusion(in3, in6, id.xy);
+    out1[id.xy] = in2[id.xy] + deltaT * CalcDiffusion(in2, in5, id.xy, invCellSizeSq);
+    out2[id.xy] = in3[id.xy] + deltaT * CalcDiffusion(in3, in6, id.xy, invCellSizeSq);
 }
 
 [numthreads(16, 16, 1)]
