@@ -515,19 +515,20 @@ void PrepDisplacement(uint3 id : SV_DispatchThreadID) {
     // Subtract reference height to get zero-centered height field
     float h_relative = in0[id.xy] - in1[id.xy];
     out0[id.xy] = float2(h_relative, 0.0f);
+    // out0[id.xy] = float2(in0[id.xy], 0.0f);
 }
 
 [numthreads(16, 16, 1)]
 void PrepRender(uint3 id : SV_DispatchThreadID) {
-    // Inputs: in0 = Disp_x, in1 = Disp_y, in2 = J
-    // Outputs: disp_x, disp_y, fold
+    // Inputs: hbar, Disp_x, Disp_y, Jac
+    // Outputs: disp_x, disp_y, jac
     if (id.x >= (uint)(gridSizeX) || id.y >= (uint)(gridSizeY)) return;
 
-    float depth_weight = SafeTanh(in0[curr] / depthCutoff); // scaling term to reduce FFT waves in shallow water
+    float depth_weight = SafeTanh(in0[id.xy] / depthCutoff); // scaling term to reduce FFT waves in shallow water
 
-    out0[id.xy] = in0[id.xy].x;
-    out1[id.xy] = in1[id.xy].x;
-    out2[id.xy] = in2[id.xy].x;
+    out0[id.xy] = depth_weight * in1[id.xy].x;
+    out1[id.xy] = depth_weight * in2[id.xy].x;
+    out2[id.xy] = depth_weight * in3[id.xy].x;
 }
 
 

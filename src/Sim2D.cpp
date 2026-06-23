@@ -146,6 +146,9 @@ void Sim::Init(GPU* gpu) {
     // Initialize FFT Wave Spectrum
     gpu->DispatchPadded(PopulateSpectrum, {}, 
 		{HPos.uav, HNeg.uav}, DEPTH_NUM);
+
+	// // Initial Decomposition
+	// DecompositionStep();
 }
 
 Sim::Sim() {
@@ -186,6 +189,7 @@ void Sim::SimStep() {
 	eWaveStep();
 	SWEStep();
 	TransportStep();
+	// DecompositionStep();
 	ComputeRender();
 }
 
@@ -328,6 +332,6 @@ void Sim::ComputeRender() {
 	gpu->ExecuteFFT(Disp_y.uav, paddedSizeX, paddedSizeY, true);
 	gpu->ExecuteFFT(Jac.uav, paddedSizeX, paddedSizeY, true);
 	gpu->Dispatch(PrepRender, 
-		{Disp_x.srv, Disp_y.srv, Jac.srv}, 
+		{hbar.srv, Disp_x.srv, Disp_y.srv, Jac.srv}, 
 		{disp_x.uav, disp_y.uav, jac.uav});
 }
