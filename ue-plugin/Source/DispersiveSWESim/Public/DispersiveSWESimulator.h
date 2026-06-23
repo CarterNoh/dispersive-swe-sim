@@ -1,0 +1,166 @@
+#pragma once
+
+#include "CoreMinimal.h"
+#include "Components/ActorComponent.h"
+#include "Engine/TextureRenderTarget2D.h"
+#include "RenderGraphResources.h"
+#include "DispersiveSWEShaders.h"
+#include "DispersiveSWESimulator.generated.h"
+
+UCLASS(ClassGroup=(Custom), meta=(BlueprintSpawnableComponent))
+class DISPERSIVESWESIM_API UDispersiveSWESimulator : public UActorComponent
+{
+	GENERATED_BODY()
+
+public:
+	UDispersiveSWESimulator();
+	virtual void BeginPlay() override;
+	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
+
+	// Grid Resolution in X dimension
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SWE Simulation")
+	int32 GridSizeX = 400;
+
+	// Grid Resolution in Y dimension
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SWE Simulation")
+	int32 GridSizeY = 400;
+
+	// Physical cell size in meters per cell
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SWE Simulation")
+	float CellSize = 1.0f;
+
+	// Time step of the simulation in seconds
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SWE Simulation")
+	float TimeStep = 0.016666f;
+
+	// CFL Condition boundary check
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SWE Simulation")
+	float CFLCondition = 0.25f;
+
+	// Sponge Layer Thickness (for wave absorption at edges)
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SWE Simulation")
+	int32 SpongeThickness = 8;
+
+	// Minimum water height for solver stability
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SWE Simulation")
+	float MinWaterHeight = 0.001f;
+
+	// Surface tension coefficient
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SWE Simulation")
+	float SurfaceTension = 0.001f;
+
+	// Fluid density in kg/m3
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SWE Simulation")
+	float Density = 999.0f;
+
+	// Iterations of the diffusion step per frame
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SWE Simulation|Decomposition")
+	int32 DiffusionIterations = 128;
+
+	// Diffusion delta timestep
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SWE Simulation|Decomposition")
+	float DiffusionDeltaT = 0.25f;
+
+	// Penalty parameter damping gradients
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SWE Simulation|Decomposition")
+	float DiffusionPenalty = 0.01f;
+
+	// Slope limit of crashing waves
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SWE Simulation|SWE")
+	float SlopeLimit = 1.00f;
+
+	// Advection damping coefficient
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SWE Simulation|SWE")
+	float GammaTransport = 0.25f;
+
+	// Fetch in kilometers for JONSWAP wave spectrum
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SWE Simulation|Wind Wave")
+	float Fetch = 200.0f;
+
+	// Wind speed in m/s
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SWE Simulation|Wind Wave")
+	float WindSpeed = 14.0f;
+
+	// Wind angle in degrees
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SWE Simulation|Wind Wave")
+	float WindAngle = 135.0f;
+
+	// Swell factor
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SWE Simulation|Wind Wave")
+	float Swell = 0.3f;
+
+	// Swell direction angle
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SWE Simulation|Wind Wave")
+	float SwellAngle = 135.0f;
+
+	// Wave choppiness (horizontal displacement scaling)
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SWE Simulation|Wind Wave")
+	float Choppiness = 1.0f;
+
+	// Depth attenuation cutoff
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SWE Simulation|Wind Wave")
+	float DepthCutoff = 8.0f;
+
+	// Band pass filter parameters
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SWE Simulation|Wind Wave|Filter")
+	float FilterSmall = 0.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SWE Simulation|Wind Wave|Filter")
+	float FilterBig = 10000.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SWE Simulation|Wind Wave|Filter")
+	float FilterWidth = 1.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SWE Simulation|Wind Wave|Filter")
+	float FilterMin = 0.01f;
+
+	// Discrete water depths for wave dispersion calculations
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SWE Simulation|eWave")
+	TArray<float> DepthLevels = { 1.0f, 2.0f, 4.0f, 16.0f, 64.0f };
+
+	// Output target textures containing wave fields
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SWE Outputs")
+	UTextureRenderTarget2D* HeightOutputRT = nullptr;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SWE Outputs")
+	UTextureRenderTarget2D* DisplacementOutputRT = nullptr;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SWE Outputs")
+	UTextureRenderTarget2D* FoamOutputRT = nullptr;
+
+private:
+	float SimulationTime = 0.0f;
+	int32 PaddedSizeX = 512;
+	int32 PaddedSizeY = 512;
+	bool bInitialized = false;
+
+	// Persistent graphics buffers for simulation states
+	TRefCountPtr<IPooledRenderTarget> TexTerrain;
+	TRefCountPtr<IPooledRenderTarget> TexH;
+	TRefCountPtr<IPooledRenderTarget> TexQ_x;
+	TRefCountPtr<IPooledRenderTarget> TexQ_y;
+	TRefCountPtr<IPooledRenderTarget> Texh;
+	TRefCountPtr<IPooledRenderTarget> Texq_x;
+	TRefCountPtr<IPooledRenderTarget> Texq_y;
+	TRefCountPtr<IPooledRenderTarget> Texhbar;
+	TRefCountPtr<IPooledRenderTarget> TexhbarOld;
+	TRefCountPtr<IPooledRenderTarget> Texqbar_x;
+	TRefCountPtr<IPooledRenderTarget> Texqbar_y;
+	TRefCountPtr<IPooledRenderTarget> Texhtilde;
+	TRefCountPtr<IPooledRenderTarget> TexhtildeOld;
+	TRefCountPtr<IPooledRenderTarget> Texqtilde_x;
+	TRefCountPtr<IPooledRenderTarget> Texqtilde_y;
+	TRefCountPtr<IPooledRenderTarget> Texubar_x;
+	TRefCountPtr<IPooledRenderTarget> Texubar_y;
+
+	// Stateful complex textures array for wave FFT propagation
+	TRefCountPtr<IPooledRenderTarget> TexHPos;
+	TRefCountPtr<IPooledRenderTarget> TexHNeg;
+
+	void InitializeSimulation();
+	void AllocatePersistentTargets(FRHICommandListImmediate& RHICmdList);
+	void SetupInitialStates(FRHICommandListImmediate& RHICmdList);
+	
+	void ExecuteSimulation_RenderThread(FRHICommandListImmediate& RHICmdList, const FSimConstants& Constants, const TArray<float>& Depths);
+	void DispatchFFT_RenderThread(FRDGBuilder& GraphBuilder, FRDGTextureRef TargetTexture, int32 SizeX, int32 SizeY, bool bInverse, int32 NumLayers);
+};

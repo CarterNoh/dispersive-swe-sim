@@ -1,0 +1,110 @@
+// Butterfly FFT compute shader for 2-D fluid surface simulation.
+
+#ifndef FFT_SIZE
+#define FFT_SIZE 512 
+#endif
+#define FFT_PI 3.14159265358979323846f
+
+// Constants mapped from Unreal parameter structs
+int cb_Nx;
+int cb_Ny;
+int cb_BitsX;
+int cb_BitsY;
+int cb_Inverse;
+int cb_IsRow;
+
+// Texture Registers
+#ifdef IS_ARRAY
+    RWTexture2DArray<float2> fft;
+#else
+    RWTexture2D<float2> fft;
+#endif
+
+// Groupshared memory
+groupshared float2 gs_Data[FFT_SIZE];
+
+//////////////////// HELPER FUNCTIONS /////////////////////////
+
+float2 complex_mul(float2 a, float2 b) {
+    return float2(a.x * b.x - a.y * b.y,
+                  a.x * b.y + a.y * b.x);
+}
+
+float2 complex_add(float2 a, float2 b) {
+    return float2(a.x + b.x, a.y + b.y);
+}
+
+float2 complex_sub(float2 a, float2 b) {
+    return float2(a.x - b.x, a.y - b.y);
+}
+
+float2 twiddle_factor(uint k, uint N, bool inverse) {
+    float angle = -2.0f * FFT_PI * (float)k / (float)N;
+    if (inverse) angle = -angle;
+    return float2(cos(angle), sin(angle));
+}
+
+uint bit_reverse(uint x, uint bits) {
+    uint result = 0;
+    for (uint i = 0; i < bits; ++i)
+    {
+        result = (result << 1) | (x & 1);
+        x >>= 1;
+    }
+    return result;
+}
+
+[numthreads(FFT_SIZE, 1, 1)]
+void FFTKernel_1D(
+    uint3 GI  : SV_GroupThreadID,   // tid = GI.x
+    uint3 GID : SV_GroupID          // GID.y = row or column index, GID.z = array slice
+) {
+    const uint tid = GI.x;
+    uint N = (cb_IsRow == 1) ? (uint)cb_Nx : (uint)cb_Ny;
+    uint bits = (cb_IsRow == 1) ? (uint)cb_BitsX : (uint)cb_BitsY;
+
+    // global element coordinate: row pass uses (tid, row), column pass uses (column, tid).
+    #ifdef IS_ARRAY
+        uint3 coord = (cb_IsRow == 1) ? uint3(tid, GID.y, GID.z) : uint3(GID.y, tid, GID.z);
+    #else
+        uint2 coord = (cb_IsRow == 1) ? uint2(tid, GID.y) : uint2(GID.y, tid);
+    #endif
+
+    if (tid < N) {
+        const uint rev = bit_reverse(tid, bits);
+        gs_Data[rev] = fft[coord];
+    }
+    GroupMemoryBarrierWithGroupSync();
+
+    for (uint passNum = 0; passNum < bits; ++passNum) {
+        const uint span      = 1u << passNum;
+        const uint groupSize = span << 1;
+        float2 newEven, newOdd;
+        uint evenIdx, oddIdx;
+        if (tid < N / 2) {
+            const uint k       = tid % span;
+            evenIdx            = (tid / span) * groupSize + k;
+            oddIdx             = evenIdx + span;
+            float2 tw   = twiddle_factor(k, groupSize, cb_Inverse);
+            float2 even = gs_Data[evenIdx];
+            float2 odd  = complex_mul(tw, gs_Data[oddIdx]);
+            newEven = complex_add(even, odd);
+            newOdd  = complex_sub(even, odd);
+        }
+        GroupMemoryBarrierWithGroupSync();
+        if (tid < N / 2) {
+            gs_Data[evenIdx] = newEven;
+            gs_Data[oddIdx]  = newOdd;
+        }
+        GroupMemoryBarrierWithGroupSync();
+    }
+
+    float scale = cb_Inverse ? (1.0f / (float)N) : 1.0f;
+
+    float2 result = float2(0.f, 0.f);
+    if (tid < N) {
+        result.x = gs_Data[tid].x * scale;
+        result.y = gs_Data[tid].y * scale;
+        fft[coord] = result;
+    }
+}

@@ -1,0 +1,484 @@
+/*
+Implementation of FFT waves. Based on Cougar's FFTWave implementation in HoloOcean
+and the paper "Empirical Directional Wave Spectra for Computer Graphics". 
+ */
+
+// Simulation parameters mapped to Unreal shader parameters
+float time;
+int gridSizeX; 
+int gridSizeY; 
+float cellSize;
+float timeStep;
+int spongeThickness;
+float minWaterHeight;
+float surfaceTension;
+float density;
+int diffusionIterations;
+float deltaT;
+float diffusionPenalty;
+float slopeLimit;
+float cflCondition;
+float gammaTransport;
+int depthNum;
+float fetch;
+float windSpeed;
+float windAngle;
+float swell;
+float swellAngle;
+float choppiness;
+float filterSmall;
+float filterBig;
+float filterWidth;
+float filterMin;
+float depthCutoff;
+int paddedGridSizeX;
+int paddedGridSizeY;
+
+#define G 9.80665f
+#define PI 3.14159265358979323846f
+
+
+///////////////// Random Number Generation /////////////////
+uint Seed(float kx, float ky, uint seed) {
+    static const uint p1 = 73856093u;
+    static const uint p2 = 19349663u;
+    static const uint p3 = 83492791u;
+    uint hashX = (asuint(kx) ^ p1) * p2;
+    uint hashY = (asuint(ky) ^ p2) * p3;
+    uint hashTime = (seed ^ p3) * p1;
+    return hashX ^ hashY ^ hashTime;
+}
+
+float Rand(inout uint state) {
+    // Convert a uint to a uniform float in the range (0.0, 1.0]
+    uint word = ((state >> ((state >> 28u) + 4u)) ^ state) * 277803737u;
+    state = state * 747796405u + 2891336453u; // Advance state for the next call
+    uint hash = (word >> 22u) ^ word;
+    return max(float(hash) / 4294967295.0f, 1e-7f); 
+}
+
+float2 Rand2(inout uint state) {
+    return float2(Rand(state), Rand(state));
+}
+
+float2 Randn2(inout uint state) {
+    // Generate two standard normal floats (mean 0, variance 1) using Box-Muller
+    float2 unif = Rand2(state); // generate two random uniform numbers
+    float r = sqrt(-2.0f * log(unif.x));
+    float theta = 2.0f * PI * unif.y;
+    return float2(r * cos(theta), r * sin(theta));
+}
+
+///////////////// Math Functions /////////////////
+float WrapAngle(float angle) {
+    // Ensures the angle is perfectly wrapped to the [-PI, PI] range
+    float wrapped = fmod(angle + PI, 2.0f * PI);
+    if (wrapped < 0.f) {
+        wrapped += 2.0f * PI;
+    }
+    return wrapped - PI;
+}
+
+float SafeTanh(float x) {
+    if (x > 20.f)       return 1.f;
+    else if (x < -20.f) return -1.f;
+    else                return tanh(x);
+}
+
+float Gamma(float z) {
+    float x = z;
+    float reflectOffset = 0.0;
+    bool reflected = false;
+
+    static const float GAMMA_SQRT_2PI = 2.5066282746310002;
+    // Lanczos coefficients (g=7, n=9)
+    static const float GAMMA_LANCZOS_G = 7.0;
+    static const float GAMMA_C[9] = {
+        0.99999999999980993,
+        676.5203681218851,
+        -1259.1392167224028,
+        771.32342877765313,
+        -176.61502916214059,
+        12.507343278686905,
+        -0.13857109526572012,
+        9.9843695780195716e-6,
+        1.5056327351493116e-7
+    };
+
+    [branch]
+    if (x < 0.5) {
+        reflected = true;
+        x = 1.0 - x;
+    }
+
+    x -= 1.0;
+
+    float a = GAMMA_C[0]
+            + GAMMA_C[1] / (x + 1.0)
+            + GAMMA_C[2] / (x + 2.0)
+            + GAMMA_C[3] / (x + 3.0)
+            + GAMMA_C[4] / (x + 4.0)
+            + GAMMA_C[5] / (x + 5.0)
+            + GAMMA_C[6] / (x + 6.0)
+            + GAMMA_C[7] / (x + 7.0)
+            + GAMMA_C[8] / (x + 8.0);
+
+    float t = x + GAMMA_LANCZOS_G + 0.5;
+
+    float logG = 0.5 * log(2.0 * PI) + (x + 0.5) * log(t) - t + log(a);
+
+    [branch]
+    if (reflected) 
+        logG = log(PI) - log(abs(sin(PI * z))) - logG;
+
+    return exp(logG);
+}
+
+float Smoothstep(float x) {
+    // Cubic function that is nearly linear between 0 and 1, but 
+    // smoothly transitions with a slope of zero at each end
+    if (x <= 0.f) return 0.f;
+    if (x >= 1.f) return 1.f;
+    return x * x * (3.f - 2.f * x);
+}
+
+float LonguetHiggins(float theta, float s) {
+    float Q = (pow(2, 2 * s - 1) / PI) * pow(Gamma(s + 1), 2) / Gamma(2 * s + 1);
+    return Q * pow(abs(cos(theta / 2.f)), 2.f * s);
+}
+
+float2 ComplexMul(float2 a, float2 b) {
+    return float2(a.x * b.x - a.y * b.y,
+                  a.x * b.y + a.y * b.x);
+}
+
+///////////////// Spectrum Functions /////////////////
+float2 Dispersion(float k, float h) {
+    // // Deep Water Dispersion
+    // float omega = sqrt(G * k);
+    // float dwdk = G / (2 * omega)
+    
+    // // Depth-Limited Dispersion
+    // float kh = k * h;
+    // float tanh_kh = SafeTanh(kh)
+    // float omega = sqrt(G * k * tanh_kh);
+    // float dwdk = G * (tanh_kh + kh / (cosh(kh) * cosh(kh))) / (2 * omega);
+
+    // Capillary Dispersion
+    float kh = k * h;
+    float tanh_kh = SafeTanh(kh);
+    float term = G * k + pow(k, 3) * surfaceTension / density;
+    float omega = sqrt((term) * tanh_kh);
+    float dwdk = term * (h * pow(1.f / cosh(kh), 2) + tanh_kh) / (2 * omega);
+
+    return float2(omega, dwdk);
+}
+
+float2 WaveSpectra(float w, float h) {
+    // // Pierson-Moskowitz
+    // float a = 8.1 * pow(10, -3);
+    // float b = 0.74;
+    // float wp = G / (1.026 * windSpeed);
+    // float S = (a * G * G / pow(w, 5)) * exp(-b * pow((wp / w), 4));
+    
+    // JONSWAP
+    float FBar = (G * fetch * 1000) / pow(windSpeed, 2); // dimensionless fetch (converted from km to m)
+    float wp = 7 * PI * pow(abs(FBar), -0.3333f) * (G / windSpeed);
+    float a = 0.076f * pow(abs(FBar), -0.22);
+    float s = (w > wp) ? 0.09f : 0.07f;
+    float r = exp(-pow(w - wp, 2) / (2 * pow(s * wp, 2)));
+    float S = (a * G * G / pow(w, 5)) * exp(-1.25f * pow((wp / w), 4)) * pow(3.3f, r);
+
+    // Texel MARSEN ARSLOE (TMA)
+    float wh = w * sqrt(h / G);
+    float z = 1.8f * (wh - 1.125f);
+    float tanh_z = (z > 20) ? 1 : (z < -20) ? -1 : tanh(z);
+    float Phi = 0.5f + 0.5f * tanh_z; // tanh approx. of kitaigorodskii depth attenuation
+    S *= Phi;
+    
+    return float2(S, wp);
+}
+
+float DirectionalSpreading(float theta, float w, float wp) {
+    float D = 0.f;
+
+    // Positive Cosine-Squared
+    // if ((theta <= PI / 2) && (theta >= -PI / 2)) {
+    //     D = (2.f / PI) * pow(cos(theta), 2);
+    // }
+
+    // Longuet-Higgins
+    // // Mitsuyasu
+    // float sp = 11.5 * pow(wp * windSpeed / G, -2.5f);
+    // float exponent = (w > wp) ? -2.5f : 5.f;
+
+    // // Hasselmann
+    // float sp = 6.97f;
+    // float exponent = 4.06f;
+    // if (w > wp) {
+    //     exponent = -2.33f - 1.45f * ((wp * windSpeed / G) - 1.17f);
+    //     sp = 9.77f;
+    // }
+    // float s = sp * pow(w / wp, exponent);
+    // D = LonguetHiggins(theta, s);
+
+    // Donelan-Banner
+    float w_wp = w / wp;
+    float eps = -0.4 + 0.8393 * exp(-0.567 * log(pow(w_wp, 2)));
+    float beta = pow(10, eps);
+    if (w_wp < 0.95) {
+        beta = 2.61 * pow(w_wp, 1.3);
+    } else if (w_wp < 1.6) {
+        beta = 2.28 * pow(w_wp, -1.3);
+    }
+    D = beta * pow(1.f / cosh(beta * theta), 2) / (2 * SafeTanh(beta * PI));
+    
+    return D;
+}
+
+float Swell(float theta, float w, float wp) {
+    ///// Swell ///// 
+    float shape = 16.1f * SafeTanh(wp / w) * swell * swell;
+    return LonguetHiggins(theta, shape);
+}
+
+float TotalDirectional(float th, float th_s, float w, float wp) {
+    return DirectionalSpreading(th, w, wp) * Swell(th_s, w, wp);
+}
+
+float IntegrateDirectional(int n, float w, float wp) {
+    float step = (2.f * PI) / (float)n;
+    float sum = 0.f;
+    
+    // Calculate the true physical separation between wind and swell
+    float angleDiff = (windAngle - swellAngle) * PI / 180;
+
+    for (int i = 0; i < n; i++) {
+        // Sweep the wind-relative angle from -PI to PI
+        float theta_wind = -PI + i * step;
+        
+        // Offset the swell angle by the true difference
+        float theta_swell = WrapAngle(theta_wind + angleDiff);
+        sum += TotalDirectional(theta_wind, theta_swell, w, wp);
+    }
+    return step * sum;
+}
+
+float GetSpectrum(float w, float theta, float theta_swell, float h) {
+    // Wave Spectra
+    float2 spectraData = WaveSpectra(w, h);
+    float S = spectraData.x;
+    float wp = spectraData.y;
+
+    // Directional Spreading & Swell
+    float integral = IntegrateDirectional(36, w, wp);
+    float D = TotalDirectional(theta, theta_swell, w, wp) / integral;
+    // float D = DirectionalSpreading(theta, w, wp);
+
+    return S * D;
+}
+
+float AmpFilter(float k, int filterInvert) {
+    // Smooth invertible band-pass filter
+    float wavelength = 2 * PI / k; // convert wavenumber to wavelength
+    float fracSmall = (wavelength - (filterSmall - filterWidth)) / filterWidth;
+    float fracBig = (wavelength - filterBig) / filterWidth;
+    float t = Smoothstep(fracSmall) - Smoothstep(fracBig);
+    float f = clamp(filterMin + (1.f - filterMin) * t, 0.f, 1.f);
+    if (filterInvert == 1) f = 1.f - f;
+    return f;
+}
+
+
+///////////////// Shaders /////////////////
+StructuredBuffer<float> depth;
+
+RWTexture2DArray<float2> HPosOut;
+RWTexture2DArray<float2> HNegOut;
+[numthreads(16, 16, 1)]
+void PopulateSpectrum(uint3 id : SV_DispatchThreadID) {
+    // Outputs: HPosOut = HPos, HNegOut = HNeg (complex amplitudes)
+    if (id.x >= (uint)(paddedGridSizeX) || id.y >= (uint)(paddedGridSizeY)) return;
+
+    if (id.x == 0 && id.y == 0) {
+        HPosOut[id] = float2(0.f, 0.f);
+        HNegOut[id] = float2(0.f, 0.f);
+        return;
+    }
+
+    ///// Wave Number ///////
+    // Calculate the physical size of the grid and the frequency step (dK) in each dimension
+    float domainSizeX = (float)paddedGridSizeX * cellSize;
+    float domainSizeY = (float)paddedGridSizeY * cellSize;
+    float dKx = 2.0f * PI / domainSizeX; 
+    float dKy = 2.0f * PI / domainSizeY; 
+    float NXdiv2 = (float)paddedGridSizeX / 2.0f;
+    float NYdiv2 = (float)paddedGridSizeY / 2.0f;
+    // Calculate the physical 2D wavenumber vector components (signed, handling the Nyquist wrap-around)
+    int freqX = ((float)id.x < NXdiv2) ? (int)id.x : (int)id.x - (int)paddedGridSizeX;
+    int freqY = ((float)id.y < NYdiv2) ? (int)id.y : (int)id.y - (int)paddedGridSizeY;
+    float kx = (float)freqX * dKx; // spatial frequency: radians per meter
+    float ky = (float)freqY * dKy;
+    float k = sqrt(kx * kx + ky * ky);
+    if (k < 1e-6) {
+        HPosOut[id] = float2(0.f, 0.f);
+        HNegOut[id] = float2(0.f, 0.f);
+        return;
+    }
+    // Unit vectors
+    float kx_ = kx / k;
+    float ky_ = ky / k;
+    float kx2 = kx_ * kx_;
+    float ky2 = ky_ * ky_;
+
+    ///// Frequency & Wave Angle /////
+    float2 omegaData = Dispersion(k, depth[id.z]);
+    float omega = omegaData.x;
+    float dwdk = omegaData.y;
+    float thetaPos      = WrapAngle(atan2( ky_, -kx_) - windAngle * PI / 180);
+    float thetaNeg      = WrapAngle(atan2(-ky_,  kx_) - windAngle * PI / 180);
+    float thetaSwellPos = WrapAngle(atan2( ky_, -kx_) - swellAngle * PI / 180);
+    float thetaSwellNeg = WrapAngle(atan2(-ky_,  kx_) - swellAngle * PI / 180);
+
+    ///// Spectrum /////
+    float SPos = GetSpectrum(omega, thetaPos, thetaSwellPos, depth[id.z]);
+    float SNeg = GetSpectrum(omega, thetaNeg, thetaSwellNeg, depth[id.z]); 
+    SPos *= dwdk / k; // Convert S(w,theta) to S(kx, ky)
+    SNeg *= dwdk / k;
+
+    ///// Convert to Amplitude & Phase /////
+    uint seed = Seed(kx, ky, 0);
+    float2 unif = Rand2(seed);
+    float2 norm = Randn2(seed); 
+    // Use 2D frequency spacing for amplitude conversion (sqrt of area element)
+    float deltaK = sqrt(dKx * dKy);
+    float ampPos = norm.x * deltaK * sqrt(2 * SPos);
+    float ampNeg = norm.y * deltaK * sqrt(2 * SNeg);
+    float phasePos = unif.x * 2 * PI;
+    float phaseNeg = unif.y * 2 * PI;
+
+    // Filter amplitudes of wavelengths outside of thresholds
+    float filter = AmpFilter(k, 0);
+    ampPos *= filter;
+    ampNeg *= filter;
+
+    // Scale by paddedGridSizeX*paddedGridSizeY, since iFFT will normalize by total sample count
+    ampPos *= (float)paddedGridSizeX * (float)paddedGridSizeY;
+    ampNeg *= (float)paddedGridSizeX * (float)paddedGridSizeY;
+
+    // Store results
+    HPosOut[id] = ampPos * float2(cos(phasePos), -sin(phasePos));
+    HNegOut[id] = ampNeg * float2(cos(phaseNeg), -sin(phaseNeg));
+}
+
+Texture2DArray<float2>   HPosIn;
+Texture2DArray<float2>   HNegIn;
+RWTexture2DArray<float2> HPropOut;
+RWTexture2DArray<float2> DelHxOut;
+RWTexture2DArray<float2> DelHyOut;
+RWTexture2DArray<float2> DispXOut;
+RWTexture2DArray<float2> DispYOut;
+[numthreads(16, 16, 1)]
+void PropagateWaves(uint3 id : SV_DispatchThreadID) {
+    if (id.x >= (uint)(paddedGridSizeX) || id.y >= (uint)(paddedGridSizeY)) return;
+
+    if (id.x == 0 && id.y == 0) {
+        HPropOut[id] = float2(0.f, 0.f);
+        DelHxOut[id] = float2(0.f, 0.f);
+        DelHyOut[id] = float2(0.f, 0.f);
+        DispXOut[id] = float2(0.f, 0.f);
+        DispYOut[id] = float2(0.f, 0.f);
+        return;
+    }
+
+    // Calculate Wavevector
+    float domainSizeX = (float)paddedGridSizeX * cellSize;
+    float domainSizeY = (float)paddedGridSizeY * cellSize;
+    float dKx = 2.0f * PI / domainSizeX;
+    float dKy = 2.0f * PI / domainSizeY;
+    float NXdiv2 = (float)paddedGridSizeX / 2.0f;
+    float NYdiv2 = (float)paddedGridSizeY / 2.0f;
+    int freqX = ((float)id.x < NXdiv2) ? (int)id.x : (int)id.x - (int)paddedGridSizeX;
+    int freqY = ((float)id.y < NYdiv2) ? (int)id.y : (int)id.y - (int)paddedGridSizeY;
+    float kx = (float)freqX * dKx; // spatial frequency: radians per meter
+    float ky = (float)freqY * dKy;
+    float k = sqrt(kx * kx + ky * ky);
+    if (k < 1e-6) {
+        HPropOut[id] = float2(0.f, 0.f);
+        DelHxOut[id] = float2(0.f, 0.f);
+        DelHyOut[id] = float2(0.f, 0.f);
+        DispXOut[id] = float2(0.f, 0.f);
+        DispYOut[id] = float2(0.f, 0.f);
+        return;
+    }
+    float kx_ = kx / k;
+    float ky_ = ky / k;
+
+    // Propagate Height H
+    float2 omegaData = Dispersion(k, depth[id.z]);
+    float w = omegaData.x;
+    // w = floor() * w0; //modify w to be multiple of w0?
+    float S = sin(w * time);
+    float C = cos(w * time);
+    float2 fwd = float2(C, -S); // why is forward the negative one? Try switching if doesn't look right
+    float2 bkwd = float2(C, S);
+    float2 HPlus = ComplexMul(HPosIn[id], fwd);
+    float2 HMin = ComplexMul(HNegIn[id], bkwd);
+    float2 HProp = HPlus + HMin;
+    HPropOut[id] = HProp;
+
+    // Calculate spatial derivative of H, shifted to cell faces
+    float2 dhdx = ComplexMul(HProp, float2(0, kx));
+    float2 dhdy = ComplexMul(HProp, float2(0, ky));
+    // Phase shift in X: shift by dx/2 by multiplying by e^(i * shiftX) = cos(shiftX) + i*sin(shiftX)
+    float shiftX = 0.5f * cellSize * kx;
+    float shiftY = 0.5f * cellSize * ky;
+    float2 e_ix = float2(cos(shiftX), sin(shiftX));
+    float2 e_iy = float2(cos(shiftY), sin(shiftY));
+    DelHxOut[id] = ComplexMul(dhdx, e_ix);
+    DelHyOut[id] = ComplexMul(dhdy, e_iy);
+
+    // Calculate Horizontal Displacement Dx, Dy
+    DispXOut[id] = ComplexMul(HProp, float2(0.f, kx_ * choppiness));
+    DispYOut[id] = ComplexMul(HProp, float2(0.f, ky_ * choppiness));
+}
+
+Texture2DArray<float2> HIn;
+Texture2DArray<float2> HxIn;
+Texture2DArray<float2> HyIn;
+Texture2DArray<float2> DxIn;
+Texture2DArray<float2> DyIn;
+Texture2D<float>       hbar;
+RWTexture2D<float> HOut;
+RWTexture2D<float> HxOut;
+RWTexture2D<float> HyOut;
+RWTexture2D<float> DxOut;
+RWTexture2D<float> DyOut;
+[numthreads(16, 16, 1)]
+void Interp(uint3 id : SV_DispatchThreadID) {
+    if (id.x >= (uint)(gridSizeX) || id.y >= (uint)(gridSizeY)) return;
+
+    float waterDepth = hbar[id.xy];
+    if (waterDepth <= minWaterHeight) {
+        HOut[id.xy] = 0.f;
+        HxOut[id.xy] = 0.f;
+        HyOut[id.xy] = 0.f;
+        DxOut[id.xy] = 0.f;
+        DyOut[id.xy] = 0.f;
+        return;
+    }
+    int d1 = 0;
+    for (int d = 0; d < depthNum; d++)
+        if (waterDepth >= depth[d]) d1 = d;
+    int d2 = min(depthNum - 1, d1 + 1);
+    float s = 0.f;
+    if (d1 != d2)
+        s = (depth[d2] - waterDepth) / (depth[d2] - depth[d1]);
+    uint3 id1 = uint3(id.x, id.y, d1);
+    uint3 id2 = uint3(id.x, id.y, d2);
+    HOut [id.xy] = s * HIn [id1].x + (1.f - s) * HIn [id2].x;
+    HxOut[id.xy] = s * HxIn[id1].x + (1.f - s) * HxIn[id2].x;
+    HyOut[id.xy] = s * HyIn[id1].x + (1.f - s) * HyIn[id2].x;
+    DxOut[id.xy] = s * DxIn[id1].x + (1.f - s) * DxIn[id2].x;
+    DyOut[id.xy] = s * DyIn[id1].x + (1.f - s) * DyIn[id2].x;
+}
