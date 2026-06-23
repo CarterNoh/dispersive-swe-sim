@@ -11,7 +11,6 @@
 #include "RHIResources.h"
 #include "ShaderParameterUtils.h"
 #include "ShaderCompilerCore.h"
-#include "ComputeShaderUtils.h"
 #include "GlobalShader.h"
 
 UDispersiveSWESimulator::UDispersiveSWESimulator()
@@ -244,20 +243,20 @@ void UDispersiveSWESimulator::SetupInitialStates(FRHICommandListImmediate& RHICm
 
 		FUpdateTextureRegion2D Region(0, 0, 0, 0, GridSizeX, GridSizeY);
 
-		FRHITexture* TerrainRHI = TexTerrain->GetRenderTargetItem().ShaderResourceTexture;
-		GDynamicRHI->RHIUpdateTexture2D(TerrainRHI, 0, Region, GridSizeX * sizeof(float), (uint8*)TerrainData.GetData());
+		FRHITexture2D* TerrainRHI = static_cast<FRHITexture2D*>(TexTerrain->GetRHI());
+		RHIUpdateTexture2D(TerrainRHI, 0, Region, GridSizeX * sizeof(float), (uint8*)TerrainData.GetData());
 
-		FRHITexture* HRHI = TexH->GetRenderTargetItem().ShaderResourceTexture;
-		GDynamicRHI->RHIUpdateTexture2D(HRHI, 0, Region, GridSizeX * sizeof(float), (uint8*)HData.GetData());
+		FRHITexture2D* HRHI = static_cast<FRHITexture2D*>(TexH->GetRHI());
+		RHIUpdateTexture2D(HRHI, 0, Region, GridSizeX * sizeof(float), (uint8*)HData.GetData());
 
-		FRHITexture* hRHI = Texh->GetRenderTargetItem().ShaderResourceTexture;
-		GDynamicRHI->RHIUpdateTexture2D(hRHI, 0, Region, GridSizeX * sizeof(float), (uint8*)WaterData.GetData());
+		FRHITexture2D* hRHI = static_cast<FRHITexture2D*>(Texh->GetRHI());
+		RHIUpdateTexture2D(hRHI, 0, Region, GridSizeX * sizeof(float), (uint8*)WaterData.GetData());
 
-		FRHITexture* hbarRHI = Texhbar->GetRenderTargetItem().ShaderResourceTexture;
-		GDynamicRHI->RHIUpdateTexture2D(hbarRHI, 0, Region, GridSizeX * sizeof(float), (uint8*)WaterData.GetData());
+		FRHITexture2D* hbarRHI = static_cast<FRHITexture2D*>(Texhbar->GetRHI());
+		RHIUpdateTexture2D(hbarRHI, 0, Region, GridSizeX * sizeof(float), (uint8*)WaterData.GetData());
 
-		FRHITexture* hbarOldRHI = TexhbarOld->GetRenderTargetItem().ShaderResourceTexture;
-		GDynamicRHI->RHIUpdateTexture2D(hbarOldRHI, 0, Region, GridSizeX * sizeof(float), (uint8*)WaterData.GetData());
+		FRHITexture2D* hbarOldRHI = static_cast<FRHITexture2D*>(TexhbarOld->GetRHI());
+		RHIUpdateTexture2D(hbarOldRHI, 0, Region, GridSizeX * sizeof(float), (uint8*)WaterData.GetData());
 
 		// Initialize the Populated Spectrum on startup
 		FRDGBuilder GraphBuilder(RHICmdList);

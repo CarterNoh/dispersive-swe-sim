@@ -3,6 +3,7 @@
 #include "CoreMinimal.h"
 #include "ShaderParameters.h"
 #include "ShaderParameterUtils.h"
+#include "ShaderParameterStruct.h"
 #include "GlobalShader.h"
 
 // Uniform buffer containing all simulation constants
@@ -350,7 +351,7 @@ public:
 	class FFFTSizeDim : SHADER_PERMUTATION_SPARSE_INT("FFT_SIZE", 32, 64, 128, 256, 512, 1024);
 	class FIsArrayDim : SHADER_PERMUTATION_BOOL("IS_ARRAY");
 
-	using FPermutationDomain = TShaderPermutationDomain<FFTSizeDim, FIsArrayDim>;
+	using FPermutationDomain = TShaderPermutationDomain<FFFTSizeDim, FIsArrayDim>;
 
 	BEGIN_SHADER_PARAMETER_STRUCT(FParameters, )
 		SHADER_PARAMETER(int32, cb_Nx)
@@ -372,7 +373,7 @@ public:
 		FGlobalShader::ModifyCompilationEnvironment(Parameters, OutEnvironment);
 		
 		FPermutationDomain PermutationVector(Parameters.PermutationId);
-		OutEnvironment.SetDefine(TEXT("FFT_SIZE"), PermutationVector.Get<FFTSizeDim>());
+		OutEnvironment.SetDefine(TEXT("FFT_SIZE"), PermutationVector.Get<FFFTSizeDim>());
 		OutEnvironment.SetDefine(TEXT("IS_ARRAY"), PermutationVector.Get<FIsArrayDim>() ? 1 : 0);
 	}
 };
