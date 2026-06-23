@@ -181,14 +181,22 @@ float CalcDiffusion(Texture2D<float> f, Texture2D<float> a, uint2 curr, float in
     return dFdX;
 }
 
-float SpongeDamping(uint2 id, bool isYDir) {
+float SpongeDamping(uint2 id, bool isYDir = false) {
+    // If the cell is in the interior (outside the sponge boundary), return 1.0 immediately
+    if (id.x >= (uint)spongeThickness && id.x < (uint)(gridSizeX - spongeThickness) &&
+        id.y >= (uint)spongeThickness && id.y < (uint)(gridSizeY - spongeThickness)) {
+        return 1.f;
+    }
+
     float x = (float)id.x;
     float y = (float)id.y;
-    float distX = min(spongeThickness, (x < gridSizeX / 2) ? x : gridSizeX - x);
-    float distY = min(spongeThickness, (y < gridSizeY / 2) ? y : gridSizeY - y);
-    float dampX = 1.f - pow((spongeThickness - distX) / spongeThickness, 2);
-    float dampY = 1.f - pow((spongeThickness - distY) / spongeThickness, 2);
-    return dampX * dampY;
+    float distX = min((float)spongeThickness, (x < (float)gridSizeX / 2.f) ? x : (float)gridSizeX - x);
+    float distY = min((float)spongeThickness, (y < (float)gridSizeY / 2.f) ? y : (float)gridSizeY - y);
+    
+    float ratioX = ((float)spongeThickness - distX) / (float)spongeThickness;
+    float ratioY = ((float)spongeThickness - distY) / (float)spongeThickness;
+    
+    return (1.f - ratioX * ratioX) * (1.f - ratioY * ratioY);
 }
 
 //////////////////// COMPUTE SHADERS /////////////////////////
@@ -481,12 +489,11 @@ void IntegrateH(uint3 id : SV_DispatchThreadID) {
     float q_ym = in3[down] + in4[down] + in5[down];
 
     // sponge layer: damp q near edges to absorb waves, simulate an open boundary
-    float dampingX = SpongeDamping(id.xy, false);
-    float dampingY = SpongeDamping(id.xy, true);
-    q_x  *= dampingX;
-    q_xm *= dampingX;
-    q_y  *= dampingY;
-    q_ym *= dampingY;
+    float damping = SpongeDamping(id.xy);
+    q_x  *= damping;
+    q_xm *= damping;
+    q_y  *= damping;
+    q_ym *= damping;
 
     q_x  = LimitFlowRate(q_x,  in6[curr], in6[right]);
     q_y  = LimitFlowRate(q_y,  in6[curr], in6[up]);
