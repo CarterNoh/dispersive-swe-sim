@@ -1,4 +1,8 @@
 #include "DispersiveSWESimulator.h"
+#include "JsonObjectConverter.h"
+#include "Misc/FileHelper.h"
+#include "Serialization/JsonReader.h"
+#include "Serialization/JsonSerializer.h"
 #include "DispersiveSWEShaders.h"
 #include "RenderGraphBuilder.h"
 #include "RenderGraphUtils.h"
@@ -32,6 +36,18 @@ int32 NextPowerOf2(int32 n)
 
 void UDispersiveSWESimulator::InitializeSimulation()
 {
+	// Load configuration from JSON if path is provided
+	if (!JsonConfigFilePath.IsEmpty())
+	{
+		LoadParametersFromJson(JsonConfigFilePath);
+	}
+
+	// Automatically calculate CellSize based on CapturedWorldWidth and GridSizeX if enabled
+	if (bAutoCalculateCellSize && GridSizeX > 0)
+	{
+		CellSize = CapturedWorldWidth / (float)GridSizeX;
+	}
+
 	PaddedSizeX = NextPowerOf2(GridSizeX);
 	PaddedSizeY = NextPowerOf2(GridSizeY);
 	SimulationTime = 0.0f;
@@ -939,4 +955,33 @@ void UDispersiveSWESimulator::DispatchFFT_RenderThread(
 			FIntVector(1, SizeX, NumLayers)
 		);
 	}
+}
+
+bool UDispersiveSWESimulator::LoadParametersFromJson(const FString& FilePath)
+{
+	FString JsonString;
+	if (!FFileHelper::LoadFileToString(JsonString, *FilePath))
+	{
+		UE_LOG(LogTemp, Warning, TEXT("Failed to load JSON file from path: %s"), *FilePath);
+		return false;
+	}
+
+	TSharedPtr<FJsonObject> JsonObject;
+	TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(JsonString);
+
+	if (!FJsonSerializer::Deserialize(Reader, JsonObject) || !JsonObject.IsValid())
+	{
+		UE_LOG(LogTemp, Warning, TEXT("Failed to deserialize JSON string."));
+		return false;
+	}
+
+	// Map JSON fields directly to component properties
+	if (!FJsonObjectConverter::JsonObjectToUStruct(JsonObject.ToSharedRef(), GetClass(), this))
+	{
+		UE_LOG(LogTemp, Warning, TEXT("Failed to map JSON object to component properties."));
+		return false;
+	}
+
+	UE_LOG(LogTemp, Log, TEXT("Successfully loaded simulation parameters from: %s"), *FilePath);
+	return true;
 }

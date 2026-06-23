@@ -20,7 +20,9 @@ public class DispersiveSWESim : ModuleRules
 			new string[]
 			{
 				"CoreUObject",
-				"Engine"
+				"Engine",
+				"Json",
+				"JsonUtilities"
 			}
 		);
 	}

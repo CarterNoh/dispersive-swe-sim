@@ -126,6 +126,18 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SWE Inputs")
 	UTextureRenderTarget2D* TerrainHeightInputRT = nullptr;
 
+	// Auto calculate CellSize based on CapturedWorldWidth and GridSizeX
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SWE Inputs")
+	bool bAutoCalculateCellSize = true;
+
+	// The width of the captured terrain region in the world, in centimeters
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SWE Inputs", meta = (EditCondition = "bAutoCalculateCellSize"))
+	float CapturedWorldWidth = 40000.0f;
+
+	// File path to a JSON configuration file to load parameters from on startup
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SWE Configuration")
+	FString JsonConfigFilePath = "";
+
 	// Output target textures containing wave fields
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SWE Outputs")
 	UTextureRenderTarget2D* HeightOutputRT = nullptr;
@@ -135,6 +147,9 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SWE Outputs")
 	UTextureRenderTarget2D* FoamOutputRT = nullptr;
+
+	UFUNCTION(BlueprintCallable, Category = "SWE Configuration")
+	bool LoadParametersFromJson(const FString& FilePath);
 
 private:
 	float SimulationTime = 0.0f;
