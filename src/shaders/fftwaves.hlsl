@@ -450,12 +450,12 @@ void PropagateWaves(uint3 id : SV_DispatchThreadID) {
     DispYOut[id] = ComplexMul(HProp, float2(0.f, ky_ * choppiness));
 }
 
-Texture2DArray<float2> HIn: register(t0);
-Texture2DArray<float2> HxIn: register(t1);
-Texture2DArray<float2> HyIn: register(t2);
-Texture2DArray<float2> DxIn: register(t3);
-Texture2DArray<float2> DyIn: register(t4);
-Texture2D<float>       hbar: register(t5);
+Texture2D<float>       hbar: register(t0);
+Texture2DArray<float2> HIn : register(t1);
+Texture2DArray<float2> HxIn: register(t2);
+Texture2DArray<float2> HyIn: register(t3);
+Texture2DArray<float2> DxIn: register(t4);
+Texture2DArray<float2> DyIn: register(t5);
 RWTexture2D<float> HOut : register(u0);
 RWTexture2D<float> HxOut: register(u1);
 RWTexture2D<float> HyOut: register(u2);
@@ -488,4 +488,46 @@ void Interp(uint3 id : SV_DispatchThreadID) {
     HyOut[id.xy] = s * HyIn[id1].x + (1.f - s) * HyIn[id2].x;
     DxOut[id.xy] = s * DxIn[id1].x + (1.f - s) * DxIn[id2].x;
     DyOut[id.xy] = s * DyIn[id1].x + (1.f - s) * DyIn[id2].x;
+}
+
+Texture2D<float> Hin: register(t0);
+RWTexture2D<float> Dxout: register(u0);
+RWTexture2D<float> Dyout: register(u1);
+RWTexture2D<float> Jout : register(u2);
+[numthreads(16, 16, 1)]
+void GetDisplacement(uint3 id : SV_DispatchThreadID) {
+    // Calculate Wavevector
+    float domainSizeX = (float)paddedGridSizeX * cellSize;
+    float domainSizeY = (float)paddedGridSizeY * cellSize;
+    float dKx = 2.0f * PI / domainSizeX;
+    float dKy = 2.0f * PI / domainSizeY;
+    float NXdiv2 = (float)paddedGridSizeX / 2.0f;
+    float NYdiv2 = (float)paddedGridSizeY / 2.0f;
+    int freqX = ((float)id.x < NXdiv2) ? (int)id.x : (int)id.x - (int)paddedGridSizeX;
+    int freqY = ((float)id.y < NYdiv2) ? (int)id.y : (int)id.y - (int)paddedGridSizeY;
+    float kx = (float)freqX * dKx; // spatial frequency: radians per meter
+    float ky = (float)freqY * dKy;
+    float k = sqrt(kx * kx + ky * ky);
+    float kx_ = kx / k;
+    float ky_ = ky / k;
+    if (k < 1e-6) {
+        Dxout[id.xy] = float2(0.f, 0.f);
+        Dyout[id.xy] = float2(0.f, 0.f);
+        Jout[id.xy] = float2(0.f, 0.f);
+        return;
+    }
+
+    // Calculate Horizontal Displacement Dx, Dy
+    float2 Dx = ComplexMul(Hin[id.xy], float2(0.f, kx_ * choppiness));
+    float2 Dy = ComplexMul(Hin[id.xy], float2(0.f, ky_ * choppiness));
+    Dxout[id.xy] = Dx;
+    Dyout[id.xy] = Dy;
+
+    // Calculate Folding Map
+    float2 dDxdx = ComplexMul(Dx, float2(0, kx));
+    float2 dDydy = ComplexMul(Dy, float2(0, ky));
+    float2 dDxdy = ComplexMul(Dx, float2(0, ky));
+    float2 Jxx = 1 + dDxdx;
+    float2 Jyy = 1 + dDydy;
+    Jout[id.xy] = Jxx * Jyy - pow(dDxdy, 2);
 }

@@ -131,14 +131,17 @@ void Sim::Init(GPU* gpu) {
 	std::vector<float> terrain_temp = SetTerrain();
 	std::vector<float> h_temp = SetWater(terrain_temp);
 	std::vector<float> H_temp(GRIDSIZE_X * GRIDSIZE_Y, 0.0f);
+	std::vector<float> h_ref(GRIDSIZE_X * GRIDSIZE_Y, 0.0f);
 	for (int i = 0; i < GRIDSIZE_X * GRIDSIZE_Y; i++) {
 		H_temp[i] = terrain_temp[i] + h_temp[i];
+		h_ref[i] = std::max(0.0f, WATER_LEVEL - terrain_temp[i]);
 	}
 	gpu->UploadToGPU(terrain.tex, terrain_temp, GRIDSIZE_X, GRIDSIZE_Y);
 	gpu->UploadToGPU(h.tex, h_temp, GRIDSIZE_X, GRIDSIZE_Y);
 	gpu->UploadToGPU(H.tex, H_temp, GRIDSIZE_X, GRIDSIZE_Y);
 	gpu->UploadToGPU(hbar.tex, h_temp, GRIDSIZE_X, GRIDSIZE_Y);
 	gpu->UploadToGPU(hbarOld.tex, h_temp, GRIDSIZE_X, GRIDSIZE_Y);
+	gpu->UploadToGPU(href.tex, h_ref, GRIDSIZE_X, GRIDSIZE_Y);
 
     // Initialize FFT Wave Spectrum
     gpu->DispatchPadded(PopulateSpectrum, {}, 
@@ -183,7 +186,7 @@ void Sim::SimStep() {
 	eWaveStep();
 	SWEStep();
 	TransportStep();
-	ComputeValues();
+	ComputeRender();
 }
 
 void Sim::DecompositionStep() {
@@ -227,16 +230,18 @@ void Sim::FFTStep() {
 	gpu->DispatchPadded(PropagateWaves, 
 		{HPos.srv, HNeg.srv},
 		{HProp.uav, DelH_x.uav, DelH_y.uav, Disp_x.uav, Disp_y.uav}, DEPTH_NUM);
-	gpu->ExecuteFFT(HProp.uav,   paddedSizeX, paddedSizeY, true, DEPTH_NUM);
-	gpu->ExecuteFFT(DelH_x.uav,  paddedSizeX, paddedSizeY, true, DEPTH_NUM);
-	gpu->ExecuteFFT(DelH_y.uav,  paddedSizeX, paddedSizeY, true, DEPTH_NUM);
-	gpu->ExecuteFFT(Disp_x.uav,  paddedSizeX, paddedSizeY, true, DEPTH_NUM);
-	gpu->ExecuteFFT(Disp_y.uav,  paddedSizeX, paddedSizeY, true, DEPTH_NUM);
+	gpu->ExecuteFFT(HProp.uav,  paddedSizeX, paddedSizeY, true, DEPTH_NUM);
+	gpu->ExecuteFFT(DelH_x.uav, paddedSizeX, paddedSizeY, true, DEPTH_NUM);
+	gpu->ExecuteFFT(DelH_y.uav, paddedSizeX, paddedSizeY, true, DEPTH_NUM);
+	gpu->ExecuteFFT(Disp_x.uav, paddedSizeX, paddedSizeY, true, DEPTH_NUM);
+	gpu->ExecuteFFT(Disp_y.uav, paddedSizeX, paddedSizeY, true, DEPTH_NUM);
 
 	// Interpolate outputs between depths
 	gpu->Dispatch(Interp, 
-		{HProp.srv, DelH_x.srv, DelH_y.srv, Disp_x.srv, Disp_y.srv, hbar.srv}, 
+		{hbar.srv, HProp.srv, DelH_x.srv, DelH_y.srv, Disp_x.srv, Disp_y.srv}, 
 		{hFFT.uav, delH_x.uav, delH_y.uav, disp_x.uav, disp_y.uav});
+		// {hbar.srv, HProp.srv, DelH_x.srv, DelH_y.srv}, 
+		// {hFFT.uav, delH_x.uav, delH_y.uav});
 }
 
 void Sim::eWaveStep() {
@@ -299,17 +304,30 @@ void Sim::TransportStep() {
 		{qAdvect_x.uav, qAdvect_y.uav});
 
 	std::swap(h, hPast);
-}
-	
-void Sim::ComputeValues() {
+
+	// compute final values of h and q
 	gpu->Dispatch(IntegrateH, 
 		{qbar_x.srv, qtilde_x.srv, qAdvect_x.srv, qbar_y.srv, qtilde_y.srv, qAdvect_y.srv, 
 			hPast.srv, terrain.srv}, 
 		{h.uav, q_x.uav, q_y.uav});
+}
 
+void Sim::ComputeRender() {
+	// Redefine H for rendering
 	gpu->Dispatch(InitDecomp, 
 		{h.srv, nullptr, nullptr, terrain.srv}, 
 		{H.uav});
 
-	// gpu->Dispatch(PrepareRender, {h.srv, terrain.srv}, {HRender.srv});	
+	// Get horizontal displacement
+	gpu->DispatchPadded(PrepDisplacement, // reusing hHat, just need a complex number field
+		{h.srv, href.srv}, {hHat.uav}); 
+	gpu->ExecuteFFT(hHat.uav, paddedSizeX, paddedSizeY, false);
+	gpu->DispatchPadded(GetDisplacement, {hHat.srv}, 
+		{Disp_x.uav, Disp_y.uav, Jac.uav});
+	gpu->ExecuteFFT(Disp_x.uav, paddedSizeX, paddedSizeY, true);
+	gpu->ExecuteFFT(Disp_y.uav, paddedSizeX, paddedSizeY, true);
+	gpu->ExecuteFFT(Jac.uav, paddedSizeX, paddedSizeY, true);
+	gpu->Dispatch(PrepRender, 
+		{Disp_x.srv, Disp_y.srv, Jac.srv}, 
+		{disp_x.uav, disp_y.uav, jac.uav});
 }

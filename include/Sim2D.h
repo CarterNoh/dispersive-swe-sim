@@ -57,26 +57,26 @@ public:
 	static constexpr float DEPTH_CUTOFF = 8.f; 		// depth to start attenuating FFT waves
 
 	// Simulation variables
-	GPUField terrain, H, Q_x, Q_y, h, q_x, q_y, 
+	GPUField terrain, H, Q_x, Q_y, h, q_x, q_y, href, 
 			 HPast, QPast_x, QPast_y, alpha_H, alpha_Q_x, alpha_Q_y, 
 			 hbar, qbar_x, qbar_y, htilde, qtilde_x, qtilde_y,
 			 ubar_x, ubar_y, ubarNew_x, ubarNew_y,
 			 qtildePast_x, qtildePast_y, qAdvect_x, qAdvect_y, 
 			 hPast, hbarOld, htildeOld, 
 			 hHat, qHat_x, qHat_y, qHat_x_array, qHat_y_array;
-    GPUField HPos, HNeg, HProp, DelH_x, DelH_y, Disp_x, Disp_y, // Outputs of PopulateSpectrum, PropagateWaves (complex arrays)
-             hFFT, delH_x, delH_y, disp_x, disp_y; // iFFT'd variables after interpolation
+    GPUField HPos, HNeg, HProp, DelH_x, DelH_y, Disp_x, Disp_y, Jac, // Outputs of PopulateSpectrum, PropagateWaves (complex arrays)
+             hFFT, delH_x, delH_y, disp_x, disp_y, jac; // iFFT'd variables after interpolation
              
-	GPUField* fields[35] = {
-		&terrain, &H, &Q_x, &Q_y, &h, &q_x, &q_y,
+	GPUField* fields[37] = {
+		&terrain, &H, &Q_x, &Q_y, &h, &q_x, &q_y, &href, 
 		&HPast, &QPast_x, &QPast_y, &alpha_H, &alpha_Q_x, &alpha_Q_y,
 		&hbar, &qbar_x, &qbar_y, &htilde, &qtilde_x, &qtilde_y,
 		&ubar_x, &ubar_y, &ubarNew_x, &ubarNew_y,
 		&qtildePast_x, &qtildePast_y, &qAdvect_x, &qAdvect_y,
 		&hPast, &hbarOld, &htildeOld, 
-        &hFFT, &delH_x, &delH_y, &disp_x, &disp_y, 
+        &hFFT, &delH_x, &delH_y, &disp_x, &disp_y, &jac
         };
-	GPUField* fields_complex[3] = {&hHat, &qHat_x, &qHat_y};
+	GPUField* fields_complex[4] = {&hHat, &qHat_x, &qHat_y, &Jac};
 	GPUField* fields_arrays[9] = {&qHat_x_array, &qHat_y_array, 
         &HPos, &HNeg, &HProp, &DelH_x, &DelH_y, &Disp_x, &Disp_y};
 	GPUBuffer depth;
@@ -101,27 +101,27 @@ private:
     void FFTStep();				// propagate FFT wave simulation
 	void eWaveStep();			// surface wave simulation step
 	void SWEStep();				// SWE bulk simulation step
-	void TransportStep();		// transport of bulk and surface quantities
-	void ComputeValues();		// compute final h and q values
+	void TransportStep();		// transport of bulk and surface quantities, compute final h and q
+	void ComputeRender();		// Prepare H, Dx, Dy, J for rendering
 
 	// Helper functions
 	inline int idx(int x, int y) const {return y * GRIDSIZE_X + x;}
 
 	// Compute Shaders
 	ID3D11ComputeShader *InitDecomp, *CalcDiffusionCoeffs, *DiffusionStep, *DecomposeFields, 
-						*CalcUbar, *CalcSWE, *UpdateTilde, *CalcQAdvect, *IntegrateH, 
-						*TransferToFFT, *CalcEWave, *InterpQ;
-	ID3D11ComputeShader** shaders[12] = {
+						*CalcUbar, *CalcSWE, *UpdateTilde, *CalcQAdvect, *IntegrateH,
+						*TransferToFFT, *CalcEWave, *InterpQ, *PrepDisplacement, *PrepRender;
+	ID3D11ComputeShader** shaders[14] = {
 						&InitDecomp, &CalcDiffusionCoeffs, &DiffusionStep, &DecomposeFields, 
 						&CalcUbar, &CalcSWE, &UpdateTilde, &CalcQAdvect, &IntegrateH, 
-						&TransferToFFT, &CalcEWave, &InterpQ};
-	char* names[12] = {"InitDecomp", "CalcDiffusionCoeffs", "DiffusionStep", "DecomposeFields", 
+						&TransferToFFT, &CalcEWave, &InterpQ, &PrepDisplacement, &PrepRender};
+	char* names[14] = {"InitDecomp", "CalcDiffusionCoeffs", "DiffusionStep", "DecomposeFields", 
 					   "CalcUbar", "CalcSWE", "UpdateTilde", "CalcQAdvect", "IntegrateH", 
-					   "TransferToFFT", "CalcEWave", "InterpQ"};
+					   "TransferToFFT", "CalcEWave", "InterpQ", "PrepDisplacement", "PrepRender"};
     // FFT Wave Compute Shaders
-	ID3D11ComputeShader *PopulateSpectrum, *PropagateWaves, *Interp;
-	ID3D11ComputeShader** waveShaders[3] = {&PopulateSpectrum, &PropagateWaves, &Interp};
-	char* waveNames[3] = {"PopulateSpectrum", "PropagateWaves", "Interp"};
+	ID3D11ComputeShader *PopulateSpectrum, *PropagateWaves, *Interp, *GetDisplacement;
+	ID3D11ComputeShader** waveShaders[4] = {&PopulateSpectrum, &PropagateWaves, &Interp, &GetDisplacement};
+	char* waveNames[4] = {"PopulateSpectrum", "PropagateWaves", "Interp", "GetDisplacement"};
     // Constants
 	SimConstants constants = {time, GRIDSIZE_X, GRIDSIZE_Y, CELLSIZE, TIMESTEP, SPONGE_THICKNESS, MIN_WATER_HEIGHT, SURFACE_TENSION, DENSITY, // Sim Params
 							  DIFFUSION_ITERATIONS, DELTA_T, DIFFUSION_PENALTY, // Diffusion Params

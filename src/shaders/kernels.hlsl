@@ -500,6 +500,36 @@ void IntegrateH(uint3 id : SV_DispatchThreadID) {
         out2[curr] = 0.f;
 }
 
+/////////// Prepare for Rendering ///////////
+
+[numthreads(16, 16, 1)]
+void PrepDisplacement(uint3 id : SV_DispatchThreadID) {
+    // Inputs: in0 = h, in1 = href
+    // Outputs: hHat
+    if (id.x >= (uint)(paddedGridSizeX) || id.y >= (uint)(paddedGridSizeY)) return;
+
+    if (id.x >= (uint)(gridSizeX) || id.y >= (uint)(gridSizeY)) {
+        out0[id.xy] = float2(0.0f, 0.0f);
+        return;
+    }
+    // Subtract reference height to get zero-centered height field
+    float h_relative = in0[id.xy] - in1[id.xy];
+    out0[id.xy] = float2(h_relative, 0.0f);
+}
+
+[numthreads(16, 16, 1)]
+void PrepRender(uint3 id : SV_DispatchThreadID) {
+    // Inputs: in0 = Disp_x, in1 = Disp_y, in2 = J
+    // Outputs: disp_x, disp_y, fold
+    if (id.x >= (uint)(gridSizeX) || id.y >= (uint)(gridSizeY)) return;
+
+    float depth_weight = SafeTanh(in0[curr] / depthCutoff); // scaling term to reduce FFT waves in shallow water
+
+    out0[id.xy] = in0[id.xy].x;
+    out1[id.xy] = in1[id.xy].x;
+    out2[id.xy] = in2[id.xy].x;
+}
+
 
 /////////// eWave ///////////
 // (At bottom because requires different inputs/outputs for each kernel)
