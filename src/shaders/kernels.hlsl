@@ -513,9 +513,9 @@ void PrepDisplacement(uint3 id : SV_DispatchThreadID) {
         return;
     }
     // Subtract reference height to get zero-centered height field
-    float h_relative = in0[id.xy] - in1[id.xy];
-    out0[id.xy] = float2(h_relative, 0.0f);
-    // out0[id.xy] = float2(in0[id.xy], 0.0f);
+    // float h_relative = in0[id.xy] - in1[id.xy];
+    // out0[id.xy] = float2(h_relative, 0.0f);
+    out0[id.xy] = float2(in0[id.xy], 0.0f);
 }
 
 [numthreads(16, 16, 1)]

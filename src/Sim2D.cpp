@@ -147,8 +147,8 @@ void Sim::Init(GPU* gpu) {
     gpu->DispatchPadded(PopulateSpectrum, {}, 
 		{HPos.uav, HNeg.uav}, DEPTH_NUM);
 
-	// // Initial Decomposition
-	// DecompositionStep();
+	// Initial Decomposition
+	DecompositionStep();
 }
 
 Sim::Sim() {
@@ -184,12 +184,12 @@ void Sim::SimStep() {
     constants.time = time;
 	gpu->UpdateConstants(constants);
 
-	DecompositionStep();
+	// DecompositionStep();
     FFTStep();
 	eWaveStep();
 	SWEStep();
 	TransportStep();
-	// DecompositionStep();
+	DecompositionStep();
 	ComputeRender();
 }
 
@@ -318,13 +318,13 @@ void Sim::TransportStep() {
 
 void Sim::ComputeRender() {
 	// Redefine H for rendering
-	gpu->Dispatch(InitDecomp, 
-		{h.srv, nullptr, nullptr, terrain.srv}, 
-		{H.uav});
+	// gpu->Dispatch(InitDecomp, 
+	// 	{h.srv, nullptr, nullptr, terrain.srv}, 
+	// 	{H.uav});
 
 	// Get horizontal displacement
 	gpu->DispatchPadded(PrepDisplacement, // reusing hHat, just need a complex number field
-		{h.srv, href.srv}, {hHat.uav}); 
+		{htilde.srv, href.srv}, {hHat.uav}); 
 	gpu->ExecuteFFT(hHat.uav, paddedSizeX, paddedSizeY, false);
 	gpu->DispatchPadded(GetDisplacement, {hHat.srv}, 
 		{Disp_x.uav, Disp_y.uav, Jac.uav});
