@@ -5,6 +5,11 @@
 #include "Engine/StaticMesh.h"
 #include "UObject/ConstructorHelpers.h"
 
+#if WITH_EDITOR
+#include "LandscapeProxy.h"
+#include "LandscapeInfo.h"
+#endif
+
 ASWESimulatorActor::ASWESimulatorActor()
 {
     PrimaryActorTick.bCanEverTick = false;
@@ -49,6 +54,10 @@ ASWESimulatorActor::ASWESimulatorActor()
     if (WaterMaterialFinder.Succeeded())
     {
         BaseWaterMaterial = WaterMaterialFinder.Object;
+        if (WaterMeshComponent)
+        {
+            WaterMeshComponent->SetMaterial(0, BaseWaterMaterial);
+        }
     }
 }
 
@@ -59,9 +68,47 @@ void ASWESimulatorActor::OnConstruction(const FTransform& Transform)
     // Handle auto-fit logic in editor time so it's instantly visual to the developer
     if (bAutoFitToTerrain && TerrainActor)
     {
-        FVector Origin;
-        FVector BoxExtent;
-        TerrainActor->GetActorBounds(false, Origin, BoxExtent);
+        FVector Origin = FVector::ZeroVector;
+        FVector BoxExtent = FVector::ZeroVector;
+        bool bBoundsFound = false;
+
+#if WITH_EDITOR
+        if (ALandscapeProxy* LandscapeProxy = Cast<ALandscapeProxy>(TerrainActor))
+        {
+            if (ULandscapeInfo* LandscapeInfo = LandscapeProxy->GetLandscapeInfo())
+            {
+                FBox CompleteBounds = LandscapeInfo->GetCompleteBounds();
+                if (CompleteBounds.IsValid)
+                {
+                    Origin = CompleteBounds.GetCenter();
+                    BoxExtent = CompleteBounds.GetExtent();
+                    CapturedWorldWidth = FMath::Max(BoxExtent.X, BoxExtent.Y) * 2.0f;
+                    bBoundsFound = true;
+                }
+            }
+        }
+#endif
+
+        if (!bBoundsFound)
+        {
+            TerrainActor->GetActorBounds(false, Origin, BoxExtent);
+
+            // Fall back to landscape pivot and CapturedWorldWidth if bounds are zero (World Partition proxy case)
+            if (BoxExtent.X <= 10.0f || BoxExtent.Y <= 10.0f)
+            {
+                if (CapturedWorldWidth <= 10.0f)
+                {
+                    CapturedWorldWidth = 12800.0f; // Reset to default 128m
+                }
+                // Landscape pivot is at the bottom-left corner; offset by half-width to center it
+                Origin = TerrainActor->GetActorLocation() + FVector(CapturedWorldWidth * 0.5f, CapturedWorldWidth * 0.5f, 0.0f);
+                BoxExtent = FVector(CapturedWorldWidth * 0.5f, CapturedWorldWidth * 0.5f, 1000.0f);
+            }
+            else
+            {
+                CapturedWorldWidth = FMath::Max(BoxExtent.X, BoxExtent.Y) * 2.0f;
+            }
+        }
 
         // Center horizontally and set the vertical level to WaterLevel
         FVector NewLoc = Origin;
@@ -75,9 +122,6 @@ void ASWESimulatorActor::OnConstruction(const FTransform& Transform)
         {
             WaterMeshComponent->SetWorldScale3D(FVector(BoxExtent.X / 50.0f, BoxExtent.Y / 50.0f, 1.0f));
         }
-
-        // Set width and position scene capture to cover the whole terrain
-        CapturedWorldWidth = FMath::Max(BoxExtent.X, BoxExtent.Y) * 2.0f;
         if (TerrainCaptureComponent)
         {
             TerrainCaptureComponent->OrthoWidth = CapturedWorldWidth;
@@ -104,6 +148,12 @@ void ASWESimulatorActor::OnConstruction(const FTransform& Transform)
             WaterMeshComponent->SetStaticMesh(DefaultPlane);
         }
     }
+
+    // Auto-assign the base water material so it is visible in the editor viewport
+    if (BaseWaterMaterial && WaterMeshComponent)
+    {
+        WaterMeshComponent->SetMaterial(0, BaseWaterMaterial);
+    }
 }
 
 void ASWESimulatorActor::BeginPlay()
@@ -111,9 +161,47 @@ void ASWESimulatorActor::BeginPlay()
     // 1. Re-run bounds calculation to ensure runtime matches any runtime changes
     if (bAutoFitToTerrain && TerrainActor)
     {
-        FVector Origin;
-        FVector BoxExtent;
-        TerrainActor->GetActorBounds(false, Origin, BoxExtent);
+        FVector Origin = FVector::ZeroVector;
+        FVector BoxExtent = FVector::ZeroVector;
+        bool bBoundsFound = false;
+
+#if WITH_EDITOR
+        if (ALandscapeProxy* LandscapeProxy = Cast<ALandscapeProxy>(TerrainActor))
+        {
+            if (ULandscapeInfo* LandscapeInfo = LandscapeProxy->GetLandscapeInfo())
+            {
+                FBox CompleteBounds = LandscapeInfo->GetCompleteBounds();
+                if (CompleteBounds.IsValid)
+                {
+                    Origin = CompleteBounds.GetCenter();
+                    BoxExtent = CompleteBounds.GetExtent();
+                    CapturedWorldWidth = FMath::Max(BoxExtent.X, BoxExtent.Y) * 2.0f;
+                    bBoundsFound = true;
+                }
+            }
+        }
+#endif
+
+        if (!bBoundsFound)
+        {
+            TerrainActor->GetActorBounds(false, Origin, BoxExtent);
+
+            // Fall back to landscape pivot and CapturedWorldWidth if bounds are zero (World Partition proxy case)
+            if (BoxExtent.X <= 10.0f || BoxExtent.Y <= 10.0f)
+            {
+                if (CapturedWorldWidth <= 10.0f)
+                {
+                    CapturedWorldWidth = 12800.0f; // Reset to default 128m
+                }
+                // Landscape pivot is at the bottom-left corner; offset by half-width to center it
+                Origin = TerrainActor->GetActorLocation() + FVector(CapturedWorldWidth * 0.5f, CapturedWorldWidth * 0.5f, 0.0f);
+                BoxExtent = FVector(CapturedWorldWidth * 0.5f, CapturedWorldWidth * 0.5f, 1000.0f);
+            }
+            else
+            {
+                CapturedWorldWidth = FMath::Max(BoxExtent.X, BoxExtent.Y) * 2.0f;
+            }
+        }
 
         FVector NewLoc = Origin;
         NewLoc.Z = WaterLevel;
@@ -123,8 +211,6 @@ void ASWESimulatorActor::BeginPlay()
         {
             WaterMeshComponent->SetWorldScale3D(FVector(BoxExtent.X / 50.0f, BoxExtent.Y / 50.0f, 1.0f));
         }
-
-        CapturedWorldWidth = FMath::Max(BoxExtent.X, BoxExtent.Y) * 2.0f;
     }
 
     // 2. Programmatically allocate 32-bit float Render Targets to avoid asset cluttering

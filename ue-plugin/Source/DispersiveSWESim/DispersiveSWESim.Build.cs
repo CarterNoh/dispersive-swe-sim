@@ -22,7 +22,8 @@ public class DispersiveSWESim : ModuleRules
 				"CoreUObject",
 				"Engine",
 				"Json",
-				"JsonUtilities"
+				"JsonUtilities",
+				"Landscape"
 			}
 		);
 	}
