@@ -108,8 +108,6 @@ void ASWESimulatorActor::OnConstruction(const FTransform& Transform)
 
 void ASWESimulatorActor::BeginPlay()
 {
-    Super::BeginPlay();
-
     // 1. Re-run bounds calculation to ensure runtime matches any runtime changes
     if (bAutoFitToTerrain && TerrainActor)
     {
@@ -131,22 +129,26 @@ void ASWESimulatorActor::BeginPlay()
 
     // 2. Programmatically allocate 32-bit float Render Targets to avoid asset cluttering
     TerrainCaptureRT = NewObject<UTextureRenderTarget2D>(this);
-    TerrainCaptureRT->InitCustomFormat(GridResolution, GridResolution, PF_R32_FLOAT, false);
+    TerrainCaptureRT->bCanCreateUAV = true;
+    TerrainCaptureRT->InitCustomFormat(GridResolution, GridResolution, PF_FloatRGBA, false);
     TerrainCaptureRT->AddressX = TA_Clamp;
     TerrainCaptureRT->AddressY = TA_Clamp;
 
     HeightOutputRT = NewObject<UTextureRenderTarget2D>(this);
-    HeightOutputRT->InitCustomFormat(GridResolution, GridResolution, PF_R32_FLOAT, false);
+    HeightOutputRT->bCanCreateUAV = true;
+    HeightOutputRT->InitCustomFormat(GridResolution, GridResolution, PF_FloatRGBA, false);
     HeightOutputRT->AddressX = TA_Clamp;
     HeightOutputRT->AddressY = TA_Clamp;
 
     DisplacementOutputRT = NewObject<UTextureRenderTarget2D>(this);
-    DisplacementOutputRT->InitCustomFormat(GridResolution, GridResolution, PF_G16R16F, false);
+    DisplacementOutputRT->bCanCreateUAV = true;
+    DisplacementOutputRT->InitCustomFormat(GridResolution, GridResolution, PF_FloatRGBA, false);
     DisplacementOutputRT->AddressX = TA_Clamp;
     DisplacementOutputRT->AddressY = TA_Clamp;
 
     FoamOutputRT = NewObject<UTextureRenderTarget2D>(this);
-    FoamOutputRT->InitCustomFormat(GridResolution, GridResolution, PF_R32_FLOAT, false);
+    FoamOutputRT->bCanCreateUAV = true;
+    FoamOutputRT->InitCustomFormat(GridResolution, GridResolution, PF_FloatRGBA, false);
     FoamOutputRT->AddressX = TA_Clamp;
     FoamOutputRT->AddressY = TA_Clamp;
 
@@ -174,6 +176,9 @@ void ASWESimulatorActor::BeginPlay()
         SimComponent->DisplacementOutputRT = DisplacementOutputRT;
         SimComponent->FoamOutputRT = FoamOutputRT;
     }
+
+    // Call Super::BeginPlay() after components are fully configured to trigger correct InitializeSimulation grid sizes
+    Super::BeginPlay();
 
     // 5. Try to load default material if not set
     if (!BaseWaterMaterial && bAutoLoadDefaultAssets)

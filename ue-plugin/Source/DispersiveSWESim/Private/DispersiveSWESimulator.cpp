@@ -366,8 +366,13 @@ void UDispersiveSWESimulator::ExecuteSimulation_RenderThread(
 	FRDGTextureDesc ComplexPaddedDesc = FRDGTextureDesc::Create2D(
 		FIntPoint(PaddedSizeX, PaddedSizeY), PF_G32R32F, FClearValueBinding::None, TexCreate_UAV | TexCreate_ShaderResource);
 
-	FRDGTextureDesc ComplexArrayPaddedDesc = ComplexPaddedDesc;
-	ComplexArrayPaddedDesc.ArraySize = Constants.depthNum;
+	FRDGTextureDesc ComplexArrayPaddedDesc = FRDGTextureDesc::Create2DArray(
+		FIntPoint(PaddedSizeX, PaddedSizeY),
+		PF_G32R32F,
+		FClearValueBinding::None,
+		TexCreate_UAV | TexCreate_ShaderResource,
+		Constants.depthNum
+	);
 
 	// Temporary fields
 	FRDGTextureRef alpha_H = GraphBuilder.CreateTexture(FloatDesc, TEXT("SWE_alpha_H"));
@@ -522,12 +527,10 @@ void UDispersiveSWESimulator::ExecuteSimulation_RenderThread(
 
 	// Recompute H
 	{
-		TShaderMapRef<FInitDecompCS> Shader(ShaderMap);
-		FInitDecompCS::FParameters* Params = GraphBuilder.AllocParameters<FInitDecompCS::FParameters>();
+		TShaderMapRef<FRecomputeHCS> Shader(ShaderMap);
+		FRecomputeHCS::FParameters* Params = GraphBuilder.AllocParameters<FRecomputeHCS::FParameters>();
 		Params->SimConstants = ConstantBuffer;
 		Params->in0 = GraphBuilder.CreateSRV(h_RDG);
-		Params->in1 = nullptr;
-		Params->in2 = nullptr;
 		Params->in3 = GraphBuilder.CreateSRV(Terrain_RDG);
 		Params->out0 = GraphBuilder.CreateUAV(H_RDG);
 
@@ -748,12 +751,10 @@ void UDispersiveSWESimulator::ExecuteSimulation_RenderThread(
 
 	// Recompute total elevation H
 	{
-		TShaderMapRef<FInitDecompCS> Shader(ShaderMap);
-		FInitDecompCS::FParameters* Params = GraphBuilder.AllocParameters<FInitDecompCS::FParameters>();
+		TShaderMapRef<FRecomputeHCS> Shader(ShaderMap);
+		FRecomputeHCS::FParameters* Params = GraphBuilder.AllocParameters<FRecomputeHCS::FParameters>();
 		Params->SimConstants = ConstantBuffer;
 		Params->in0 = GraphBuilder.CreateSRV(h_RDG);
-		Params->in1 = nullptr;
-		Params->in2 = nullptr;
 		Params->in3 = GraphBuilder.CreateSRV(Terrain_RDG);
 		Params->out0 = GraphBuilder.CreateUAV(H_RDG);
 
@@ -775,7 +776,7 @@ void UDispersiveSWESimulator::ExecuteSimulation_RenderThread(
 		PassParams->SimConstants = ConstantBuffer;
 		PassParams->ScaleFactor = 100.0f; // m to cm
 		PassParams->in0 = GraphBuilder.CreateSRV(SrcHeightTexture);
-		PassParams->out0 = GraphBuilder.CreateUAV(ExportHeightDest);
+		PassParams->outScaleCopy = GraphBuilder.CreateUAV(ExportHeightDest);
 
 		FComputeShaderUtils::AddPass(
 			GraphBuilder,
@@ -797,7 +798,7 @@ void UDispersiveSWESimulator::ExecuteSimulation_RenderThread(
 		PassParams->ScaleFactor = 100.0f; // m to cm
 		PassParams->inDispX = GraphBuilder.CreateSRV(dispX);
 		PassParams->inDispY = GraphBuilder.CreateSRV(dispY);
-		PassParams->outDisp = GraphBuilder.CreateUAV(ExportDispDest);
+		PassParams->outDisp4 = GraphBuilder.CreateUAV(ExportDispDest);
 
 		FComputeShaderUtils::AddPass(
 			GraphBuilder,
@@ -819,7 +820,7 @@ void UDispersiveSWESimulator::ExecuteSimulation_RenderThread(
 		PassParams->SimConstants = ConstantBuffer;
 		PassParams->ScaleFactor = 1.0f; // Keep dimensionless ratio as is
 		PassParams->in0 = GraphBuilder.CreateSRV(SrcFoamTexture);
-		PassParams->out0 = GraphBuilder.CreateUAV(ExportFoamDest);
+		PassParams->outScaleCopy = GraphBuilder.CreateUAV(ExportFoamDest);
 
 		FComputeShaderUtils::AddPass(
 			GraphBuilder,

@@ -716,21 +716,28 @@ void InitializeWaterHeight(uint3 id : SV_DispatchThreadID) {
 
 // Shader parameter for texture scaling and copying
 float ScaleFactor;
+RWTexture2D<float4> outScaleCopy;
 
 [numthreads(16, 16, 1)]
 void ScaleCopyTexture(uint3 id : SV_DispatchThreadID) {
     if (id.x >= (uint)(gridSizeX) || id.y >= (uint)(gridSizeY)) return;
-    out0[id.xy] = in0[id.xy] * ScaleFactor;
+    outScaleCopy[id.xy] = float4(in0[id.xy] * ScaleFactor, 0.0f, 0.0f, 1.0f);
 }
 
 Texture2D<float> inDispX;
 Texture2D<float> inDispY;
-RWTexture2D<float2> outDisp;
+RWTexture2D<float4> outDisp4;
 
 [numthreads(16, 16, 1)]
 void ScaleCopyDisplacement(uint3 id : SV_DispatchThreadID) {
     if (id.x >= (uint)(gridSizeX) || id.y >= (uint)(gridSizeY)) return;
-    outDisp[id.xy] = float2(inDispX[id.xy] * ScaleFactor, inDispY[id.xy] * ScaleFactor);
+    outDisp4[id.xy] = float4(inDispX[id.xy] * ScaleFactor, inDispY[id.xy] * ScaleFactor, 0.0f, 1.0f);
+}
+
+[numthreads(16, 16, 1)]
+void RecomputeH(uint3 id : SV_DispatchThreadID) {
+    if (id.x >= (uint)(gridSizeX) || id.y >= (uint)(gridSizeY)) return;
+    out0[id.xy] = in0[id.xy] + in3[id.xy];
 }
 
 

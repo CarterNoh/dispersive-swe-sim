@@ -70,6 +70,20 @@ public:
 	END_SHADER_PARAMETER_STRUCT()
 };
 
+class FRecomputeHCS : public FDispersiveSWEComputeShader
+{
+public:
+	DECLARE_GLOBAL_SHADER(FRecomputeHCS);
+	SHADER_USE_PARAMETER_STRUCT(FRecomputeHCS, FDispersiveSWEComputeShader);
+
+	BEGIN_SHADER_PARAMETER_STRUCT(FParameters, )
+		SHADER_PARAMETER_STRUCT_REF(FSimConstants, SimConstants)
+		SHADER_PARAMETER_RDG_TEXTURE_SRV(Texture2D<float>, in0)
+		SHADER_PARAMETER_RDG_TEXTURE_SRV(Texture2D<float>, in3)
+		SHADER_PARAMETER_RDG_TEXTURE_UAV(RWTexture2D<float>, out0)
+	END_SHADER_PARAMETER_STRUCT()
+};
+
 class FCalcDiffusionCoeffsCS : public FDispersiveSWEComputeShader
 {
 public:
@@ -399,7 +413,7 @@ public:
 		SHADER_PARAMETER_STRUCT_REF(FSimConstants, SimConstants)
 		SHADER_PARAMETER(float, ScaleFactor)
 		SHADER_PARAMETER_RDG_TEXTURE_SRV(Texture2D<float>, in0)
-		SHADER_PARAMETER_RDG_TEXTURE_UAV(RWTexture2D<float>, out0)
+		SHADER_PARAMETER_RDG_TEXTURE_UAV(RWTexture2D<float4>, outScaleCopy)
 	END_SHADER_PARAMETER_STRUCT()
 };
 
@@ -414,7 +428,7 @@ public:
 		SHADER_PARAMETER(float, ScaleFactor)
 		SHADER_PARAMETER_RDG_TEXTURE_SRV(Texture2D<float>, inDispX)
 		SHADER_PARAMETER_RDG_TEXTURE_SRV(Texture2D<float>, inDispY)
-		SHADER_PARAMETER_RDG_TEXTURE_UAV(RWTexture2D<float2>, outDisp)
+		SHADER_PARAMETER_RDG_TEXTURE_UAV(RWTexture2D<float4>, outDisp4)
 	END_SHADER_PARAMETER_STRUCT()
 };
 
