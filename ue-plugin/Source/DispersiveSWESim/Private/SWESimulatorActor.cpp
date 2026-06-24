@@ -130,7 +130,7 @@ void ASWESimulatorActor::BeginPlay()
     HeightOutputRT->AddressY = TA_Clamp;
 
     DisplacementOutputRT = NewObject<UTextureRenderTarget2D>(this);
-    DisplacementOutputRT->InitCustomFormat(GridResolution, GridResolution, PF_A2B10G10R10, false);
+    DisplacementOutputRT->InitCustomFormat(GridResolution, GridResolution, PF_G16R16F, false);
     DisplacementOutputRT->AddressX = TA_Clamp;
     DisplacementOutputRT->AddressY = TA_Clamp;
 

@@ -22,3 +22,5 @@ IMPLEMENT_GLOBAL_SHADER(FInterpCS,              "/Plugin/DispersiveSWESim/fftwav
 IMPLEMENT_GLOBAL_SHADER(FFFTKernel1DCS,         "/Plugin/DispersiveSWESim/fft.usf",      "FFTKernel_1D",           SF_Compute);
 IMPLEMENT_GLOBAL_SHADER(FInitializeWaterHeightCS, "/Plugin/DispersiveSWESim/kernels.usf",  "InitializeWaterHeight",  SF_Compute);
 IMPLEMENT_GLOBAL_SHADER(FScaleCopyTextureCS,      "/Plugin/DispersiveSWESim/kernels.usf",  "ScaleCopyTexture",       SF_Compute);
+IMPLEMENT_GLOBAL_SHADER(FScaleCopyDisplacementCS, "/Plugin/DispersiveSWESim/kernels.usf",  "ScaleCopyDisplacement",  SF_Compute);
+

@@ -107,6 +107,46 @@ void UDispersiveSWESimulator::AllocatePersistentTargets(FRHICommandListImmediate
 
 void UDispersiveSWESimulator::SetupInitialStates(FRHICommandListImmediate& RHICmdList)
 {
+	// 1. Setup the common uniform buffer first
+	FSimConstants CPUConstants = {};
+	CPUConstants.time = 0.0f;
+	CPUConstants.gridSizeX = GridSizeX;
+	CPUConstants.gridSizeY = GridSizeY;
+	CPUConstants.cellSize = CellSize * 0.01f; // Convert cm to meters
+	CPUConstants.timeStep = TimeStep;
+	CPUConstants.spongeThickness = SpongeThickness;
+	CPUConstants.minWaterHeight = MinWaterHeight * 0.01f; // Convert cm to meters
+	CPUConstants.surfaceTension = SurfaceTension;
+	CPUConstants.density = Density;
+	CPUConstants.diffusionIterations = DiffusionIterations;
+	CPUConstants.deltaT = DiffusionDeltaT;
+	CPUConstants.diffusionPenalty = DiffusionPenalty;
+	CPUConstants.slopeLimit = SlopeLimit;
+	CPUConstants.cflCondition = CFLCondition;
+	CPUConstants.gammaTransport = GammaTransport;
+	CPUConstants.depthNum = DepthLevels.Num();
+	CPUConstants.fetch = Fetch;
+	CPUConstants.windSpeed = WindSpeed;
+	CPUConstants.windAngle = WindAngle;
+	CPUConstants.swell = Swell;
+	CPUConstants.swellAngle = SwellAngle;
+	CPUConstants.choppiness = Choppiness;
+	CPUConstants.filterSmall = FilterSmall;
+	CPUConstants.filterBig = FilterBig;
+	CPUConstants.filterWidth = FilterWidth;
+	CPUConstants.filterMin = FilterMin;
+	CPUConstants.depthCutoff = DepthCutoff;
+	CPUConstants.paddedGridSizeX = PaddedSizeX;
+	CPUConstants.paddedGridSizeY = PaddedSizeY;
+	for (int32 i = 0; i < 16; ++i)
+	{
+		float Val = i < DepthLevels.Num() ? DepthLevels[i] : 0.0f;
+		CPUConstants.depthLevels[i / 4][i % 4] = Val;
+	}
+
+	TUniformBufferRef<FSimConstants> ConstantBuffer = CreateUniformBufferImmediate(CPUConstants, EUniformBufferUsage::UniformBuffer_SingleFrame);
+
+	// 2. Initialize Terrain and Water Height fields
 	if (TerrainHeightInputRT && 
 		TerrainHeightInputRT->GetRenderTargetResource() && 
 		TerrainHeightInputRT->GetRenderTargetResource()->GetTexture2DRHI())
@@ -123,43 +163,6 @@ void UDispersiveSWESimulator::SetupInitialStates(FRHICommandListImmediate& RHICm
 		FRDGTextureRef h_RDG = GraphBuilder.RegisterExternalTexture(Texh);
 		FRDGTextureRef hbar_RDG = GraphBuilder.RegisterExternalTexture(Texhbar);
 		FRDGTextureRef hbarOld_RDG = GraphBuilder.RegisterExternalTexture(TexhbarOld);
-		FRDGTextureRef HPos_RDG = GraphBuilder.RegisterExternalTexture(TexHPos);
-		FRDGTextureRef HNeg_RDG = GraphBuilder.RegisterExternalTexture(TexHNeg);
-
-		// Setup uniform buffer
-		TArray<float> LocalDepths = DepthLevels;
-		FSimConstants CPUConstants = {};
-		CPUConstants.time = 0.0f;
-		CPUConstants.gridSizeX = GridSizeX;
-		CPUConstants.gridSizeY = GridSizeY;
-		CPUConstants.cellSize = CellSize * 0.01f; // Convert cm to meters
-		CPUConstants.timeStep = TimeStep;
-		CPUConstants.spongeThickness = SpongeThickness;
-		CPUConstants.minWaterHeight = MinWaterHeight * 0.01f; // Convert cm to meters
-		CPUConstants.surfaceTension = SurfaceTension;
-		CPUConstants.density = Density;
-		CPUConstants.diffusionIterations = DiffusionIterations;
-		CPUConstants.deltaT = DiffusionDeltaT;
-		CPUConstants.diffusionPenalty = DiffusionPenalty;
-		CPUConstants.slopeLimit = SlopeLimit;
-		CPUConstants.cflCondition = CFLCondition;
-		CPUConstants.gammaTransport = GammaTransport;
-		CPUConstants.depthNum = LocalDepths.Num();
-		CPUConstants.fetch = Fetch;
-		CPUConstants.windSpeed = WindSpeed;
-		CPUConstants.windAngle = WindAngle;
-		CPUConstants.swell = Swell;
-		CPUConstants.swellAngle = SwellAngle;
-		CPUConstants.choppiness = Choppiness;
-		CPUConstants.filterSmall = FilterSmall;
-		CPUConstants.filterBig = FilterBig;
-		CPUConstants.filterWidth = FilterWidth;
-		CPUConstants.filterMin = FilterMin;
-		CPUConstants.depthCutoff = DepthCutoff;
-		CPUConstants.paddedGridSizeX = PaddedSizeX;
-		CPUConstants.paddedGridSizeY = PaddedSizeY;
-
-		TUniformBufferRef<FSimConstants> ConstantBuffer = CreateUniformBufferImmediate(CPUConstants, EUniformBufferUsage::UniformBuffer_SingleFrame);
 
 		// Run the compute shader to initialize water height on GPU
 		TShaderMapRef<FInitializeWaterHeightCS> InitWaterHeightCS(GetGlobalShaderMap(GMaxRHIFeatureLevel));
@@ -182,30 +185,6 @@ void UDispersiveSWESimulator::SetupInitialStates(FRHICommandListImmediate& RHICm
 		// Copy the computed water height h to hbar and hbarOld
 		AddCopyTexturePass(GraphBuilder, h_RDG, hbar_RDG);
 		AddCopyTexturePass(GraphBuilder, h_RDG, hbarOld_RDG);
-
-		// Initialize the Populated Spectrum on startup
-		FRDGBufferRef DepthBufferRDG = GraphBuilder.CreateBuffer(
-			FRDGBufferDesc::CreateStructuredDesc(sizeof(float), LocalDepths.Num()),
-			TEXT("SWE_DepthBuffer")
-		);
-		GraphBuilder.QueueBufferUpload(DepthBufferRDG, LocalDepths.GetData(), sizeof(float) * LocalDepths.Num(), ERDGInitialDataFlags::None);
-		FRDGBufferSRVRef DepthSRV = GraphBuilder.CreateSRV(DepthBufferRDG);
-
-		TShaderMapRef<FPopulateSpectrumCS> PopulateSpectrumCS(GetGlobalShaderMap(GMaxRHIFeatureLevel));
-		FPopulateSpectrumCS::FParameters* PassParams = GraphBuilder.AllocParameters<FPopulateSpectrumCS::FParameters>();
-		PassParams->SimConstants = ConstantBuffer;
-		PassParams->depth = DepthSRV;
-		PassParams->HPosOut = GraphBuilder.CreateUAV(HPos_RDG);
-		PassParams->HNegOut = GraphBuilder.CreateUAV(HNeg_RDG);
-
-		FComputeShaderUtils::AddPass(
-			GraphBuilder,
-			RDG_EVENT_NAME("SWE_PopulateSpectrum"),
-			ERDGPassFlags::Compute,
-			PopulateSpectrumCS,
-			PassParams,
-			FIntVector(FMath::DivideAndRoundUp(PaddedSizeX, 16), FMath::DivideAndRoundUp(PaddedSizeY, 16), LocalDepths.Num())
-		);
 
 		GraphBuilder.Execute();
 	}
@@ -257,58 +236,18 @@ void UDispersiveSWESimulator::SetupInitialStates(FRHICommandListImmediate& RHICm
 
 		FRHITexture2D* hbarOldRHI = static_cast<FRHITexture2D*>(TexhbarOld->GetRHI());
 		RHIUpdateTexture2D(hbarOldRHI, 0, Region, GridSizeX * sizeof(float), (uint8*)WaterData.GetData());
+	}
 
-		// Initialize the Populated Spectrum on startup
+	// 3. Initialize the Populated Wave Spectrum
+	{
 		FRDGBuilder GraphBuilder(RHICmdList);
 
 		FRDGTextureRef HPos_RDG = GraphBuilder.RegisterExternalTexture(TexHPos);
 		FRDGTextureRef HNeg_RDG = GraphBuilder.RegisterExternalTexture(TexHNeg);
 
-		TArray<float> LocalDepths = DepthLevels;
-		FRDGBufferRef DepthBufferRDG = GraphBuilder.CreateBuffer(
-			FRDGBufferDesc::CreateStructuredDesc(sizeof(float), LocalDepths.Num()),
-			TEXT("SWE_DepthBuffer")
-		);
-		GraphBuilder.QueueBufferUpload(DepthBufferRDG, LocalDepths.GetData(), sizeof(float) * LocalDepths.Num(), ERDGInitialDataFlags::None);
-		FRDGBufferSRVRef DepthSRV = GraphBuilder.CreateSRV(DepthBufferRDG);
-
-		FSimConstants CPUConstants = {};
-		CPUConstants.time = 0.0f;
-		CPUConstants.gridSizeX = GridSizeX;
-		CPUConstants.gridSizeY = GridSizeY;
-		CPUConstants.cellSize = CellSize * 0.01f; // Convert cm to meters
-		CPUConstants.timeStep = TimeStep;
-		CPUConstants.spongeThickness = SpongeThickness;
-		CPUConstants.minWaterHeight = MinWaterHeight * 0.01f; // Convert cm to meters
-		CPUConstants.surfaceTension = SurfaceTension;
-		CPUConstants.density = Density;
-		CPUConstants.diffusionIterations = DiffusionIterations;
-		CPUConstants.deltaT = DiffusionDeltaT;
-		CPUConstants.diffusionPenalty = DiffusionPenalty;
-		CPUConstants.slopeLimit = SlopeLimit;
-		CPUConstants.cflCondition = CFLCondition;
-		CPUConstants.gammaTransport = GammaTransport;
-		CPUConstants.depthNum = LocalDepths.Num();
-		CPUConstants.fetch = Fetch;
-		CPUConstants.windSpeed = WindSpeed;
-		CPUConstants.windAngle = WindAngle;
-		CPUConstants.swell = Swell;
-		CPUConstants.swellAngle = SwellAngle;
-		CPUConstants.choppiness = Choppiness;
-		CPUConstants.filterSmall = FilterSmall;
-		CPUConstants.filterBig = FilterBig;
-		CPUConstants.filterWidth = FilterWidth;
-		CPUConstants.filterMin = FilterMin;
-		CPUConstants.depthCutoff = DepthCutoff;
-		CPUConstants.paddedGridSizeX = PaddedSizeX;
-		CPUConstants.paddedGridSizeY = PaddedSizeY;
-
-		TUniformBufferRef<FSimConstants> ConstantBuffer = CreateUniformBufferImmediate(CPUConstants, EUniformBufferUsage::UniformBuffer_SingleFrame);
-
 		TShaderMapRef<FPopulateSpectrumCS> PopulateSpectrumCS(GetGlobalShaderMap(GMaxRHIFeatureLevel));
 		FPopulateSpectrumCS::FParameters* PassParams = GraphBuilder.AllocParameters<FPopulateSpectrumCS::FParameters>();
 		PassParams->SimConstants = ConstantBuffer;
-		PassParams->depth = DepthSRV;
 		PassParams->HPosOut = GraphBuilder.CreateUAV(HPos_RDG);
 		PassParams->HNegOut = GraphBuilder.CreateUAV(HNeg_RDG);
 
@@ -318,7 +257,7 @@ void UDispersiveSWESimulator::SetupInitialStates(FRHICommandListImmediate& RHICm
 			ERDGPassFlags::Compute,
 			PopulateSpectrumCS,
 			PassParams,
-			FIntVector(FMath::DivideAndRoundUp(PaddedSizeX, 16), FMath::DivideAndRoundUp(PaddedSizeY, 16), LocalDepths.Num())
+			FIntVector(FMath::DivideAndRoundUp(PaddedSizeX, 16), FMath::DivideAndRoundUp(PaddedSizeY, 16), DepthLevels.Num())
 		);
 
 		GraphBuilder.Execute();
@@ -363,21 +302,23 @@ void UDispersiveSWESimulator::TickComponent(float DeltaTime, ELevelTick TickType
 	Constants.depthCutoff = DepthCutoff;
 	Constants.paddedGridSizeX = PaddedSizeX;
 	Constants.paddedGridSizeY = PaddedSizeY;
-
-	TArray<float> LocalDepths = DepthLevels;
+	for (int32 i = 0; i < 16; ++i)
+	{
+		float Val = i < DepthLevels.Num() ? DepthLevels[i] : 0.0f;
+		Constants.depthLevels[i / 4][i % 4] = Val;
+	}
 
 	ENQUEUE_RENDER_COMMAND(ExecuteSWESimulation)(
-		[this, Constants, LocalDepths](FRHICommandListImmediate& RHICmdList)
+		[this, Constants](FRHICommandListImmediate& RHICmdList)
 		{
-			ExecuteSimulation_RenderThread(RHICmdList, Constants, LocalDepths);
+			ExecuteSimulation_RenderThread(RHICmdList, Constants);
 		}
 	);
 }
 
 void UDispersiveSWESimulator::ExecuteSimulation_RenderThread(
 	FRHICommandListImmediate& RHICmdList,
-	const FSimConstants& Constants,
-	const TArray<float>& Depths)
+	const FSimConstants& Constants)
 {
 	FRDGBuilder GraphBuilder(RHICmdList);
 
@@ -425,7 +366,7 @@ void UDispersiveSWESimulator::ExecuteSimulation_RenderThread(
 		FIntPoint(PaddedSizeX, PaddedSizeY), PF_G32R32F, FClearValueBinding::None, TexCreate_UAV | TexCreate_ShaderResource);
 
 	FRDGTextureDesc ComplexArrayPaddedDesc = ComplexPaddedDesc;
-	ComplexArrayPaddedDesc.ArraySize = Depths.Num();
+	ComplexArrayPaddedDesc.ArraySize = Constants.depthNum;
 
 	// Temporary fields
 	FRDGTextureRef alpha_H = GraphBuilder.CreateTexture(FloatDesc, TEXT("SWE_alpha_H"));
@@ -468,18 +409,12 @@ void UDispersiveSWESimulator::ExecuteSimulation_RenderThread(
 	// 3. Create Uniform Buffer
 	TUniformBufferRef<FSimConstants> ConstantBuffer = CreateUniformBufferImmediate(Constants, EUniformBufferUsage::UniformBuffer_SingleFrame);
 
-	// Depth Structured Buffer
-	FRDGBufferRef DepthBuffer = GraphBuilder.CreateBuffer(
-		FRDGBufferDesc::CreateStructuredDesc(sizeof(float), Depths.Num()), TEXT("SWE_DepthBuffer"));
-	GraphBuilder.QueueBufferUpload(DepthBuffer, Depths.GetData(), sizeof(float) * Depths.Num(), ERDGInitialDataFlags::None);
-	FRDGBufferSRVRef DepthSRV = GraphBuilder.CreateSRV(DepthBuffer);
-
 	// Get shader maps
 	FGlobalShaderMap* ShaderMap = GetGlobalShaderMap(GMaxRHIFeatureLevel);
 
 	FIntVector GridGroups(FMath::DivideAndRoundUp(GridSizeX, 16), FMath::DivideAndRoundUp(GridSizeY, 16), 1);
 	FIntVector PaddedGroups(FMath::DivideAndRoundUp(PaddedSizeX, 16), FMath::DivideAndRoundUp(PaddedSizeY, 16), 1);
-	FIntVector ComplexArrayGroups(FMath::DivideAndRoundUp(PaddedSizeX, 16), FMath::DivideAndRoundUp(PaddedSizeY, 16), Depths.Num());
+	FIntVector ComplexArrayGroups(FMath::DivideAndRoundUp(PaddedSizeX, 16), FMath::DivideAndRoundUp(PaddedSizeY, 16), Constants.depthNum);
 
 	// ----------------------------------------------------
 	// DECOMPOSITION STEP
@@ -609,7 +544,6 @@ void UDispersiveSWESimulator::ExecuteSimulation_RenderThread(
 		Params->SimConstants = ConstantBuffer;
 		Params->HPosIn = GraphBuilder.CreateSRV(HPos_RDG);
 		Params->HNegIn = GraphBuilder.CreateSRV(HNeg_RDG);
-		Params->depth = DepthSRV;
 		Params->HPropOut = GraphBuilder.CreateUAV(HProp);
 		Params->DelHxOut = GraphBuilder.CreateUAV(DelHx);
 		Params->DelHyOut = GraphBuilder.CreateUAV(DelHy);
@@ -620,11 +554,11 @@ void UDispersiveSWESimulator::ExecuteSimulation_RenderThread(
 	}
 
 	// Run Inverse FFTs
-	DispatchFFT_RenderThread(GraphBuilder, HProp, PaddedSizeX, PaddedSizeY, true, Depths.Num());
-	DispatchFFT_RenderThread(GraphBuilder, DelHx, PaddedSizeX, PaddedSizeY, true, Depths.Num());
-	DispatchFFT_RenderThread(GraphBuilder, DelHy, PaddedSizeX, PaddedSizeY, true, Depths.Num());
-	DispatchFFT_RenderThread(GraphBuilder, DispX, PaddedSizeX, PaddedSizeY, true, Depths.Num());
-	DispatchFFT_RenderThread(GraphBuilder, DispY, PaddedSizeX, PaddedSizeY, true, Depths.Num());
+	DispatchFFT_RenderThread(GraphBuilder, HProp, PaddedSizeX, PaddedSizeY, true, Constants.depthNum);
+	DispatchFFT_RenderThread(GraphBuilder, DelHx, PaddedSizeX, PaddedSizeY, true, Constants.depthNum);
+	DispatchFFT_RenderThread(GraphBuilder, DelHy, PaddedSizeX, PaddedSizeY, true, Constants.depthNum);
+	DispatchFFT_RenderThread(GraphBuilder, DispX, PaddedSizeX, PaddedSizeY, true, Constants.depthNum);
+	DispatchFFT_RenderThread(GraphBuilder, DispY, PaddedSizeX, PaddedSizeY, true, Constants.depthNum);
 
 	// Interpolate outputs between depths
 	{
@@ -637,7 +571,6 @@ void UDispersiveSWESimulator::ExecuteSimulation_RenderThread(
 		Params->DxIn = GraphBuilder.CreateSRV(DispX);
 		Params->DyIn = GraphBuilder.CreateSRV(DispY);
 		Params->hbar = GraphBuilder.CreateSRV(hbar_RDG);
-		Params->depth = DepthSRV;
 		Params->HOut = GraphBuilder.CreateUAV(hFFT);
 		Params->HxOut = GraphBuilder.CreateUAV(delHx);
 		Params->HyOut = GraphBuilder.CreateUAV(delHy);
@@ -680,7 +613,6 @@ void UDispersiveSWESimulator::ExecuteSimulation_RenderThread(
 		Params->hhat = GraphBuilder.CreateSRV(hHat);
 		Params->qhat_x = GraphBuilder.CreateSRV(qHatX);
 		Params->qhat_y = GraphBuilder.CreateSRV(qHatY);
-		Params->in8 = DepthSRV;
 		Params->qhat_x_array = GraphBuilder.CreateUAV(qHatXArray);
 		Params->qhat_y_array = GraphBuilder.CreateUAV(qHatYArray);
 
@@ -688,8 +620,8 @@ void UDispersiveSWESimulator::ExecuteSimulation_RenderThread(
 	}
 
 	// Run Inverse FFTs
-	DispatchFFT_RenderThread(GraphBuilder, qHatXArray, PaddedSizeX, PaddedSizeY, true, Depths.Num());
-	DispatchFFT_RenderThread(GraphBuilder, qHatYArray, PaddedSizeX, PaddedSizeY, true, Depths.Num());
+	DispatchFFT_RenderThread(GraphBuilder, qHatXArray, PaddedSizeX, PaddedSizeY, true, Constants.depthNum);
+	DispatchFFT_RenderThread(GraphBuilder, qHatYArray, PaddedSizeX, PaddedSizeY, true, Constants.depthNum);
 
 	// Interpolate between depths to get new qtilde
 	{
@@ -699,7 +631,6 @@ void UDispersiveSWESimulator::ExecuteSimulation_RenderThread(
 		Params->hbar = GraphBuilder.CreateSRV(hbar_RDG);
 		Params->qHat_x_array = GraphBuilder.CreateSRV(qHatXArray);
 		Params->qHat_y_array = GraphBuilder.CreateSRV(qHatYArray);
-		Params->in8 = DepthSRV;
 		Params->qtilde_x = GraphBuilder.CreateUAV(qtildex_RDG);
 		Params->qtilde_y = GraphBuilder.CreateUAV(qtildey_RDG);
 
@@ -858,14 +789,14 @@ void UDispersiveSWESimulator::ExecuteSimulation_RenderThread(
 	if (DisplacementOutputRT && DisplacementOutputRT->GetRenderTargetResource())
 	{
 		FRDGTextureRef ExportDispDest = GraphBuilder.RegisterExternalTexture(CreateRenderTarget(DisplacementOutputRT->GetRenderTargetResource()->GetTexture2DRHI(), TEXT("SWE_DispExport")));
-		FRDGTextureRef SrcDispTexture = dispX;
 
-		TShaderMapRef<FScaleCopyTextureCS> ScaleCopyCS(GetGlobalShaderMap(GMaxRHIFeatureLevel));
-		FScaleCopyTextureCS::FParameters* PassParams = GraphBuilder.AllocParameters<FScaleCopyTextureCS::FParameters>();
+		TShaderMapRef<FScaleCopyDisplacementCS> ScaleCopyCS(GetGlobalShaderMap(GMaxRHIFeatureLevel));
+		FScaleCopyDisplacementCS::FParameters* PassParams = GraphBuilder.AllocParameters<FScaleCopyDisplacementCS::FParameters>();
 		PassParams->SimConstants = ConstantBuffer;
 		PassParams->ScaleFactor = 100.0f; // m to cm
-		PassParams->in0 = GraphBuilder.CreateSRV(SrcDispTexture);
-		PassParams->out0 = GraphBuilder.CreateUAV(ExportDispDest);
+		PassParams->inDispX = GraphBuilder.CreateSRV(dispX);
+		PassParams->inDispY = GraphBuilder.CreateSRV(dispY);
+		PassParams->outDisp = GraphBuilder.CreateUAV(ExportDispDest);
 
 		FComputeShaderUtils::AddPass(
 			GraphBuilder,
@@ -999,5 +930,39 @@ bool UDispersiveSWESimulator::LoadParametersFromJson(const FString& FilePath)
 	}
 
 	UE_LOG(LogTemp, Log, TEXT("Successfully loaded simulation parameters from: %s"), *FilePath);
+	return true;
+}
+
+bool UDispersiveSWESimulator::SaveParametersToJson(const FString& FilePath)
+{
+	TSharedRef<FJsonObject> JsonObject = MakeShared<FJsonObject>();
+	if (!FJsonObjectConverter::UStructToJsonObject(GetClass(), this, JsonObject))
+	{
+		UE_LOG(LogTemp, Warning, TEXT("Failed to convert component properties to JSON object."));
+		return false;
+	}
+
+	// Remove runtime properties or input/output targets that shouldn't be serialized in a parameters config
+	JsonObject->RemoveField(TEXT("terrainHeightInputRT"));
+	JsonObject->RemoveField(TEXT("heightOutputRT"));
+	JsonObject->RemoveField(TEXT("displacementOutputRT"));
+	JsonObject->RemoveField(TEXT("foamOutputRT"));
+	JsonObject->RemoveField(TEXT("jsonConfigFilePath"));
+
+	FString JsonString;
+	TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&JsonString);
+	if (!FJsonSerializer::Serialize(JsonObject, Writer))
+	{
+		UE_LOG(LogTemp, Warning, TEXT("Failed to serialize JSON object."));
+		return false;
+	}
+
+	if (!FFileHelper::SaveStringToFile(JsonString, *FilePath))
+	{
+		UE_LOG(LogTemp, Warning, TEXT("Failed to save JSON string to path: %s"), *FilePath);
+		return false;
+	}
+
+	UE_LOG(LogTemp, Log, TEXT("Successfully saved simulation parameters to: %s"), *FilePath);
 	return true;
 }

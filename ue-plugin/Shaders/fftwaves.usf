@@ -36,6 +36,7 @@ and the paper "Empirical Directional Wave Spectra for Computer Graphics".
 #define depthCutoff SimConstants.depthCutoff
 #define paddedGridSizeX SimConstants.paddedGridSizeX
 #define paddedGridSizeY SimConstants.paddedGridSizeY
+#define getDepthLevel(index) SimConstants.depthLevels[(index) / 4][(index) % 4]
 
 #define G 9.80665f
 #define PI 3.14159265358979323846f
@@ -294,7 +295,6 @@ float AmpFilter(float k, int filterInvert) {
 
 
 ///////////////// Shaders /////////////////
-StructuredBuffer<float> depth;
 
 RWTexture2DArray<float2> HPosOut;
 RWTexture2DArray<float2> HNegOut;
@@ -337,7 +337,7 @@ void PopulateSpectrum(uint3 id : SV_DispatchThreadID) {
     float ky2 = ky_ * ky_;
 
     ///// Frequency & Wave Angle /////
-    float2 omegaData = Dispersion(k, depth[id.z]);
+    float2 omegaData = Dispersion(k, getDepthLevel(id.z));
     float omega = omegaData.x;
     float dwdk = omegaData.y;
     float thetaPos      = WrapAngle(atan2( ky_, -kx_) - windAngle * PI / 180);
@@ -346,8 +346,8 @@ void PopulateSpectrum(uint3 id : SV_DispatchThreadID) {
     float thetaSwellNeg = WrapAngle(atan2(-ky_,  kx_) - swellAngle * PI / 180);
 
     ///// Spectrum /////
-    float SPos = GetSpectrum(omega, thetaPos, thetaSwellPos, depth[id.z]);
-    float SNeg = GetSpectrum(omega, thetaNeg, thetaSwellNeg, depth[id.z]); 
+    float SPos = GetSpectrum(omega, thetaPos, thetaSwellPos, getDepthLevel(id.z));
+    float SNeg = GetSpectrum(omega, thetaNeg, thetaSwellNeg, getDepthLevel(id.z)); 
     SPos *= dwdk / k; // Convert S(w,theta) to S(kx, ky)
     SNeg *= dwdk / k;
 
@@ -422,7 +422,7 @@ void PropagateWaves(uint3 id : SV_DispatchThreadID) {
     float ky_ = ky * invK;
 
     // Propagate Height H
-    float2 omegaData = Dispersion(k, depth[id.z]);
+    float2 omegaData = Dispersion(k, getDepthLevel(id.z));
     float w = omegaData.x;
     // w = floor() * w0; //modify w to be multiple of w0?
     float S = sin(w * time);
@@ -476,11 +476,11 @@ void Interp(uint3 id : SV_DispatchThreadID) {
     }
     int d1 = 0;
     for (int d = 0; d < depthNum; d++)
-        if (waterDepth >= depth[d]) d1 = d;
+        if (waterDepth >= getDepthLevel(d)) d1 = d;
     int d2 = min(depthNum - 1, d1 + 1);
     float s = 0.f;
     if (d1 != d2)
-        s = (depth[d2] - waterDepth) / (depth[d2] - depth[d1]);
+        s = (getDepthLevel(d2) - waterDepth) / (getDepthLevel(d2) - getDepthLevel(d1));
     uint3 id1 = uint3(id.x, id.y, d1);
     uint3 id2 = uint3(id.x, id.y, d2);
     HOut [id.xy] = s * HIn [id1].x + (1.f - s) * HIn [id2].x;

@@ -151,6 +151,9 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "SWE Configuration")
 	bool LoadParametersFromJson(const FString& FilePath);
 
+	UFUNCTION(BlueprintCallable, Category = "SWE Configuration")
+	bool SaveParametersToJson(const FString& FilePath);
+
 private:
 	float SimulationTime = 0.0f;
 	int32 PaddedSizeX = 512;
@@ -184,6 +187,6 @@ private:
 	void AllocatePersistentTargets(FRHICommandListImmediate& RHICmdList);
 	void SetupInitialStates(FRHICommandListImmediate& RHICmdList);
 	
-	void ExecuteSimulation_RenderThread(FRHICommandListImmediate& RHICmdList, const FSimConstants& Constants, const TArray<float>& Depths);
+	void ExecuteSimulation_RenderThread(FRHICommandListImmediate& RHICmdList, const FSimConstants& Constants);
 	void DispatchFFT_RenderThread(FRDGBuilder& GraphBuilder, FRDGTextureRef TargetTexture, int32 SizeX, int32 SizeY, bool bInverse, int32 NumLayers);
 };

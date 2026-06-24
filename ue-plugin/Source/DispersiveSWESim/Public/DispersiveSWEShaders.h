@@ -37,6 +37,7 @@ BEGIN_GLOBAL_SHADER_PARAMETER_STRUCT(FSimConstants, )
 	SHADER_PARAMETER(float, depthCutoff)
 	SHADER_PARAMETER(int32, paddedGridSizeX)
 	SHADER_PARAMETER(int32, paddedGridSizeY)
+	SHADER_PARAMETER_ARRAY(FVector4f, depthLevels, [4])
 END_GLOBAL_SHADER_PARAMETER_STRUCT()
 
 // Base class for our compute shaders to reduce duplicate code
@@ -256,7 +257,6 @@ public:
 		SHADER_PARAMETER_RDG_TEXTURE_SRV(Texture2D<float2>, hhat)
 		SHADER_PARAMETER_RDG_TEXTURE_SRV(Texture2D<float2>, qhat_x)
 		SHADER_PARAMETER_RDG_TEXTURE_SRV(Texture2D<float2>, qhat_y)
-		SHADER_PARAMETER_RDG_BUFFER_SRV(StructuredBuffer<float>, in8) // depth buffer
 		SHADER_PARAMETER_RDG_TEXTURE_UAV(RWTexture2DArray<float2>, qhat_x_array)
 		SHADER_PARAMETER_RDG_TEXTURE_UAV(RWTexture2DArray<float2>, qhat_y_array)
 	END_SHADER_PARAMETER_STRUCT()
@@ -273,7 +273,6 @@ public:
 		SHADER_PARAMETER_RDG_TEXTURE_SRV(Texture2D<float>, hbar)
 		SHADER_PARAMETER_RDG_TEXTURE_SRV(Texture2DArray<float2>, qHat_x_array)
 		SHADER_PARAMETER_RDG_TEXTURE_SRV(Texture2DArray<float2>, qHat_y_array)
-		SHADER_PARAMETER_RDG_BUFFER_SRV(StructuredBuffer<float>, in8)
 		SHADER_PARAMETER_RDG_TEXTURE_UAV(RWTexture2D<float>, qtilde_x)
 		SHADER_PARAMETER_RDG_TEXTURE_UAV(RWTexture2D<float>, qtilde_y)
 	END_SHADER_PARAMETER_STRUCT()
@@ -290,7 +289,6 @@ public:
 
 	BEGIN_SHADER_PARAMETER_STRUCT(FParameters, )
 		SHADER_PARAMETER_STRUCT_REF(FSimConstants, SimConstants)
-		SHADER_PARAMETER_RDG_BUFFER_SRV(StructuredBuffer<float>, depth)
 		SHADER_PARAMETER_RDG_TEXTURE_UAV(RWTexture2DArray<float2>, HPosOut)
 		SHADER_PARAMETER_RDG_TEXTURE_UAV(RWTexture2DArray<float2>, HNegOut)
 	END_SHADER_PARAMETER_STRUCT()
@@ -306,7 +304,6 @@ public:
 		SHADER_PARAMETER_STRUCT_REF(FSimConstants, SimConstants)
 		SHADER_PARAMETER_RDG_TEXTURE_SRV(Texture2DArray<float2>, HPosIn)
 		SHADER_PARAMETER_RDG_TEXTURE_SRV(Texture2DArray<float2>, HNegIn)
-		SHADER_PARAMETER_RDG_BUFFER_SRV(StructuredBuffer<float>, depth)
 		SHADER_PARAMETER_RDG_TEXTURE_UAV(RWTexture2DArray<float2>, HPropOut)
 		SHADER_PARAMETER_RDG_TEXTURE_UAV(RWTexture2DArray<float2>, DelHxOut)
 		SHADER_PARAMETER_RDG_TEXTURE_UAV(RWTexture2DArray<float2>, DelHyOut)
@@ -329,7 +326,6 @@ public:
 		SHADER_PARAMETER_RDG_TEXTURE_SRV(Texture2DArray<float2>, DxIn)
 		SHADER_PARAMETER_RDG_TEXTURE_SRV(Texture2DArray<float2>, DyIn)
 		SHADER_PARAMETER_RDG_TEXTURE_SRV(Texture2D<float>, hbar)
-		SHADER_PARAMETER_RDG_BUFFER_SRV(StructuredBuffer<float>, depth)
 		SHADER_PARAMETER_RDG_TEXTURE_UAV(RWTexture2D<float>, HOut)
 		SHADER_PARAMETER_RDG_TEXTURE_UAV(RWTexture2D<float>, HxOut)
 		SHADER_PARAMETER_RDG_TEXTURE_UAV(RWTexture2D<float>, HyOut)
@@ -406,3 +402,19 @@ public:
 		SHADER_PARAMETER_RDG_TEXTURE_UAV(RWTexture2D<float>, out0)
 	END_SHADER_PARAMETER_STRUCT()
 };
+
+class FScaleCopyDisplacementCS : public FDispersiveSWEComputeShader
+{
+public:
+	DECLARE_GLOBAL_SHADER(FScaleCopyDisplacementCS);
+	SHADER_USE_PARAMETER_STRUCT(FScaleCopyDisplacementCS, FDispersiveSWEComputeShader);
+
+	BEGIN_SHADER_PARAMETER_STRUCT(FParameters, )
+		SHADER_PARAMETER_STRUCT_REF(FSimConstants, SimConstants)
+		SHADER_PARAMETER(float, ScaleFactor)
+		SHADER_PARAMETER_RDG_TEXTURE_SRV(Texture2D<float>, inDispX)
+		SHADER_PARAMETER_RDG_TEXTURE_SRV(Texture2D<float>, inDispY)
+		SHADER_PARAMETER_RDG_TEXTURE_UAV(RWTexture2D<float2>, outDisp)
+	END_SHADER_PARAMETER_STRUCT()
+};
+

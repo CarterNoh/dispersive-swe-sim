@@ -33,6 +33,7 @@
 #define depthCutoff SimConstants.depthCutoff
 #define paddedGridSizeX SimConstants.paddedGridSizeX
 #define paddedGridSizeY SimConstants.paddedGridSizeY
+#define getDepthLevel(index) SimConstants.depthLevels[(index) / 4][(index) % 4]
 
 #define GRAVITY 9.80665
 #define PI 3.14159265358979323846f
@@ -46,7 +47,6 @@ Texture2D<float>   in4 ;
 Texture2D<float>   in5 ;
 Texture2D<float>   in6 ;
 Texture2D<float>   in7 ;
-StructuredBuffer<float> in8 ;
 RWTexture2D<float> out0;
 RWTexture2D<float> out1;
 RWTexture2D<float> out2;
@@ -617,7 +617,7 @@ void CalcEWave(uint3 id : SV_DispatchThreadID) {
     float beta = sqrt((2.0 / (k * cellSize)) * sin(k * cellSize / 2.0)); // From their 1D code, but different from paper
     // float beta = sqrt((2.0 * k / cellSize) * sin(k * cellSize / 2.0)); // correct formula from paper, but not stable?
     // Angular frequency for dispersion relation
-    float omega = sqrt(GRAVITY * k * SafeTanh(k * in8[id.z])) / beta;
+    float omega = sqrt(GRAVITY * k * SafeTanh(k * getDepthLevel(id.z))) / beta;
     float S = sin(omega * timeStep) * omega / (k * k);
     float C = cos(omega * timeStep);
     float Cx = 1 + (C-1) * kx2;
@@ -722,3 +722,15 @@ void ScaleCopyTexture(uint3 id : SV_DispatchThreadID) {
     if (id.x >= (uint)(gridSizeX) || id.y >= (uint)(gridSizeY)) return;
     out0[id.xy] = in0[id.xy] * ScaleFactor;
 }
+
+Texture2D<float> inDispX;
+Texture2D<float> inDispY;
+RWTexture2D<float2> outDisp;
+
+[numthreads(16, 16, 1)]
+void ScaleCopyDisplacement(uint3 id : SV_DispatchThreadID) {
+    if (id.x >= (uint)(gridSizeX) || id.y >= (uint)(gridSizeY)) return;
+    outDisp[id.xy] = float2(inDispX[id.xy] * ScaleFactor, inDispY[id.xy] * ScaleFactor);
+}
+
+
