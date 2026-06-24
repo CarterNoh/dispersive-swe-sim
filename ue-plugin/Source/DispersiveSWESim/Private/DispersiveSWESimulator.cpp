@@ -1,6 +1,7 @@
 #include "DispersiveSWESimulator.h"
 #include "JsonObjectConverter.h"
 #include "Misc/FileHelper.h"
+#include "Misc/Paths.h"
 #include "Serialization/JsonReader.h"
 #include "Serialization/JsonSerializer.h"
 #include "DispersiveSWEShaders.h"
@@ -906,11 +907,23 @@ void UDispersiveSWESimulator::DispatchFFT_RenderThread(
 
 bool UDispersiveSWESimulator::LoadParametersFromJson(const FString& FilePath)
 {
-	FString JsonString;
-	if (!FFileHelper::LoadFileToString(JsonString, *FilePath))
+	FString FinalPath = FilePath;
+	if (FPaths::IsRelative(FinalPath))
 	{
-		UE_LOG(LogTemp, Warning, TEXT("Failed to load JSON file from path: %s"), *FilePath);
-		return false;
+		FinalPath = FPaths::Combine(FPaths::ProjectDir(), FilePath);
+	}
+
+	FString JsonString;
+	if (!FFileHelper::LoadFileToString(JsonString, *FinalPath))
+	{
+		// Try resolving relative to Content folder as a fallback
+		FString FallbackPath = FPaths::Combine(FPaths::ProjectContentDir(), FilePath);
+		if (!FFileHelper::LoadFileToString(JsonString, *FallbackPath))
+		{
+			UE_LOG(LogTemp, Warning, TEXT("Failed to load JSON file from path: %s (or fallback %s)"), *FinalPath, *FallbackPath);
+			return false;
+		}
+		FinalPath = FallbackPath;
 	}
 
 	TSharedPtr<FJsonObject> JsonObject;
@@ -929,12 +942,18 @@ bool UDispersiveSWESimulator::LoadParametersFromJson(const FString& FilePath)
 		return false;
 	}
 
-	UE_LOG(LogTemp, Log, TEXT("Successfully loaded simulation parameters from: %s"), *FilePath);
+	UE_LOG(LogTemp, Log, TEXT("Successfully loaded simulation parameters from: %s"), *FinalPath);
 	return true;
 }
 
 bool UDispersiveSWESimulator::SaveParametersToJson(const FString& FilePath)
 {
+	FString FinalPath = FilePath;
+	if (FPaths::IsRelative(FinalPath))
+	{
+		FinalPath = FPaths::Combine(FPaths::ProjectDir(), FilePath);
+	}
+
 	TSharedRef<FJsonObject> JsonObject = MakeShared<FJsonObject>();
 	if (!FJsonObjectConverter::UStructToJsonObject(GetClass(), this, JsonObject))
 	{
@@ -957,12 +976,12 @@ bool UDispersiveSWESimulator::SaveParametersToJson(const FString& FilePath)
 		return false;
 	}
 
-	if (!FFileHelper::SaveStringToFile(JsonString, *FilePath))
+	if (!FFileHelper::SaveStringToFile(JsonString, *FinalPath))
 	{
-		UE_LOG(LogTemp, Warning, TEXT("Failed to save JSON string to path: %s"), *FilePath);
+		UE_LOG(LogTemp, Warning, TEXT("Failed to save JSON string to path: %s"), *FinalPath);
 		return false;
 	}
 
-	UE_LOG(LogTemp, Log, TEXT("Successfully saved simulation parameters to: %s"), *FilePath);
+	UE_LOG(LogTemp, Log, TEXT("Successfully saved simulation parameters to: %s"), *FinalPath);
 	return true;
 }
