@@ -387,6 +387,7 @@ RWTexture2DArray<float2> DelHxOut : register(u1);
 RWTexture2DArray<float2> DelHyOut : register(u2);
 RWTexture2DArray<float2> DispXOut : register(u3);
 RWTexture2DArray<float2> DispYOut : register(u4);
+RWTexture2DArray<float2> JOut     : register(u5);
 [numthreads(16, 16, 1)]
 void PropagateWaves(uint3 id : SV_DispatchThreadID) {
     if (id.x >= (uint)(paddedGridSizeX) || id.y >= (uint)(paddedGridSizeY)) return;
@@ -450,8 +451,18 @@ void PropagateWaves(uint3 id : SV_DispatchThreadID) {
     DelHyOut[id] = ComplexMul(dhdy, e_iy);
 
     // Calculate Horizontal Displacement Dx, Dy
-    DispXOut[id] = ComplexMul(HProp, float2(0.f, kx_ * choppiness));
-    DispYOut[id] = ComplexMul(HProp, float2(0.f, ky_ * choppiness));
+    float2 Dx = ComplexMul(HProp, float2(0.f, kx_ * choppiness));
+    float2 Dy = ComplexMul(HProp, float2(0.f, ky_ * choppiness));
+    DispXOut[id] = Dx;
+    DispYOut[id] = Dy;
+
+    // Calculate Folding Map
+    float2 dDxdx = ComplexMul(Dx, float2(0, kx));
+    float2 dDydy = ComplexMul(Dy, float2(0, ky));
+    float2 dDxdy = ComplexMul(Dx, float2(0, ky));
+    float2 Jxx = 1 + dDxdx;
+    float2 Jyy = 1 + dDydy;
+    Jout[id.xy] = Jxx * Jyy - pow(dDxdy, 2);
 }
 
 Texture2DArray<float2> HIn: register(t0);
@@ -459,12 +470,14 @@ Texture2DArray<float2> HxIn: register(t1);
 Texture2DArray<float2> HyIn: register(t2);
 Texture2DArray<float2> DxIn: register(t3);
 Texture2DArray<float2> DyIn: register(t4);
-Texture2D<float>       hbar: register(t5);
+Texture2DArray<float2> JacIn: register(t5);
+Texture2D<float>       hbar: register(t6);
 RWTexture2D<float> HOut : register(u0);
 RWTexture2D<float> HxOut: register(u1);
 RWTexture2D<float> HyOut: register(u2);
 RWTexture2D<float> DxOut: register(u3);
 RWTexture2D<float> DyOut: register(u4);
+RWTexture2D<float> JacOut: register(u5);
 [numthreads(16, 16, 1)]
 void Interp(uint3 id : SV_DispatchThreadID) {
     if (id.x >= (uint)(gridSizeX) || id.y >= (uint)(gridSizeY)) return;
@@ -476,6 +489,7 @@ void Interp(uint3 id : SV_DispatchThreadID) {
         HyOut[id.xy] = 0.f;
         DxOut[id.xy] = 0.f;
         DyOut[id.xy] = 0.f;
+        JacOut[id.xy] = 0.f;
         return;
     }
     int d1 = 0;
@@ -492,4 +506,5 @@ void Interp(uint3 id : SV_DispatchThreadID) {
     HyOut[id.xy] = s * HyIn[id1].x + (1.f - s) * HyIn[id2].x;
     DxOut[id.xy] = s * DxIn[id1].x + (1.f - s) * DxIn[id2].x;
     DyOut[id.xy] = s * DyIn[id1].x + (1.f - s) * DyIn[id2].x;
+    JacOut[id.xy] = s * JacIn[id1].x + (1.f - s) * JacIn[id2].x;
 }

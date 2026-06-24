@@ -64,21 +64,20 @@ public:
 			 qtildePast_x, qtildePast_y, qAdvect_x, qAdvect_y, 
 			 hPast, hbarOld, htildeOld, 
 			 hHat, qHat_x, qHat_y, qHat_x_array, qHat_y_array;
-    GPUField HPos, HNeg, HProp, DelH_x, DelH_y, Disp_x, Disp_y, // Outputs of PopulateSpectrum, PropagateWaves (complex arrays)
-             hFFT, delH_x, delH_y, disp_x, disp_y; // iFFT'd variables after interpolation
+    GPUField HPos, HNeg, HProp, DelH_x, DelH_y, Disp_x, Disp_y, Jac, // Outputs of PopulateSpectrum, PropagateWaves (complex arrays)
+             hFFT, delH_x, delH_y, disp_x, disp_y, jac; // iFFT'd variables after interpolation
              
-	GPUField* fields[35] = {
+	GPUField* fields[36] = {
 		&terrain, &H, &Q_x, &Q_y, &h, &q_x, &q_y,
 		&HPast, &QPast_x, &QPast_y, &alpha_H, &alpha_Q_x, &alpha_Q_y,
 		&hbar, &qbar_x, &qbar_y, &htilde, &qtilde_x, &qtilde_y,
 		&ubar_x, &ubar_y, &ubarNew_x, &ubarNew_y,
 		&qtildePast_x, &qtildePast_y, &qAdvect_x, &qAdvect_y,
 		&hPast, &hbarOld, &htildeOld, 
-        &hFFT, &delH_x, &delH_y, &disp_x, &disp_y, 
-        };
+        &hFFT, &delH_x, &delH_y, &disp_x, &disp_y, &jac};
 	GPUField* fields_complex[3] = {&hHat, &qHat_x, &qHat_y};
-	GPUField* fields_arrays[9] = {&qHat_x_array, &qHat_y_array, 
-        &HPos, &HNeg, &HProp, &DelH_x, &DelH_y, &Disp_x, &Disp_y};
+	GPUField* fields_arrays[10] = {&qHat_x_array, &qHat_y_array, 
+        &HPos, &HNeg, &HProp, &DelH_x, &DelH_y, &Disp_x, &Disp_y, &Jac};
 	GPUBuffer depth;
 
 	GPU* gpu;
