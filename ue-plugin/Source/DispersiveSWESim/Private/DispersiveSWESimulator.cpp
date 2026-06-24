@@ -92,15 +92,15 @@ void UDispersiveSWESimulator::AllocatePersistentTargets(FRHICommandListImmediate
 	GRenderTargetPool.FindFreeElement(RHICmdList, Desc, Texubar_y, TEXT("SWE_ubar_y"));
 
 	// Complex/array targets use padded sizes and PF_G32R32F format
-	FPooledRenderTargetDesc ComplexArrayDesc = FPooledRenderTargetDesc::Create2DDesc(
+	FPooledRenderTargetDesc ComplexArrayDesc = FPooledRenderTargetDesc::Create2DArrayDesc(
 		FIntPoint(PaddedSizeX, PaddedSizeY),
 		PF_G32R32F,
 		FClearValueBinding::None,
 		TexCreate_None,
 		TexCreate_ShaderResource | TexCreate_UAV,
-		false
+		false,
+		DepthLevels.Num()
 	);
-	ComplexArrayDesc.ArraySize = DepthLevels.Num();
 
 	GRenderTargetPool.FindFreeElement(RHICmdList, ComplexArrayDesc, TexHPos, TEXT("SWE_HPos"));
 	GRenderTargetPool.FindFreeElement(RHICmdList, ComplexArrayDesc, TexHNeg, TEXT("SWE_HNeg"));

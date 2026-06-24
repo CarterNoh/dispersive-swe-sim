@@ -9,6 +9,10 @@ ASWESimulatorActor::ASWESimulatorActor()
 {
     PrimaryActorTick.bCanEverTick = false;
 
+#if WITH_EDITORONLY_DATA
+    bIsSpatiallyLoaded = false;
+#endif
+
     // 1. Root Component
     USceneComponent* Root = CreateDefaultSubobject<USceneComponent>(TEXT("Root"));
     RootComponent = Root;
