@@ -39,6 +39,13 @@ ASWESimulatorActor::ASWESimulatorActor()
     {
         WaterMeshComponent->SetStaticMesh(PlaneMeshFinder.Object);
     }
+
+    // Attempt to resolve the default water material
+    static ConstructorHelpers::FObjectFinder<UMaterialInterface> WaterMaterialFinder(TEXT("/DispersiveSWESim/M_SWEDefaultWater"));
+    if (WaterMaterialFinder.Succeeded())
+    {
+        BaseWaterMaterial = WaterMaterialFinder.Object;
+    }
 }
 
 void ASWESimulatorActor::OnConstruction(const FTransform& Transform)

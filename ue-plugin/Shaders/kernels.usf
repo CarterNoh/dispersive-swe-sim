@@ -685,17 +685,17 @@ void InterpQ(uint3 id : SV_DispatchThreadID) {
     int d1_x = 0;
     int d1_y = 0;
     for (int d = 0; d < depthNum; d++) {
-        if (waterDepth_x >= in8[d]) d1_x = d;
-        if (waterDepth_y >= in8[d]) d1_y = d;
+        if (waterDepth_x >= getDepthLevel(d)) d1_x = d;
+        if (waterDepth_y >= getDepthLevel(d)) d1_y = d;
     }
     int d2_x = min(depthNum - 1, d1_x + 1);
     int d2_y = min(depthNum - 1, d1_y + 1);
     float sx = 0.f;
     float sy = 0.f;
     if (d1_x != d2_x)
-        sx = (in8[d2_x] - waterDepth_x) / (in8[d2_x] - in8[d1_x]);
+        sx = (getDepthLevel(d2_x) - waterDepth_x) / (getDepthLevel(d2_x) - getDepthLevel(d1_x));
     if (d1_y != d2_y)
-        sy = (in8[d2_y] - waterDepth_y) / (in8[d2_y] - in8[d1_y]);
+        sy = (getDepthLevel(d2_y) - waterDepth_y) / (getDepthLevel(d2_y) - getDepthLevel(d1_y));
     qtilde_x[id.xy] = sx * qHat_x_array[uint3(id.x, id.y, d1_x)].x + (1.f - sx) * qHat_x_array[uint3(id.x, id.y, d2_x)].x;
     qtilde_y[id.xy] = sy * qHat_y_array[uint3(id.x, id.y, d1_y)].x + (1.f - sy) * qHat_y_array[uint3(id.x, id.y, d2_y)].x;
 }
