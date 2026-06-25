@@ -466,8 +466,10 @@ void GPU::UpdateFFTConstants(const FFTConstants& constants) {
 }
 
 bool GPU::CompileFFTShaders(int sizeX, int sizeY) {
-    // if (!CompileComputeShader(L"shaders/fft.hlsl", "FFTKernel_1D", &fftShader))
-    //     return false;
+    if (sizeX > 2048 || sizeY > 2048) {
+        std::cerr << "ERROR: FFT size exceeds the maximum supported N/2 size limit (2048)." << std::endl;
+        return false;
+    }
 
     ID3DBlob* shaderBlob = nullptr;
     ID3DBlob* errorBlob = nullptr;

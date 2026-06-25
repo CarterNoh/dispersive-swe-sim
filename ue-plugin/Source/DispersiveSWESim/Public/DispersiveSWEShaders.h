@@ -358,7 +358,7 @@ public:
 	SHADER_USE_PARAMETER_STRUCT(FFFTKernel1DCS, FGlobalShader);
 
 	// Sparse permutations supporting different power-of-two FFT sizes
-	class FFFTSizeDim : SHADER_PERMUTATION_SPARSE_INT("FFT_SIZE", 32, 64, 128, 256, 512, 1024);
+	class FFFTSizeDim : SHADER_PERMUTATION_SPARSE_INT("FFT_SIZE", 32, 64, 128, 256, 512, 1024, 2048);
 	class FIsArrayDim : SHADER_PERMUTATION_BOOL("IS_ARRAY");
 
 	using FPermutationDomain = TShaderPermutationDomain<FFFTSizeDim, FIsArrayDim>;

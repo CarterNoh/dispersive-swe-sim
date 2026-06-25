@@ -62,73 +62,81 @@ uint bit_reverse(uint x, uint bits) {
 // Kernel entry point
 // ---------------------------------------------------------------------------
 
-[numthreads(FFT_SIZE, 1, 1)]
+#define THREAD_COUNT (FFT_SIZE / 2)
+
+[numthreads(THREAD_COUNT, 1, 1)]
 void FFTKernel_1D(
     uint3 GI  : SV_GroupThreadID,   // tid = GI.x  ∈ [0, FFT_MAX_N)
     uint3 GID : SV_GroupID          // GID.y = row or column index
 ) {
     const uint tid = GI.x;
-    uint N = (cb_IsRow == 1) ? (uint)cb_Nx : (uint)cb_Ny;
-    uint bits = (cb_IsRow == 1) ? (uint)cb_BitsX : (uint)cb_BitsY;
+    const uint N = (cb_IsRow == 1) ? (uint)cb_Nx : (uint)cb_Ny;
+    const uint bits = (cb_IsRow == 1) ? (uint)cb_BitsX : (uint)cb_BitsY;
 
     // -------------------------------------------------------------------------
     // PHASE 1 — Load with bit-reversal permutation into groupshared memory
     // -------------------------------------------------------------------------
 
     // Global element coordinate: row pass uses (tid, row), column pass uses (column, tid).
+    // Each thread processes 2 elements
+    const uint idx1 = tid;
+    const uint idx2 = tid + THREAD_COUNT;
+
     #ifdef IS_ARRAY
-        uint3 coord = (cb_IsRow == 1) ? uint3(tid, GID.y, GID.z) : uint3(GID.y, tid, GID.z);
+        const uint3 coord1 = (cb_IsRow == 1) ? uint3(idx1, GID.y, GID.z) : uint3(GID.y, idx1, GID.z);
+        const uint3 coord2 = (cb_IsRow == 1) ? uint3(idx2, GID.y, GID.z) : uint3(GID.y, idx2, GID.z);
     #else
-        uint2 coord = (cb_IsRow == 1) ? uint2(tid, GID.y) : uint2(GID.y, tid);
+        const uint2 coord1 = (cb_IsRow == 1) ? uint2(idx1, GID.y) : uint2(GID.y, idx1);
+        const uint2 coord2 = (cb_IsRow == 1) ? uint2(idx2, GID.y) : uint2(GID.y, idx2);
     #endif
 
-    if (tid < N) {
-        const uint rev = bit_reverse(tid, bits);
-        gs_Data[rev] = fft[coord];
+    if (idx1 < N) {
+        const uint rev1 = bit_reverse(idx1, bits);
+        gs_Data[rev1] = fft[coord1];
+    }
+    if (idx2 < N) {
+        const uint rev2 = bit_reverse(idx2, bits);
+        gs_Data[rev2] = fft[coord2];
     }
     GroupMemoryBarrierWithGroupSync();
 
     // -------------------------------------------------------------------------
     // PHASE 2 — Butterfly passes
     // -------------------------------------------------------------------------
-
+    
     for (uint passNum = 0; passNum < bits; ++passNum) {
         const uint span      = 1u << passNum;
         const uint groupSize = span << 1;
-        // Declare variables outside the scope so we can write them later
-        float2 newEven, newOdd;
-        uint evenIdx, oddIdx;
-        if (tid < N / 2) {
-            const uint k       = tid % span;
-            evenIdx            = (tid / span) * groupSize + k;
-            oddIdx             = evenIdx + span;
-            float2 tw   = twiddle_factor(k, groupSize, cb_Inverse);
-            float2 even = gs_Data[evenIdx];
-            float2 odd  = complex_mul(tw, gs_Data[oddIdx]);
-            newEven = complex_add(even, odd);
-            newOdd  = complex_sub(even, odd);
-        }
-        // All threads sync before we overwrite the old data
+        
+        // Since THREAD_COUNT is N/2, every thread handles exactly one butterfly.
+        const uint k       = tid % span;
+        const uint evenIdx = (tid / span) * groupSize + k;
+        const uint oddIdx  = evenIdx + span;
+        
+        float2 tw   = twiddle_factor(k, groupSize, cb_Inverse);
+        float2 even = gs_Data[evenIdx];
+        float2 odd  = complex_mul(tw, gs_Data[oddIdx]);
+        
+        float2 newEven = complex_add(even, odd);
+        float2 newOdd  = complex_sub(even, odd);
+        
         GroupMemoryBarrierWithGroupSync();
-        if (tid < N / 2) {
-            gs_Data[evenIdx] = newEven;
-            gs_Data[oddIdx]  = newOdd;
-        }
-        // All threads sync before the next pass loop begins
+        gs_Data[evenIdx] = newEven;
+        gs_Data[oddIdx]  = newOdd;
         GroupMemoryBarrierWithGroupSync();
     }
 
     // -------------------------------------------------------------------------
     // PHASE 3 — Normalize (inverse only) and write back to global memory
     // -------------------------------------------------------------------------
+    
+    const float scale = cb_Inverse ? (1.0f / (float)N) : 1.0f;
 
-    float scale = cb_Inverse ? (1.0f / (float)N) : 1.0f;
-
-    float2 result = float2(0.f, 0.f);
-    if (tid < N) {
-        result.x = gs_Data[tid].x * scale;
-        result.y = gs_Data[tid].y * scale;
-        fft[coord] = result;
+    if (idx1 < N) {
+        fft[coord1] = gs_Data[idx1] * scale;
+    }
+    if (idx2 < N) {
+        fft[coord2] = gs_Data[idx2] * scale;
     }
 }
 
