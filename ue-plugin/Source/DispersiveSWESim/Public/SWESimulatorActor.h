@@ -56,16 +56,16 @@ public:
 
 private:
     // --- Runtime Render Targets ---
-    UPROPERTY()
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="SWE | Debug", meta=(AllowPrivateAccess="true"))
     UTextureRenderTarget2D* TerrainCaptureRT;
 
-    UPROPERTY()
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="SWE | Debug", meta=(AllowPrivateAccess="true"))
     UTextureRenderTarget2D* HeightOutputRT;
 
-    UPROPERTY()
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="SWE | Debug", meta=(AllowPrivateAccess="true"))
     UTextureRenderTarget2D* DisplacementOutputRT;
 
-    UPROPERTY()
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="SWE | Debug", meta=(AllowPrivateAccess="true"))
     UTextureRenderTarget2D* FoamOutputRT;
 
     // --- Material ---

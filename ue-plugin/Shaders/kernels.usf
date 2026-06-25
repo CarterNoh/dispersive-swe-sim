@@ -702,16 +702,18 @@ void InterpQ(uint3 id : SV_DispatchThreadID) {
 
 // Shader parameter for water level initialization
 float WaterLevel;
+float TerrainCaptureCameraZ;
 
 [numthreads(16, 16, 1)]
 void InitializeWaterHeight(uint3 id : SV_DispatchThreadID) {
-    // Inputs: in3 = terrain
-    // Outputs: out0 = h (water height), out1 = H (total elevation)
+    // Inputs: in3 = terrain (raw capture scene depth in cm)
+    // Outputs: out0 = h (water height), out1 = H (total elevation), out2 = converted terrain height (meters)
     if (id.x >= (uint)(gridSizeX) || id.y >= (uint)(gridSizeY)) return;
-    float terrainHeight = in3[id.xy] * 0.01f;
+    float terrainHeight = (TerrainCaptureCameraZ - in3[id.xy]) * 0.01f;
     float h_val = max(0.f, WaterLevel - terrainHeight);
     out0[id.xy] = h_val;
     out1[id.xy] = terrainHeight + h_val;
+    out2[id.xy] = terrainHeight;
 }
 
 // Shader parameter for texture scaling and copying

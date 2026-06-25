@@ -4,6 +4,7 @@
 #include "Components/SceneComponent.h"
 #include "Engine/StaticMesh.h"
 #include "UObject/ConstructorHelpers.h"
+#include "Math/Float16Color.h"
 
 #if WITH_EDITOR
 #include "LandscapeProxy.h"
@@ -31,6 +32,7 @@ ASWESimulatorActor::ASWESimulatorActor()
     // 3. Attach water mesh representation (flat plane)
     WaterMeshComponent = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("WaterMesh"));
     WaterMeshComponent->SetupAttachment(Root);
+    WaterMeshComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 
     // 4. Attach SWE Simulation orchestrator
     SimComponent = CreateDefaultSubobject<UDispersiveSWESimulator>(TEXT("SWESimulator"));
@@ -158,6 +160,8 @@ void ASWESimulatorActor::OnConstruction(const FTransform& Transform)
 
 void ASWESimulatorActor::BeginPlay()
 {
+    UE_LOG(LogTemp, Warning, TEXT("ASWESimulatorActor::BeginPlay() started"));
+
     // 1. Re-run bounds calculation to ensure runtime matches any runtime changes
     if (bAutoFitToTerrain && TerrainActor)
     {
@@ -239,13 +243,52 @@ void ASWESimulatorActor::BeginPlay()
     FoamOutputRT->AddressY = TA_Clamp;
 
     // 3. Setup Scene Capture Component properties
+    float CameraZ = 5000.0f;
     if (TerrainCaptureComponent)
     {
+        // Temporarily hide the water mesh component so it doesn't block the depth capture of the terrain below it
+        if (WaterMeshComponent)
+        {
+            WaterMeshComponent->SetVisibility(false);
+        }
+
         TerrainCaptureComponent->ProjectionType = ECameraProjectionMode::Orthographic;
         TerrainCaptureComponent->OrthoWidth = CapturedWorldWidth;
         TerrainCaptureComponent->TextureTarget = TerrainCaptureRT;
-        TerrainCaptureComponent->CaptureSource = ESceneCaptureSource::SCS_DeviceDepth; // Grayscale depth map
+        TerrainCaptureComponent->CaptureSource = ESceneCaptureSource::SCS_SceneDepth; // Absolute scene depth in centimeters
         TerrainCaptureComponent->CaptureScene(); // Render the terrain depth once on start
+        CameraZ = TerrainCaptureComponent->GetComponentLocation().Z;
+
+        if (WaterMeshComponent)
+        {
+            WaterMeshComponent->SetVisibility(true);
+        }
+
+        // Diagnostic readback of captured depth pixels
+        if (TerrainCaptureRT)
+        {
+            FTextureRenderTargetResource* Resource = TerrainCaptureRT->GameThread_GetRenderTargetResource();
+            TArray<FFloat16Color> Pixels;
+            if (Resource && Resource->ReadFloat16Pixels(Pixels))
+            {
+                float MinR = 1e20f;
+                float MaxR = -1e20f;
+                float SumR = 0.f;
+                for (const FFloat16Color& Pixel : Pixels)
+                {
+                    float Val = Pixel.R.GetFloat();
+                    if (Val < MinR) MinR = Val;
+                    if (Val > MaxR) MaxR = Val;
+                    SumR += Val;
+                }
+                float AvgR = Pixels.Num() > 0 ? SumR / Pixels.Num() : 0.f;
+                UE_LOG(LogTemp, Warning, TEXT("TerrainCaptureRT Diagnostic: MinR=%f, MaxR=%f, AvgR=%f, NumPixels=%d, CameraZ=%f"), MinR, MaxR, AvgR, Pixels.Num(), CameraZ);
+            }
+            else
+            {
+                UE_LOG(LogTemp, Warning, TEXT("TerrainCaptureRT Diagnostic: Failed to read pixels."));
+            }
+        }
     }
 
     // 4. Configure and Bind Render Targets to Simulation Component
@@ -256,6 +299,7 @@ void ASWESimulatorActor::BeginPlay()
         SimComponent->CapturedWorldWidth = CapturedWorldWidth;
         SimComponent->bAutoCalculateCellSize = true;
         SimComponent->WaterLevel = WaterLevel;
+        SimComponent->TerrainCaptureCameraZ = CameraZ;
 
         SimComponent->TerrainHeightInputRT = TerrainCaptureRT;
         SimComponent->HeightOutputRT = HeightOutputRT;
@@ -277,8 +321,14 @@ void ASWESimulatorActor::BeginPlay()
     {
         DynamicWaterMaterial = UMaterialInstanceDynamic::Create(BaseWaterMaterial, this);
         DynamicWaterMaterial->SetTextureParameterValue(FName("HeightMap"), HeightOutputRT);
+        DynamicWaterMaterial->SetTextureParameterValue(FName("Height Map"), HeightOutputRT);
+        DynamicWaterMaterial->SetTextureParameterValue(FName("Height"), HeightOutputRT);
         DynamicWaterMaterial->SetTextureParameterValue(FName("DisplacementMap"), DisplacementOutputRT);
+        DynamicWaterMaterial->SetTextureParameterValue(FName("Displacement Map"), DisplacementOutputRT);
+        DynamicWaterMaterial->SetTextureParameterValue(FName("Displacement"), DisplacementOutputRT);
         DynamicWaterMaterial->SetTextureParameterValue(FName("FoamMap"), FoamOutputRT);
+        DynamicWaterMaterial->SetTextureParameterValue(FName("Foam Map"), FoamOutputRT);
+        DynamicWaterMaterial->SetTextureParameterValue(FName("Foam"), FoamOutputRT);
         WaterMeshComponent->SetMaterial(0, DynamicWaterMaterial);
     }
 }

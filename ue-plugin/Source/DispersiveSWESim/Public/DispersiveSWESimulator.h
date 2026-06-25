@@ -126,6 +126,10 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SWE Inputs")
 	UTextureRenderTarget2D* TerrainHeightInputRT = nullptr;
 
+	// The absolute Z height of the terrain capture camera (used to reconstruct world Z from depth)
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SWE Inputs")
+	float TerrainCaptureCameraZ = 5000.0f;
+
 	// Auto calculate CellSize based on CapturedWorldWidth and GridSizeX
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SWE Inputs")
 	bool bAutoCalculateCellSize = true;

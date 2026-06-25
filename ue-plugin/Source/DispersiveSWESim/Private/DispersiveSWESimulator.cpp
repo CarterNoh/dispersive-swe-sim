@@ -22,6 +22,7 @@ UDispersiveSWESimulator::UDispersiveSWESimulator()
 
 void UDispersiveSWESimulator::BeginPlay()
 {
+	UE_LOG(LogTemp, Warning, TEXT("UDispersiveSWESimulator::BeginPlay() called"));
 	Super::BeginPlay();
 	InitializeSimulation();
 }
@@ -36,6 +37,8 @@ int32 NextPowerOf2(int32 n)
 
 void UDispersiveSWESimulator::InitializeSimulation()
 {
+	UE_LOG(LogTemp, Warning, TEXT("InitializeSimulation() running: GridSizeX=%d, GridSizeY=%d, CellSize=%f, CapturedWorldWidth=%f"), GridSizeX, GridSizeY, CellSize, CapturedWorldWidth);
+
 	// Load configuration from JSON if path is provided
 	if (!JsonConfigFilePath.IsEmpty())
 	{
@@ -55,9 +58,11 @@ void UDispersiveSWESimulator::InitializeSimulation()
 	ENQUEUE_RENDER_COMMAND(InitializeSWESimulation)(
 		[this](FRHICommandListImmediate& RHICmdList)
 		{
+			UE_LOG(LogTemp, Warning, TEXT("InitializeSWESimulation RenderCommand queueing AllocatePersistentTargets and SetupInitialStates"));
 			AllocatePersistentTargets(RHICmdList);
 			SetupInitialStates(RHICmdList);
 			bInitialized = true;
+			UE_LOG(LogTemp, Warning, TEXT("InitializeSWESimulation RenderCommand finished. bInitialized=true"));
 		}
 	);
 }
@@ -155,11 +160,12 @@ void UDispersiveSWESimulator::SetupInitialStates(FRHICommandListImmediate& RHICm
 		FRDGBuilder GraphBuilder(RHICmdList);
 
 		// Import the live terrain height input render target
-		FRDGTextureRef Terrain_RDG = GraphBuilder.RegisterExternalTexture(
+		FRDGTextureRef TerrainInput_RDG = GraphBuilder.RegisterExternalTexture(
 			CreateRenderTarget(TerrainHeightInputRT->GetRenderTargetResource()->GetTexture2DRHI(), TEXT("SWE_TerrainInput"))
 		);
 
 		// Import the persistent states
+		FRDGTextureRef Terrain_RDG = GraphBuilder.RegisterExternalTexture(TexTerrain);
 		FRDGTextureRef H_RDG = GraphBuilder.RegisterExternalTexture(TexH);
 		FRDGTextureRef h_RDG = GraphBuilder.RegisterExternalTexture(Texh);
 		FRDGTextureRef hbar_RDG = GraphBuilder.RegisterExternalTexture(Texhbar);
@@ -170,9 +176,11 @@ void UDispersiveSWESimulator::SetupInitialStates(FRHICommandListImmediate& RHICm
 		FInitializeWaterHeightCS::FParameters* InitParams = GraphBuilder.AllocParameters<FInitializeWaterHeightCS::FParameters>();
 		InitParams->SimConstants = ConstantBuffer;
 		InitParams->WaterLevel = WaterLevel * 0.01f; // Convert cm to meters
-		InitParams->in3 = GraphBuilder.CreateSRV(Terrain_RDG);
+		InitParams->TerrainCaptureCameraZ = TerrainCaptureCameraZ;
+		InitParams->in3 = GraphBuilder.CreateSRV(TerrainInput_RDG);
 		InitParams->out0 = GraphBuilder.CreateUAV(h_RDG);
 		InitParams->out1 = GraphBuilder.CreateUAV(H_RDG);
+		InitParams->out2 = GraphBuilder.CreateUAV(Terrain_RDG);
 
 		FComputeShaderUtils::AddPass(
 			GraphBuilder,
@@ -269,6 +277,13 @@ void UDispersiveSWESimulator::TickComponent(float DeltaTime, ELevelTick TickType
 {
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
 
+	static int32 TickCount = 0;
+	if (TickCount < 10)
+	{
+		TickCount++;
+		UE_LOG(LogTemp, Warning, TEXT("UDispersiveSWESimulator::TickComponent() called. Frame %d, bInitialized=%d"), TickCount, bInitialized ? 1 : 0);
+	}
+
 	if (!bInitialized) return;
 
 	SimulationTime += TimeStep;
@@ -324,20 +339,7 @@ void UDispersiveSWESimulator::ExecuteSimulation_RenderThread(
 	FRDGBuilder GraphBuilder(RHICmdList);
 
 	// 1. Import persistent buffers
-	FRDGTextureRef Terrain_RDG = nullptr;
-	if (TerrainHeightInputRT && 
-		TerrainHeightInputRT->GetRenderTargetResource() && 
-		TerrainHeightInputRT->GetRenderTargetResource()->GetTexture2DRHI())
-	{
-		Terrain_RDG = GraphBuilder.RegisterExternalTexture(CreateRenderTarget(
-			TerrainHeightInputRT->GetRenderTargetResource()->GetTexture2DRHI(),
-			TEXT("SWE_TerrainInput")
-		));
-	}
-	else
-	{
-		Terrain_RDG = GraphBuilder.RegisterExternalTexture(TexTerrain);
-	}
+	FRDGTextureRef Terrain_RDG = GraphBuilder.RegisterExternalTexture(TexTerrain);
 
 	FRDGTextureRef H_RDG = GraphBuilder.RegisterExternalTexture(TexH);
 	FRDGTextureRef Qx_RDG = GraphBuilder.RegisterExternalTexture(TexQ_x);
