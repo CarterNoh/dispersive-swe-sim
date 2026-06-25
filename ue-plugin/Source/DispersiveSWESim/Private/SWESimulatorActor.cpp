@@ -332,3 +332,12 @@ void ASWESimulatorActor::BeginPlay()
         WaterMeshComponent->SetMaterial(0, DynamicWaterMaterial);
     }
 }
+
+float ASWESimulatorActor::GetWaterHeightAtLocation(const FVector& WorldLocation) const
+{
+    if (SimComponent)
+    {
+        return SimComponent->GetWaterHeightAtLocation(WorldLocation);
+    }
+    return WaterLevel;
+}

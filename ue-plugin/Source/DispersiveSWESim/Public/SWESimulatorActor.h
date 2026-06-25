@@ -18,6 +18,9 @@ public:
     // Editor-time viewport preview and auto-fitting
     virtual void OnConstruction(const FTransform& Transform) override;
 
+    UFUNCTION(BlueprintCallable, Category = "SWE | Buoyancy")
+    float GetWaterHeightAtLocation(const FVector& WorldLocation) const;
+
 protected:
     virtual void BeginPlay() override;
 

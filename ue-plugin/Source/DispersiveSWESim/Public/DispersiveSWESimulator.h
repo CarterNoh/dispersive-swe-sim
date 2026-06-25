@@ -5,6 +5,7 @@
 #include "Engine/TextureRenderTarget2D.h"
 #include "RenderGraphResources.h"
 #include "DispersiveSWEShaders.h"
+#include <atomic>
 #include "DispersiveSWESimulator.generated.h"
 
 UCLASS(ClassGroup=(Custom), meta=(BlueprintSpawnableComponent))
@@ -158,11 +159,25 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "SWE Configuration")
 	bool SaveParametersToJson(const FString& FilePath);
 
+	UFUNCTION(BlueprintCallable, Category = "SWE | Buoyancy")
+	float GetWaterHeightAtLocation(const FVector& WorldLocation) const;
+
 private:
 	float SimulationTime = 0.0f;
 	int32 PaddedSizeX = 512;
 	int32 PaddedSizeY = 512;
 	bool bInitialized = false;
+
+	// Staging textures for double-buffered async readback
+	FTextureRHIRef StagingTextures[2];
+	int32 StagingWriteIndex = 0;
+	int32 StagingReadIndex = 1;
+
+	// Thread-safe double-buffered CPU height cache (in meters)
+	TArray<float> CPUHeightData[2];
+	std::atomic<int32> ActiveCPUBufferIndex{0};
+
+	float GetCachedHeight(int32 X, int32 Y) const;
 
 	// Persistent graphics buffers for simulation states
 	TRefCountPtr<IPooledRenderTarget> TexTerrain;
