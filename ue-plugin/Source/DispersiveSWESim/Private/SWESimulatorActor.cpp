@@ -1,6 +1,6 @@
 #include "SWESimulatorActor.h"
 #include "Materials/MaterialInstanceDynamic.h"
-#include "Components/StaticMeshComponent.h"
+#include "ProceduralMeshComponent.h"
 #include "Components/SceneComponent.h"
 #include "Engine/StaticMesh.h"
 #include "UObject/ConstructorHelpers.h"
@@ -30,7 +30,7 @@ ASWESimulatorActor::ASWESimulatorActor()
     TerrainCaptureComponent->SetRelativeRotation(FRotator(-90.0f, 0.0f, 0.0f)); // Pointing down
 
     // 3. Attach water mesh representation (flat plane)
-    WaterMeshComponent = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("WaterMesh"));
+    WaterMeshComponent = CreateDefaultSubobject<UProceduralMeshComponent>(TEXT("WaterMesh"));
     WaterMeshComponent->SetupAttachment(Root);
     WaterMeshComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 
@@ -44,22 +44,11 @@ ASWESimulatorActor::ASWESimulatorActor()
     bAutoFitToTerrain = true;
     bAutoLoadDefaultAssets = true;
 
-    // Attempt to resolve the default Engine plane mesh
-    static ConstructorHelpers::FObjectFinder<UStaticMesh> PlaneMeshFinder(TEXT("/Engine/BasicShapes/Plane.Plane"));
-    if (PlaneMeshFinder.Succeeded() && WaterMeshComponent)
-    {
-        WaterMeshComponent->SetStaticMesh(PlaneMeshFinder.Object);
-    }
-
     // Attempt to resolve the default water material
     static ConstructorHelpers::FObjectFinder<UMaterialInterface> WaterMaterialFinder(TEXT("/DispersiveSWESim/M_SWEDefaultWater"));
     if (WaterMaterialFinder.Succeeded())
     {
         BaseWaterMaterial = WaterMaterialFinder.Object;
-        if (WaterMeshComponent)
-        {
-            WaterMeshComponent->SetMaterial(0, BaseWaterMaterial);
-        }
     }
 }
 
@@ -117,12 +106,9 @@ void ASWESimulatorActor::OnConstruction(const FTransform& Transform)
         NewLoc.Z = WaterLevel;
         SetActorLocation(NewLoc);
 
-        // Scale the mesh component to match the bounding box extent.
-        // The default Engine plane (/Engine/BasicShapes/Plane) is 100x100 units.
-        // Extent is half-size, so scale factor is BoxExtent / 50.0f
         if (WaterMeshComponent)
         {
-            WaterMeshComponent->SetWorldScale3D(FVector(BoxExtent.X / 50.0f, BoxExtent.Y / 50.0f, 1.0f));
+            WaterMeshComponent->SetWorldScale3D(FVector(1.0f, 1.0f, 1.0f));
         }
         if (TerrainCaptureComponent)
         {
@@ -141,14 +127,11 @@ void ASWESimulatorActor::OnConstruction(const FTransform& Transform)
         }
     }
 
-    // Auto-resolve basic mesh fallback at construction time if none is assigned
-    if (bAutoLoadDefaultAssets && WaterMeshComponent && !WaterMeshComponent->GetStaticMesh())
+    // 5. Generate procedural water mesh
+    if (WaterMeshComponent)
     {
-        UStaticMesh* DefaultPlane = Cast<UStaticMesh>(StaticLoadObject(UStaticMesh::StaticClass(), nullptr, TEXT("/Engine/BasicShapes/Plane.Plane")));
-        if (DefaultPlane)
-        {
-            WaterMeshComponent->SetStaticMesh(DefaultPlane);
-        }
+        WaterMeshComponent->SetWorldScale3D(FVector(1.0f, 1.0f, 1.0f));
+        GenerateWaterGrid();
     }
 
     // Auto-assign the base water material so it is visible in the editor viewport
@@ -213,8 +196,15 @@ void ASWESimulatorActor::BeginPlay()
 
         if (WaterMeshComponent)
         {
-            WaterMeshComponent->SetWorldScale3D(FVector(BoxExtent.X / 50.0f, BoxExtent.Y / 50.0f, 1.0f));
+            WaterMeshComponent->SetWorldScale3D(FVector(1.0f, 1.0f, 1.0f));
         }
+    }
+
+    // Generate procedural water mesh at runtime
+    if (WaterMeshComponent)
+    {
+        WaterMeshComponent->SetWorldScale3D(FVector(1.0f, 1.0f, 1.0f));
+        GenerateWaterGrid();
     }
 
     // 2. Programmatically allocate 32-bit float Render Targets to avoid asset cluttering
@@ -340,4 +330,76 @@ float ASWESimulatorActor::GetWaterHeightAtLocation(const FVector& WorldLocation)
         return SimComponent->GetWaterHeightAtLocation(WorldLocation);
     }
     return WaterLevel;
+}
+
+void ASWESimulatorActor::GenerateWaterGrid()
+{
+    if (!WaterMeshComponent) return;
+
+    int32 N = GridResolution;
+    if (N <= 0) return;
+
+    TArray<FVector> Vertices;
+    TArray<int32> Triangles;
+    TArray<FVector> Normals;
+    TArray<FVector2D> UV0;
+    TArray<FProcMeshTangent> Tangents;
+    TArray<FLinearColor> VertexColors;
+
+    Vertices.Reserve((N + 1) * (N + 1));
+    UV0.Reserve((N + 1) * (N + 1));
+    Normals.Reserve((N + 1) * (N + 1));
+    Tangents.Reserve((N + 1) * (N + 1));
+
+    float HalfWidth = CapturedWorldWidth * 0.5f;
+
+    for (int32 y = 0; y <= N; ++y)
+    {
+        float V = (float)y / N;
+        float YPos = -HalfWidth + V * CapturedWorldWidth;
+
+        for (int32 x = 0; x <= N; ++x)
+        {
+            float U = (float)x / N;
+            float XPos = -HalfWidth + U * CapturedWorldWidth;
+
+            Vertices.Add(FVector(XPos, YPos, 0.0f));
+            UV0.Add(FVector2D(U, V));
+            Normals.Add(FVector(0.0f, 0.0f, 1.0f));
+            Tangents.Add(FProcMeshTangent(1.0f, 0.0f, 0.0f));
+        }
+    }
+
+    Triangles.Reserve(N * N * 6);
+    for (int32 y = 0; y < N; ++y)
+    {
+        for (int32 x = 0; x < N; ++x)
+        {
+            int32 IndexBL = y * (N + 1) * 1 + x;
+            int32 IndexBR = IndexBL + 1;
+            int32 IndexTL = (y + 1) * (N + 1) * 1 + x;
+            int32 IndexTR = IndexTL + 1;
+
+            // Winding order: Clockwise
+            Triangles.Add(IndexBL);
+            Triangles.Add(IndexTL);
+            Triangles.Add(IndexBR);
+
+            Triangles.Add(IndexBR);
+            Triangles.Add(IndexTL);
+            Triangles.Add(IndexTR);
+        }
+    }
+
+    WaterMeshComponent->ClearAllMeshSections();
+    WaterMeshComponent->CreateMeshSection_LinearColor(
+        0,
+        Vertices,
+        Triangles,
+        Normals,
+        UV0,
+        VertexColors,
+        Tangents,
+        true // Create collision
+    );
 }

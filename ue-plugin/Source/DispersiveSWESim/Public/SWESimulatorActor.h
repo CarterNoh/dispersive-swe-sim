@@ -33,7 +33,7 @@ public:
     UDispersiveSWESimulator* SimComponent;
 
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="SWE | Components")
-    UStaticMeshComponent* WaterMeshComponent;
+    class UProceduralMeshComponent* WaterMeshComponent;
 
     // --- Configuration ---
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="SWE | Configuration")
@@ -58,6 +58,8 @@ public:
     UMaterialInterface* BaseWaterMaterial;
 
 private:
+    void GenerateWaterGrid();
+
     // --- Runtime Render Targets ---
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="SWE | Debug", meta=(AllowPrivateAccess="true"))
     UTextureRenderTarget2D* TerrainCaptureRT;

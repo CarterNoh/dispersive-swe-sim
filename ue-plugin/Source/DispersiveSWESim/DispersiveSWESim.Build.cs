@@ -23,7 +23,8 @@ public class DispersiveSWESim : ModuleRules
 				"Engine",
 				"Json",
 				"JsonUtilities",
-				"Landscape"
+				"Landscape",
+				"ProceduralMeshComponent"
 			}
 		);
 	}
