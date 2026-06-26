@@ -50,6 +50,10 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SWE Simulation")
 	float MaxSafeDepth = 0.0f;
 
+	// Safety multiplier applied to the calculated max safe depth curve to prevent numerical explosion.
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SWE Simulation", meta = (ToolTip = "Safety multiplier applied to the calculated max safe depth curve to prevent numerical explosion near the stability boundary. Defaults to 0.8."))
+	float StabilitySafetyFactor = 0.8f;
+
 	// Initial water free surface level in centimeters
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SWE Simulation")
 	float WaterLevel = 0.0f;

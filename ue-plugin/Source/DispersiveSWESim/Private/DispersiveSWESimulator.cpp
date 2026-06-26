@@ -177,6 +177,7 @@ void UDispersiveSWESimulator::SetupInitialStates(FRHICommandListImmediate& RHICm
 			float b = 0.045464332332812774f;
 			float c = -0.14717654147795045f;
 			CalculatedMaxSafeDepth = a * CellSizeMeters * CellSizeMeters + b * CellSizeMeters + c;
+			CalculatedMaxSafeDepth *= StabilitySafetyFactor;
 			if (CalculatedMaxSafeDepth < 0.0f) CalculatedMaxSafeDepth = 0.0f;
 		}
 		CPUConstants.maxSafeDepth = CalculatedMaxSafeDepth;
@@ -369,6 +370,7 @@ void UDispersiveSWESimulator::TickComponent(float DeltaTime, ELevelTick TickType
 			float b = 0.045464332332812774f;
 			float c = -0.14717654147795045f;
 			CalculatedMaxSafeDepth = a * CellSizeMeters * CellSizeMeters + b * CellSizeMeters + c;
+			CalculatedMaxSafeDepth *= StabilitySafetyFactor;
 			if (CalculatedMaxSafeDepth < 0.0f) CalculatedMaxSafeDepth = 0.0f;
 		}
 		Constants.maxSafeDepth = CalculatedMaxSafeDepth;

@@ -353,8 +353,8 @@ void CalcSWE(uint3 id : SV_DispatchThreadID) {
     float q_y_1 = 0.5f * (q_y_p05 + q_y_p15);
     
     // Calculate h_(i+0.5,j)
-    float h_x_p05 = min((in2[curr] + in2[right]) * 0.5f, maxSafeDepth);  
-    float h_y_p05 = min((in2[curr] + in2[up]) * 0.5f, maxSafeDepth);
+    float h_x_p05 = clamp((in2[curr] + in2[right]) * 0.5f, minWaterHeight, maxSafeDepth);  
+    float h_y_p05 = clamp((in2[curr] + in2[up]) * 0.5f, minWaterHeight, maxSafeDepth);
 
     // Calculate corresponding values for u_x_(i,j) using upwinding
     float u_x_0 = (q_x_0 >= 0.f) ? in0[left] : in0[curr];

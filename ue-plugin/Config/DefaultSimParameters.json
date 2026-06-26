@@ -4,6 +4,7 @@
 	"GridSizeY": 512,
 	"CellSize": 0.0,
 	"MaxSafeDepth": 0.0,
+	"StabilitySafetyFactor": 0.5,
 	"TimeStep": 0.016666,
 	"CFLCondition": 0.25,
 	"SpongeThickness": 8,

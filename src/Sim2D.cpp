@@ -112,7 +112,7 @@ void Sim::Init(GPU* gpu) {
 	float a = 182.80027907467993f;
 	float b = 0.045464332332812774f;
 	float c = -0.14717654147795045f;
-	constants.maxSafeDepth = a * CELLSIZE * CELLSIZE + b * CELLSIZE + c;
+	constants.maxSafeDepth = (a * CELLSIZE * CELLSIZE + b * CELLSIZE + c) * 0.8f;
 	if (constants.maxSafeDepth < 0.0f) constants.maxSafeDepth = 0.0f;
 
 	gpu->UpdateConstants(constants);

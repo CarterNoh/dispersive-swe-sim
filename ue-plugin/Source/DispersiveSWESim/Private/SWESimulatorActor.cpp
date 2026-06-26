@@ -27,7 +27,7 @@ ASWESimulatorActor::ASWESimulatorActor()
     TerrainCaptureComponent = CreateDefaultSubobject<USceneCaptureComponent2D>(TEXT("TerrainCapture"));
     TerrainCaptureComponent->SetupAttachment(Root);
     TerrainCaptureComponent->SetRelativeLocation(FVector(0.0f, 0.0f, 5000.0f)); // default 50m above
-    TerrainCaptureComponent->SetRelativeRotation(FRotator(-90.0f, 0.0f, 0.0f)); // Pointing down
+    TerrainCaptureComponent->SetRelativeRotation(FRotator(-90.0f, 0.0f, -90.0f)); // Pointing down
 
     // 3. Attach water mesh representation (flat plane)
     WaterMeshComponent = CreateDefaultSubobject<UProceduralMeshComponent>(TEXT("WaterMesh"));
