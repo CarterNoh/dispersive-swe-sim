@@ -40,7 +40,7 @@ ASWESimulatorActor::ASWESimulatorActor()
     // Set defaults
     GridResolution = 512;
     WaterLevel = 0.0f;
-    CapturedWorldWidth = 12800.0f;
+    CapturedWorldWidth = 51200.0f;
     bAutoFitToTerrain = true;
     bAutoLoadDefaultAssets = true;
 
@@ -89,7 +89,7 @@ void ASWESimulatorActor::OnConstruction(const FTransform& Transform)
             {
                 if (CapturedWorldWidth <= 10.0f)
                 {
-                    CapturedWorldWidth = 12800.0f; // Reset to default 128m
+                    CapturedWorldWidth = 51200.0f; // Reset to default 512m
                 }
                 // Landscape pivot is at the bottom-left corner; offset by half-width to center it
                 Origin = TerrainActor->GetActorLocation() + FVector(CapturedWorldWidth * 0.5f, CapturedWorldWidth * 0.5f, 0.0f);

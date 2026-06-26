@@ -49,7 +49,7 @@ public:
     bool bAutoLoadDefaultAssets = true;
 
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="SWE | Configuration")
-    float CapturedWorldWidth = 12800.0f; // Centimeters (128 meters)
+    float CapturedWorldWidth = 51200.0f; // Centimeters
 
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="SWE | Configuration")
     float WaterLevel = 0.0f; // Centimeters (Water plane height)

@@ -145,7 +145,7 @@ public:
 
 	// The width of the captured terrain region in the world, in centimeters
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SWE Inputs", meta = (EditCondition = "bAutoCalculateCellSize"))
-	float CapturedWorldWidth = 40000.0f;
+	float CapturedWorldWidth = 51200.0f;
 
 	// File path to a JSON configuration file to load parameters from on startup
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SWE Configuration")
