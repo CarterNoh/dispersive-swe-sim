@@ -890,15 +890,9 @@ void UDispersiveSWESimulator::ExecuteSimulation_RenderThread(
 	{
 		FTextureRHIRef CurrentStagingTexture = StagingTextures[StagingWriteIndex];
 		
-		GraphBuilder.AddPass(
-			RDG_EVENT_NAME("SWE_ReadbackCopy"),
-			ERDGPassFlags::Readback,
-			[H_RDG, CurrentStagingTexture](FRHICommandListImmediate& RHICmdList)
-			{
-				FRHICopyTextureInfo CopyInfo;
-				RHICmdList.CopyTexture(H_RDG->GetRHI(), CurrentStagingTexture, CopyInfo);
-			}
-		);
+		TRefCountPtr<IPooledRenderTarget> StagingPooled = CreateRenderTarget(CurrentStagingTexture, TEXT("SWE_StagingTexture"));
+		FRDGTextureRef StagingRDG = GraphBuilder.RegisterExternalTexture(StagingPooled);
+		AddCopyTexturePass(GraphBuilder, H_RDG, StagingRDG);
 	}
 
 	if (StagingTextures[StagingReadIndex].IsValid())
@@ -908,7 +902,7 @@ void UDispersiveSWESimulator::ExecuteSimulation_RenderThread(
 
 		GraphBuilder.AddPass(
 			RDG_EVENT_NAME("SWE_ReadbackMap"),
-			ERDGPassFlags::Readback,
+			ERDGPassFlags::None,
 			[ReadStagingTexture, TargetCPUIndex, this](FRHICommandListImmediate& RHICmdList)
 			{
 				void* LocalData = nullptr;
