@@ -37,7 +37,7 @@ public:
 
     // --- Configuration ---
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="SWE | Configuration")
-    int32 GridResolution = 128;
+    int32 GridResolution = 512;
 
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="SWE | Configuration", meta=(ToolTip="If set, the simulator will automatically position and scale itself to match this actor's bounds."))
     AActor* TerrainActor;

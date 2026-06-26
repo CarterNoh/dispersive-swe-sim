@@ -11,9 +11,10 @@
 class Sim {
 public:
 	// Simulation parameters
-	static constexpr int GRIDSIZE_X = 400; // grid size in X dimension (# cells)
-	static constexpr int GRIDSIZE_Y = 400; // grid size in Y dimension (# cells)
-	static constexpr float CELLSIZE = 1.f;	// cell size in one dimension (meters/cell)
+	static constexpr int GRIDSIZE_X = 512; // grid size in X dimension (# cells)
+	static constexpr int GRIDSIZE_Y = 512; // grid size in Y dimension (# cells)
+	static constexpr float DOMAIN_SIZE_X = 400.f; // domain size in meters
+	static constexpr float CELLSIZE = DOMAIN_SIZE_X / 512.f;	// cell size in one dimension (meters/cell)
 	static constexpr float TIMESTEP = 1.f / 60.f;
 	static constexpr int SPONGE_THICKNESS = 8; // thickness in cells of the sponge layer used to absorb waves at the boundaries
 	static constexpr float MIN_WATER_HEIGHT = 0.001f; // minimum water height for stability
@@ -128,6 +129,6 @@ private:
 							  SLOPE_LIMIT, CFL_CONDITION, GAMMA_TRANSPORT, DEPTH_NUM, // SWE & eWave Params
 							  FETCH, WIND_SPEED, WIND_ANGLE, SWELL, SWELL_ANGLE, CHOPPINESS, // FFT Params
 							  FILTER_SMALL, FILTER_BIG, FILTER_WIDTH, FILTER_MIN, DEPTH_CUTOFF,
-							  0, 0, {0.0f, 0.0f, 0.0f}};    
+							  0, 0, 0.0f, {0.0f, 0.0f}};    
 	RenderConstants render_constants = {DirectX::XMMatrixIdentity(), (float)GRIDSIZE_X, (float)GRIDSIZE_Y, CELLSIZE};
 };

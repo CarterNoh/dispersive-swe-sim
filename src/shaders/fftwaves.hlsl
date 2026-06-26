@@ -38,7 +38,8 @@ cbuffer Constants : register(b0) {
     float depthCutoff;
     int paddedGridSizeX;
     int paddedGridSizeY;
-    float simConstantPadding[3];
+    float maxSafeDepth;
+    float simConstantPadding[2];
 };
 
 #define G 9.80665f
@@ -161,6 +162,7 @@ float2 ComplexMul(float2 a, float2 b) {
 
 ///////////////// Spectrum Functions /////////////////
 float2 Dispersion(float k, float h) {
+    h = min(h, maxSafeDepth);
     // // Deep Water Dispersion
     // float omega = sqrt(G * k);
     // float dwdk = G / (2 * omega)
@@ -182,6 +184,7 @@ float2 Dispersion(float k, float h) {
 }
 
 float2 WaveSpectra(float w, float h) {
+    h = min(h, maxSafeDepth);
     // // Pierson-Moskowitz
     // float a = 8.1 * pow(10, -3);
     // float b = 0.74;
@@ -469,7 +472,7 @@ RWTexture2D<float> DyOut: register(u4);
 void Interp(uint3 id : SV_DispatchThreadID) {
     if (id.x >= (uint)(gridSizeX) || id.y >= (uint)(gridSizeY)) return;
 
-    float waterDepth = hbar[id.xy];
+    float waterDepth = min(hbar[id.xy], maxSafeDepth);
     if (waterDepth <= minWaterHeight) {
         HOut[id.xy] = 0.f;
         HxOut[id.xy] = 0.f;

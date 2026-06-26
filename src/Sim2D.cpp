@@ -108,6 +108,13 @@ void Sim::Init(GPU* gpu) {
 	constants.paddedGridSizeX = paddedSizeX;
 	constants.paddedGridSizeY = paddedSizeY;
 
+	// calculate max depth
+	float a = 182.80027907467993f;
+	float b = 0.045464332332812774f;
+	float c = -0.14717654147795045f;
+	constants.maxSafeDepth = a * CELLSIZE * CELLSIZE + b * CELLSIZE + c;
+	if (constants.maxSafeDepth < 0.0f) constants.maxSafeDepth = 0.0f;
+
 	gpu->UpdateConstants(constants);
 
 	// Create GPU Textures and Upload Initial Data

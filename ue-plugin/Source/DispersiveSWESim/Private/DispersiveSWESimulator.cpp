@@ -163,6 +163,24 @@ void UDispersiveSWESimulator::SetupInitialStates(FRHICommandListImmediate& RHICm
 	CPUConstants.depthCutoff = DepthCutoff;
 	CPUConstants.paddedGridSizeX = PaddedSizeX;
 	CPUConstants.paddedGridSizeY = PaddedSizeY;
+
+	{
+		float CellSizeMeters = CellSize * 0.01f;
+		float CalculatedMaxSafeDepth;
+		if (MaxSafeDepth > 0.0f)
+		{
+			CalculatedMaxSafeDepth = MaxSafeDepth * 0.01f;
+		}
+		else
+		{
+			float a = 182.80027907467993f;
+			float b = 0.045464332332812774f;
+			float c = -0.14717654147795045f;
+			CalculatedMaxSafeDepth = a * CellSizeMeters * CellSizeMeters + b * CellSizeMeters + c;
+			if (CalculatedMaxSafeDepth < 0.0f) CalculatedMaxSafeDepth = 0.0f;
+		}
+		CPUConstants.maxSafeDepth = CalculatedMaxSafeDepth;
+	}
 	for (int32 i = 0; i < 16; ++i)
 	{
 		float Val = i < DepthLevels.Num() ? DepthLevels[i] : 0.0f;
@@ -337,6 +355,24 @@ void UDispersiveSWESimulator::TickComponent(float DeltaTime, ELevelTick TickType
 	Constants.depthCutoff = DepthCutoff;
 	Constants.paddedGridSizeX = PaddedSizeX;
 	Constants.paddedGridSizeY = PaddedSizeY;
+
+	{
+		float CellSizeMeters = CellSize * 0.01f;
+		float CalculatedMaxSafeDepth;
+		if (MaxSafeDepth > 0.0f)
+		{
+			CalculatedMaxSafeDepth = MaxSafeDepth * 0.01f;
+		}
+		else
+		{
+			float a = 182.80027907467993f;
+			float b = 0.045464332332812774f;
+			float c = -0.14717654147795045f;
+			CalculatedMaxSafeDepth = a * CellSizeMeters * CellSizeMeters + b * CellSizeMeters + c;
+			if (CalculatedMaxSafeDepth < 0.0f) CalculatedMaxSafeDepth = 0.0f;
+		}
+		Constants.maxSafeDepth = CalculatedMaxSafeDepth;
+	}
 	for (int32 i = 0; i < 16; ++i)
 	{
 		float Val = i < DepthLevels.Num() ? DepthLevels[i] : 0.0f;
@@ -1023,6 +1059,15 @@ bool UDispersiveSWESimulator::LoadParametersFromJson(const FString& FilePath)
 	{
 		UE_LOG(LogTemp, Warning, TEXT("Failed to map JSON object to component properties."));
 		return false;
+	}
+
+	if (JsonObject->HasField(TEXT("CellSize")))
+	{
+		double CustomCellSize = 0.0;
+		if (JsonObject->TryGetNumberField(TEXT("CellSize"), CustomCellSize) && CustomCellSize > 0.0)
+		{
+			bAutoCalculateCellSize = false;
+		}
 	}
 
 	UE_LOG(LogTemp, Log, TEXT("Successfully loaded simulation parameters from: %s"), *FinalPath);

@@ -38,7 +38,7 @@ ASWESimulatorActor::ASWESimulatorActor()
     SimComponent = CreateDefaultSubobject<UDispersiveSWESimulator>(TEXT("SWESimulator"));
 
     // Set defaults
-    GridResolution = 128;
+    GridResolution = 512;
     WaterLevel = 0.0f;
     CapturedWorldWidth = 12800.0f;
     bAutoFitToTerrain = true;

@@ -20,11 +20,11 @@ public:
 
 	// Grid Resolution in X dimension
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SWE Simulation")
-	int32 GridSizeX = 400;
+	int32 GridSizeX = 512;
 
 	// Grid Resolution in Y dimension
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SWE Simulation")
-	int32 GridSizeY = 400;
+	int32 GridSizeY = 512;
 
 	// Physical cell size in centimeters per cell
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SWE Simulation")
@@ -45,6 +45,10 @@ public:
 	// Minimum water height in centimeters for solver stability
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SWE Simulation")
 	float MinWaterHeight = 0.1f;
+
+	// Maximum depth in centimeters allowed for safe, stable wave simulation. If <= 0, automatically calculated.
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SWE Simulation")
+	float MaxSafeDepth = 0.0f;
 
 	// Initial water free surface level in centimeters
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SWE Simulation")

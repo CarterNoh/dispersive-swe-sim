@@ -16,13 +16,25 @@ d_est = b2*cellsize**2 + b1*cellsize + b0
 # plt.show()
 # Result is highly quadratic, a very good fit!
 
-def solve_quadratic(d):
+def solve_cellsize(d):
     a = b2 # 182.80027907467993 
     b = b1 # 0.045464332332812774
     c = b0 #-0.14717654147795045
     return (-b + np.sqrt(b**2 - 4*a*(c-d))) / (2 * a)
 
-print(solve_quadratic(12))
+def solve_depth(cs):
+    return b2*cs**2 + b1*cs + b0
+
+# cs_des = 0.5
+# safety = 0.1
+# cs_min = cs_des - safety
+# d_test = solve_depth(cs_min)
+# print(d_test)
+# min_cs = solve_cellsize(d_test)
+
+# print(solve_cellsize(30))
+print(solve_depth(4))
+
 
 # Note: stability also seems to be somewhat dependant on the timestep, but I didn't have time to do more testing. 
 

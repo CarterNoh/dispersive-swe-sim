@@ -1,7 +1,9 @@
 {
-	"GridSizeX": 400,
-	"GridSizeY": 400,
-	"CellSize": 100.0,
+	"_Instructions": "Set CellSize (in cm) > 0.0 to manually override cell size auto-calculation. Set MaxSafeDepth (in cm) > 0.0 to override stability bound calculations.",
+	"GridSizeX": 512,
+	"GridSizeY": 512,
+	"CellSize": 0.0,
+	"MaxSafeDepth": 0.0,
 	"TimeStep": 0.016666,
 	"CFLCondition": 0.25,
 	"SpongeThickness": 8,

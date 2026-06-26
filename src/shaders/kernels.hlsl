@@ -35,7 +35,8 @@ cbuffer Constants : register(b0) {
     float depthCutoff;
     int paddedGridSizeX;
     int paddedGridSizeY;
-    float simConstantPadding[3];
+    float maxSafeDepth;
+    float simConstantPadding[2];
 };
 
 #define GRAVITY 9.80665
@@ -229,9 +230,9 @@ void CalcDiffusionCoeffs(uint3 id : SV_DispatchThreadID) {
 
     // float max_ground = max(in1[curr], in1[right], in1[up]);
     // float min_water = min(in0[curr], in0[right], in0[up]); // or average of these 3
-    float h = in0[curr] - in1[curr]; // min_water - max_ground;
-    float hr = in0[right] - in1[right];
-    float hu = in0[up] - in1[up];
+    float h = clamp(in0[curr] - in1[curr], 0.f, maxSafeDepth); // min_water - max_ground;
+    float hr = clamp(in0[right] - in1[right], 0.f, maxSafeDepth);
+    float hu = clamp(in0[up] - in1[up], 0.f, maxSafeDepth);
     hr = (h + hr) * 0.5f;
     hu = (h + hu) * 0.5f;
     float invDenom = rcp(2.0f * deltaT * (float)diffusionIterations);
@@ -271,7 +272,7 @@ void DecomposeFields(uint3 id : SV_DispatchThreadID) {
     int2 maxGrid = int2(gridSizeX - 1, gridSizeY - 1);
     
     float t_curr = in6[curr];
-    float hbar = max(0.f, in0[curr] - t_curr);
+    float hbar = clamp(in0[curr] - t_curr, 0.f, maxSafeDepth);
     out0[curr] = hbar;
     out1[curr] = in1[curr];
     out2[curr] = in2[curr];
@@ -316,6 +317,8 @@ void CalcUbar(uint3 id : SV_DispatchThreadID) {
     // First-Order Up-Winding
     float hx = (in0[curr] >= 0.f || curr.x == gridSizeX-1) ? in2[curr] : in2[right];
     float hy = (in1[curr] >= 0.f || curr.y == gridSizeY-1) ? in2[curr] : in2[up];
+    hx = min(hx, maxSafeDepth);
+    hy = min(hy, maxSafeDepth);
     float ubar_x = in0[curr] * rcp(max(minWaterHeight, hx));
     float ubar_y = in1[curr] * rcp(max(minWaterHeight, hy));
 
@@ -354,8 +357,8 @@ void CalcSWE(uint3 id : SV_DispatchThreadID) {
     float q_y_1 = 0.5f * (q_y_p05 + q_y_p15);
     
     // Calculate h_(i+0.5,j)
-    float h_x_p05 = (in2[curr] + in2[right]) * 0.5f;  
-    float h_y_p05 = (in2[curr] + in2[up]) * 0.5f;
+    float h_x_p05 = min((in2[curr] + in2[right]) * 0.5f, maxSafeDepth);  
+    float h_y_p05 = min((in2[curr] + in2[up]) * 0.5f, maxSafeDepth);
 
     // Calculate corresponding values for u_x_(i,j) using upwinding
     float u_x_0 = (q_x_0 >= 0.f) ? in0[left] : in0[curr];
@@ -529,7 +532,7 @@ void IntegrateH(uint3 id : SV_DispatchThreadID) {
 
     float invCellSize = 1.0f / cellSize;
     float div_q = (q_x - q_xm + q_y - q_ym) * invCellSize;
-	out0[curr] = max(0.f, h_curr - timeStep * div_q);
+	out0[curr] = clamp(h_curr - timeStep * div_q, 0.f, maxSafeDepth);
     out1[curr] = q_x - in2[curr]; // qbar + qtilde, removing qAdvect
     out2[curr] = q_y - in5[curr];
     out1[curr] = LimitFlowRate(out1[curr], h_curr, h_right, cflFactor);
@@ -621,7 +624,7 @@ void CalcEWave(uint3 id : SV_DispatchThreadID) {
     float beta = sqrt((2.0 / (k * cellSize)) * sin(k * cellSize / 2.0)); // From their 1D code, but different from paper
     // float beta = sqrt((2.0 * k / cellSize) * sin(k * cellSize / 2.0)); // correct formula from paper, but not stable?
     // Angular frequency for dispersion relation
-    float omega = sqrt(GRAVITY * k * SafeTanh(k * in8[id.z])) / beta;
+    float omega = sqrt(GRAVITY * k * SafeTanh(k * min(in8[id.z], maxSafeDepth))) / beta;
     float S = sin(omega * timeStep) * omega / (k * k);
     float C = cos(omega * timeStep);
     float Cx = 1 + (C-1) * kx2;
@@ -684,8 +687,8 @@ void InterpQ(uint3 id : SV_DispatchThreadID) {
     uint2 right = uint2(min(id.x + 1, gridSizeX - 1), id.y);
     uint2 up    = uint2(id.x, min(id.y + 1, gridSizeY - 1));
 
-    float waterDepth_x = max(hbar[id.xy], hbar[right]);
-    float waterDepth_y = max(hbar[id.xy], hbar[up]);
+    float waterDepth_x = min(max(hbar[id.xy], hbar[right]), maxSafeDepth);
+    float waterDepth_y = min(max(hbar[id.xy], hbar[up]), maxSafeDepth);
     int d1_x = 0;
     int d1_y = 0;
     for (int d = 0; d < depthNum; d++) {

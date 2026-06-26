@@ -44,7 +44,8 @@ struct alignas(16) SimConstants {
     float depthCutoff;
     int paddedGridSizeX;
     int paddedGridSizeY;
-    float simConstantPadding[3]; // Align to 16 bytes
+    float maxSafeDepth;
+    float simConstantPadding[2]; // Align to 16 bytes
 };
 
 struct alignas(16) FFTConstants {
