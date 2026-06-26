@@ -381,7 +381,6 @@ void PopulateSpectrum(uint3 id : SV_DispatchThreadID) {
 
 Texture2DArray<float2>   HPosIn;
 Texture2DArray<float2>   HNegIn;
-RWTexture2DArray<float2> HPropOut;
 RWTexture2DArray<float2> DelHxOut;
 RWTexture2DArray<float2> DelHyOut;
 RWTexture2DArray<float2> DispXOut;
@@ -391,7 +390,6 @@ void PropagateWaves(uint3 id : SV_DispatchThreadID) {
     if (id.x >= (uint)(paddedGridSizeX) || id.y >= (uint)(paddedGridSizeY)) return;
 
     if (id.x == 0 && id.y == 0) {
-        HPropOut[id] = float2(0.f, 0.f);
         DelHxOut[id] = float2(0.f, 0.f);
         DelHyOut[id] = float2(0.f, 0.f);
         DispXOut[id] = float2(0.f, 0.f);
@@ -412,7 +410,6 @@ void PropagateWaves(uint3 id : SV_DispatchThreadID) {
     float ky = (float)freqY * dKy;
     float k2 = kx * kx + ky * ky;
     if (k2 < 1e-12) {
-        HPropOut[id] = float2(0.f, 0.f);
         DelHxOut[id] = float2(0.f, 0.f);
         DelHyOut[id] = float2(0.f, 0.f);
         DispXOut[id] = float2(0.f, 0.f);
@@ -435,7 +432,6 @@ void PropagateWaves(uint3 id : SV_DispatchThreadID) {
     float2 HPlus = ComplexMul(HPosIn[id], fwd);
     float2 HMin = ComplexMul(HNegIn[id], bkwd);
     float2 HProp = HPlus + HMin;
-    HPropOut[id] = HProp;
 
     // Calculate spatial derivative of H, shifted to cell faces
     float2 dhdx = ComplexMul(HProp, float2(0, kx));
@@ -453,13 +449,11 @@ void PropagateWaves(uint3 id : SV_DispatchThreadID) {
     DispYOut[id] = ComplexMul(HProp, float2(0.f, ky_ * choppiness));
 }
 
-Texture2DArray<float2> HIn;
 Texture2DArray<float2> HxIn;
 Texture2DArray<float2> HyIn;
 Texture2DArray<float2> DxIn;
 Texture2DArray<float2> DyIn;
 Texture2D<float>       hbar;
-RWTexture2D<float> HOut;
 RWTexture2D<float> HxOut;
 RWTexture2D<float> HyOut;
 RWTexture2D<float> DxOut;
@@ -470,7 +464,6 @@ void Interp(uint3 id : SV_DispatchThreadID) {
 
     float waterDepth = min(hbar[id.xy], maxSafeDepth);
     if (waterDepth <= minWaterHeight) {
-        HOut[id.xy] = 0.f;
         HxOut[id.xy] = 0.f;
         HyOut[id.xy] = 0.f;
         DxOut[id.xy] = 0.f;
@@ -486,7 +479,6 @@ void Interp(uint3 id : SV_DispatchThreadID) {
         s = (getDepthLevel(d2) - waterDepth) / (getDepthLevel(d2) - getDepthLevel(d1));
     uint3 id1 = uint3(id.x, id.y, d1);
     uint3 id2 = uint3(id.x, id.y, d2);
-    HOut [id.xy] = s * HIn [id1].x + (1.f - s) * HIn [id2].x;
     HxOut[id.xy] = s * HxIn[id1].x + (1.f - s) * HxIn[id2].x;
     HyOut[id.xy] = s * HyIn[id1].x + (1.f - s) * HyIn[id2].x;
     DxOut[id.xy] = s * DxIn[id1].x + (1.f - s) * DxIn[id2].x;

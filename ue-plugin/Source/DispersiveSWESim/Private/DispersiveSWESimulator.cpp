@@ -440,14 +440,12 @@ void UDispersiveSWESimulator::ExecuteSimulation_RenderThread(
 	FRDGTextureRef QPastY = GraphBuilder.CreateTexture(FloatDesc, TEXT("SWE_QPastY"));
 
 	// FFT Wave propagation transients (DEPTH_NUM layers)
-	FRDGTextureRef HProp = GraphBuilder.CreateTexture(ComplexArrayPaddedDesc, TEXT("SWE_HProp"));
 	FRDGTextureRef DelHx = GraphBuilder.CreateTexture(ComplexArrayPaddedDesc, TEXT("SWE_DelHx"));
 	FRDGTextureRef DelHy = GraphBuilder.CreateTexture(ComplexArrayPaddedDesc, TEXT("SWE_DelHy"));
 	FRDGTextureRef DispX = GraphBuilder.CreateTexture(ComplexArrayPaddedDesc, TEXT("SWE_DispX"));
 	FRDGTextureRef DispY = GraphBuilder.CreateTexture(ComplexArrayPaddedDesc, TEXT("SWE_DispY"));
 
 	// Wind wave outputs
-	FRDGTextureRef hFFT = GraphBuilder.CreateTexture(FloatDesc, TEXT("SWE_hFFT"));
 	FRDGTextureRef delHx = GraphBuilder.CreateTexture(FloatDesc, TEXT("SWE_delHx"));
 	FRDGTextureRef delHy = GraphBuilder.CreateTexture(FloatDesc, TEXT("SWE_delHy"));
 	FRDGTextureRef dispX = GraphBuilder.CreateTexture(FloatDesc, TEXT("SWE_dispX"));
@@ -605,7 +603,6 @@ void UDispersiveSWESimulator::ExecuteSimulation_RenderThread(
 		Params->SimConstants = ConstantBuffer;
 		Params->HPosIn = GraphBuilder.CreateSRV(HPos_RDG);
 		Params->HNegIn = GraphBuilder.CreateSRV(HNeg_RDG);
-		Params->HPropOut = GraphBuilder.CreateUAV(HProp);
 		Params->DelHxOut = GraphBuilder.CreateUAV(DelHx);
 		Params->DelHyOut = GraphBuilder.CreateUAV(DelHy);
 		Params->DispXOut = GraphBuilder.CreateUAV(DispX);
@@ -615,7 +612,6 @@ void UDispersiveSWESimulator::ExecuteSimulation_RenderThread(
 	}
 
 	// Run Inverse FFTs
-	DispatchFFT_RenderThread(GraphBuilder, HProp, PaddedSizeX, PaddedSizeY, true, Constants.depthNum);
 	DispatchFFT_RenderThread(GraphBuilder, DelHx, PaddedSizeX, PaddedSizeY, true, Constants.depthNum);
 	DispatchFFT_RenderThread(GraphBuilder, DelHy, PaddedSizeX, PaddedSizeY, true, Constants.depthNum);
 	DispatchFFT_RenderThread(GraphBuilder, DispX, PaddedSizeX, PaddedSizeY, true, Constants.depthNum);
@@ -626,13 +622,11 @@ void UDispersiveSWESimulator::ExecuteSimulation_RenderThread(
 		TShaderMapRef<FInterpCS> Shader(ShaderMap);
 		FInterpCS::FParameters* Params = GraphBuilder.AllocParameters<FInterpCS::FParameters>();
 		Params->SimConstants = ConstantBuffer;
-		Params->HIn = GraphBuilder.CreateSRV(HProp);
 		Params->HxIn = GraphBuilder.CreateSRV(DelHx);
 		Params->HyIn = GraphBuilder.CreateSRV(DelHy);
 		Params->DxIn = GraphBuilder.CreateSRV(DispX);
 		Params->DyIn = GraphBuilder.CreateSRV(DispY);
 		Params->hbar = GraphBuilder.CreateSRV(hbar_RDG);
-		Params->HOut = GraphBuilder.CreateUAV(hFFT);
 		Params->HxOut = GraphBuilder.CreateUAV(delHx);
 		Params->HyOut = GraphBuilder.CreateUAV(delHy);
 		Params->DxOut = GraphBuilder.CreateUAV(dispX);
@@ -822,10 +816,10 @@ void UDispersiveSWESimulator::ExecuteSimulation_RenderThread(
 	// EXPORT VISUAL OUTPUTS TO RENDER TARGETS
 	// ----------------------------------------------------
 
-	// Copy height field (h + hFFT)
+	// Copy height field 
 	if (HeightOutputRT && HeightOutputRT->GetRenderTargetResource())
 	{
-		FRDGTextureRef SrcHeightTexture = h_RDG;
+		FRDGTextureRef SrcHeightTexture = H_RDG;
 		FRDGTextureRef ExportHeightDest = GraphBuilder.RegisterExternalTexture(CreateRenderTarget(HeightOutputRT->GetRenderTargetResource()->GetTexture2DRHI(), TEXT("SWE_HeightExport")));
 		
 		TShaderMapRef<FScaleCopyTextureCS> ScaleCopyCS(GetGlobalShaderMap(GMaxRHIFeatureLevel));
