@@ -28,5 +28,15 @@
 	"FilterBig": 10000.0,
 	"FilterWidth": 1.0,
 	"FilterMin": 0.01,
-	"DepthLevels": [1.0, 2.0, 4.0, 16.0, 64.0]
+	"FoamThreshold": -0.5,
+	"FoamMultiplier": 1.0,
+	"FoamFade": 0.1,
+	"FoamBlur": 3.0,
+	"DepthLevels": [
+		1.0,
+		2.0,
+		4.0,
+		16.0,
+		64.0
+	]
 }

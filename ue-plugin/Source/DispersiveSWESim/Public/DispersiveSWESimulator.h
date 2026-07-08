@@ -131,6 +131,19 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SWE Simulation|eWave")
 	TArray<float> DepthLevels = { 1.0f, 2.0f, 4.0f, 16.0f, 64.0f };
 
+	// Foam threshold, multiplier, decay fade and blur rates
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SWE Simulation|eWave|Foam")
+	float FoamThreshold = 0.5f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SWE Simulation|eWave|Foam")
+	float FoamMultiplier = 1.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SWE Simulation|eWave|Foam")
+	float FoamFade = 1.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SWE Simulation|eWave|Foam")
+	float FoamBlur = 1.0f;
+
 	// Input Render Target containing the level's terrain/height capture map
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SWE Inputs")
 	UTextureRenderTarget2D* TerrainHeightInputRT = nullptr;
@@ -153,13 +166,19 @@ public:
 
 	// Output target textures containing wave fields
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SWE Outputs")
-	UTextureRenderTarget2D* HeightOutputRT = nullptr;
+	UTextureRenderTarget2D* DisplacementRT = nullptr;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SWE Outputs")
-	UTextureRenderTarget2D* DisplacementOutputRT = nullptr;
+	UTextureRenderTarget2D* DisplacementPastRT = nullptr;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SWE Outputs")
-	UTextureRenderTarget2D* FoamOutputRT = nullptr;
+	UTextureRenderTarget2D* NormalRT = nullptr;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SWE Outputs")
+	UTextureRenderTarget2D* FoamRT = nullptr;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SWE Outputs")
+	UTextureRenderTarget2D* JacobianDetRT = nullptr;
 
 	UFUNCTION(BlueprintCallable, Category = "SWE Configuration")
 	bool LoadParametersFromJson(const FString& FilePath);
@@ -205,6 +224,7 @@ private:
 	TRefCountPtr<IPooledRenderTarget> Texqtilde_y;
 	TRefCountPtr<IPooledRenderTarget> Texubar_x;
 	TRefCountPtr<IPooledRenderTarget> Texubar_y;
+	TRefCountPtr<IPooledRenderTarget> TexFoam;
 
 	// Stateful complex textures array for wave FFT propagation
 	TRefCountPtr<IPooledRenderTarget> TexHPos;

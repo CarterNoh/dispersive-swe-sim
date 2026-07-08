@@ -34,6 +34,10 @@
 #define paddedGridSizeX SimConstants.paddedGridSizeX
 #define paddedGridSizeY SimConstants.paddedGridSizeY
 #define maxSafeDepth SimConstants.maxSafeDepth
+#define foamThreshold SimConstants.foamThreshold
+#define foamMultiplier SimConstants.foamMultiplier
+#define foamFade SimConstants.foamFade
+#define foamBlur SimConstants.foamBlur
 #define getDepthLevel(index) SimConstants.depthLevels[(index) / 4][(index) % 4]
 
 #define GRAVITY 9.80665
@@ -731,12 +735,88 @@ void ScaleCopyTexture(uint3 id : SV_DispatchThreadID) {
 
 Texture2D<float> inDispX;
 Texture2D<float> inDispY;
+Texture2D<float> inHeight;
 RWTexture2D<float4> outDisp4;
 
 [numthreads(16, 16, 1)]
 void ScaleCopyDisplacement(uint3 id : SV_DispatchThreadID) {
     if (id.x >= (uint)(gridSizeX) || id.y >= (uint)(gridSizeY)) return;
-    outDisp4[id.xy] = float4(inDispX[id.xy] * ScaleFactor, inDispY[id.xy] * ScaleFactor, 0.0f, 1.0f);
+    outDisp4[id.xy] = float4(inDispX[id.xy] * ScaleFactor, inDispY[id.xy] * ScaleFactor, inHeight[id.xy] * ScaleFactor, 1.0f);
+}
+
+Texture2D<float> inPreviousFoam;
+RWTexture2D<float4> outNormal;
+RWTexture2D<float> outFoam;
+RWTexture2D<float> outJacobianDet;
+
+[numthreads(16, 16, 1)]
+void CalcSurfaceNormalAndFoam(uint3 id : SV_DispatchThreadID) {
+    if (id.x >= (uint)(gridSizeX) || id.y >= (uint)(gridSizeY)) return;
+
+    int2 curr = int2(id.xy);
+    int2 right = clamp(curr + int2(1, 0), int2(0, 0), gridSizeX - 1);
+    int2 left  = clamp(curr + int2(-1, 0), int2(0, 0), gridSizeX - 1);
+    int2 up    = clamp(curr + int2(0, 1), int2(0, 0), gridSizeY - 1);
+    int2 down  = clamp(curr + int2(0, -1), int2(0, 0), gridSizeY - 1);
+
+    // --- NORMAL CALCULATION ---
+    float invTwoCellSize = 1.0f / max(1e-5f, 2.0f * cellSize);
+
+    // Derivatives with respect to X
+    float dDx_dx = (inDispX[right] - inDispX[left]) * invTwoCellSize;
+    float dDy_dx = (inDispY[right] - inDispY[left]) * invTwoCellSize;
+    float dDz_dx = (inHeight[right] - inHeight[left]) * invTwoCellSize;
+
+    // Derivatives with respect to Y
+    float dDx_dy = (inDispX[up] - inDispX[down]) * invTwoCellSize;
+    float dDy_dy = (inDispY[up] - inDispY[down]) * invTwoCellSize;
+    float dDz_dy = (inHeight[up] - inHeight[down]) * invTwoCellSize;
+
+    // Tangent vectors along X and Y
+    float3 Tx = float3(1.0f + dDx_dx, dDy_dx, dDz_dx);
+    float3 Ty = float3(dDx_dy, 1.0f + dDy_dy, dDz_dy);
+
+    // Cross product gives normal
+    float3 N = cross(Tx, Ty);
+
+    // Invert normal if it points down (Z < 0)
+    if (N.z < 0.0f) {
+        N = -N;
+    }
+    N = normalize(N);
+    outNormal[curr] = float4(N, 1.0f);
+
+    // --- FOAM AND JACOBIAN CALCULATION ---
+    float invCellSize = 1.0f / max(1e-5f, cellSize);
+
+    // Jacobian elements (forward difference)
+    float Jxx = 1.0f + (inDispX[right] - inDispX[curr]) * invCellSize;
+    float Jyy = 1.0f + (inDispY[up] - inDispY[curr]) * invCellSize;
+    float Jyx = (inDispY[right] - inDispY[curr]) * invCellSize;
+    float Jxy = (inDispX[up] - inDispX[curr]) * invCellSize;
+
+    // Determinant of Jacobian
+    float JacobianDeterminant = Jxx * Jyy - Jxy * Jyx;
+    outJacobianDet[curr] = JacobianDeterminant;
+
+    // Minimum Eigenvalue calculation of Jacobian
+    float trace = Jxx + Jyy;
+    float diff = Jxx - Jyy;
+    float term = sqrt(max(0.0f, diff * diff + 4.0f * Jxy * Jyx));
+    float EigenValue_ = trace * 0.5f - term * 0.5f;
+
+    // Foam injection
+    float Foam = foamMultiplier * saturate(1.0f - EigenValue_ + foamThreshold);
+
+    // Sample previous foam values for blurring and decay
+    float PreviousFoamCenter = inPreviousFoam[curr];
+    float AccumulatedFoam = inPreviousFoam[up] + inPreviousFoam[down] + inPreviousFoam[right] + inPreviousFoam[left];
+
+    float PreviousFoam = lerp(PreviousFoamCenter, AccumulatedFoam * 0.25f, saturate(timeStep * foamBlur));
+    float FadedPreviousFoam = saturate(PreviousFoam - foamFade * timeStep);
+
+    Foam = max(Foam, FadedPreviousFoam);
+    outFoam[curr] = Foam;
 }
 
 [numthreads(16, 16, 1)]

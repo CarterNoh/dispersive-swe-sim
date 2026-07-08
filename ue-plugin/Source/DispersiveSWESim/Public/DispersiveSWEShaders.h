@@ -38,6 +38,10 @@ BEGIN_GLOBAL_SHADER_PARAMETER_STRUCT(FSimConstants, )
 	SHADER_PARAMETER(int32, paddedGridSizeX)
 	SHADER_PARAMETER(int32, paddedGridSizeY)
 	SHADER_PARAMETER(float, maxSafeDepth)
+	SHADER_PARAMETER(float, foamThreshold)
+	SHADER_PARAMETER(float, foamMultiplier)
+	SHADER_PARAMETER(float, foamFade)
+	SHADER_PARAMETER(float, foamBlur)
 	SHADER_PARAMETER_ARRAY(FVector4f, depthLevels, [4])
 END_GLOBAL_SHADER_PARAMETER_STRUCT()
 
@@ -428,7 +432,26 @@ public:
 		SHADER_PARAMETER(float, ScaleFactor)
 		SHADER_PARAMETER_RDG_TEXTURE_SRV(Texture2D<float>, inDispX)
 		SHADER_PARAMETER_RDG_TEXTURE_SRV(Texture2D<float>, inDispY)
+		SHADER_PARAMETER_RDG_TEXTURE_SRV(Texture2D<float>, inHeight)
 		SHADER_PARAMETER_RDG_TEXTURE_UAV(RWTexture2D<float4>, outDisp4)
+	END_SHADER_PARAMETER_STRUCT()
+};
+
+class FCalcSurfaceNormalAndFoamCS : public FDispersiveSWEComputeShader
+{
+public:
+	DECLARE_GLOBAL_SHADER(FCalcSurfaceNormalAndFoamCS);
+	SHADER_USE_PARAMETER_STRUCT(FCalcSurfaceNormalAndFoamCS, FDispersiveSWEComputeShader);
+
+	BEGIN_SHADER_PARAMETER_STRUCT(FParameters, )
+		SHADER_PARAMETER_STRUCT_REF(FSimConstants, SimConstants)
+		SHADER_PARAMETER_RDG_TEXTURE_SRV(Texture2D<float>, inDispX)
+		SHADER_PARAMETER_RDG_TEXTURE_SRV(Texture2D<float>, inDispY)
+		SHADER_PARAMETER_RDG_TEXTURE_SRV(Texture2D<float>, inHeight)
+		SHADER_PARAMETER_RDG_TEXTURE_SRV(Texture2D<float>, inPreviousFoam)
+		SHADER_PARAMETER_RDG_TEXTURE_UAV(RWTexture2D<float4>, outNormal)
+		SHADER_PARAMETER_RDG_TEXTURE_UAV(RWTexture2D<float>, outFoam)
+		SHADER_PARAMETER_RDG_TEXTURE_UAV(RWTexture2D<float>, outJacobianDet)
 	END_SHADER_PARAMETER_STRUCT()
 };
 

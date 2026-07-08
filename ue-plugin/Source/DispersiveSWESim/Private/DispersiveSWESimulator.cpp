@@ -95,6 +95,7 @@ void UDispersiveSWESimulator::AllocatePersistentTargets(FRHICommandListImmediate
 	GRenderTargetPool.FindFreeElement(RHICmdList, Desc, Texqtilde_y, TEXT("SWE_qtilde_y"));
 	GRenderTargetPool.FindFreeElement(RHICmdList, Desc, Texubar_x, TEXT("SWE_ubar_x"));
 	GRenderTargetPool.FindFreeElement(RHICmdList, Desc, Texubar_y, TEXT("SWE_ubar_y"));
+	GRenderTargetPool.FindFreeElement(RHICmdList, Desc, TexFoam, TEXT("SWE_FoamState"));
 
 	// Complex/array targets use padded sizes and PF_G32R32F format
 	FPooledRenderTargetDesc ComplexArrayDesc = FPooledRenderTargetDesc::Create2DArrayDesc(
@@ -163,6 +164,10 @@ void UDispersiveSWESimulator::SetupInitialStates(FRHICommandListImmediate& RHICm
 	CPUConstants.depthCutoff = DepthCutoff;
 	CPUConstants.paddedGridSizeX = PaddedSizeX;
 	CPUConstants.paddedGridSizeY = PaddedSizeY;
+	CPUConstants.foamThreshold = FoamThreshold;
+	CPUConstants.foamMultiplier = FoamMultiplier;
+	CPUConstants.foamFade = FoamFade;
+	CPUConstants.foamBlur = FoamBlur;
 
 	{
 		float CellSizeMeters = CellSize * 0.01f;
@@ -232,6 +237,13 @@ void UDispersiveSWESimulator::SetupInitialStates(FRHICommandListImmediate& RHICm
 		// Copy the computed water height h to hbar and hbarOld
 		AddCopyTexturePass(GraphBuilder, h_RDG, hbar_RDG);
 		AddCopyTexturePass(GraphBuilder, h_RDG, hbarOld_RDG);
+
+		// Initialize persistent foam target to 0
+		if (TexFoam.IsValid())
+		{
+			FRDGTextureRef Foam_RDG = GraphBuilder.RegisterExternalTexture(TexFoam);
+			AddClearRenderTargetPass(GraphBuilder, Foam_RDG, FLinearColor::Black);
+		}
 
 		GraphBuilder.Execute();
 	}
@@ -356,6 +368,10 @@ void UDispersiveSWESimulator::TickComponent(float DeltaTime, ELevelTick TickType
 	Constants.depthCutoff = DepthCutoff;
 	Constants.paddedGridSizeX = PaddedSizeX;
 	Constants.paddedGridSizeY = PaddedSizeY;
+	Constants.foamThreshold = FoamThreshold;
+	Constants.foamMultiplier = FoamMultiplier;
+	Constants.foamFade = FoamFade;
+	Constants.foamBlur = FoamBlur;
 
 	{
 		float CellSizeMeters = CellSize * 0.01f;
@@ -818,32 +834,19 @@ void UDispersiveSWESimulator::ExecuteSimulation_RenderThread(
 	// EXPORT VISUAL OUTPUTS TO RENDER TARGETS
 	// ----------------------------------------------------
 
-	// Copy height field 
-	if (HeightOutputRT && HeightOutputRT->GetRenderTargetResource())
+	// Copy current Displacement to DisplacementPast before updating
+	if (DisplacementPastRT && DisplacementPastRT->GetRenderTargetResource() &&
+		DisplacementRT && DisplacementRT->GetRenderTargetResource())
 	{
-		FRDGTextureRef SrcHeightTexture = H_RDG;
-		FRDGTextureRef ExportHeightDest = GraphBuilder.RegisterExternalTexture(CreateRenderTarget(HeightOutputRT->GetRenderTargetResource()->GetTexture2DRHI(), TEXT("SWE_HeightExport")));
-		
-		TShaderMapRef<FScaleCopyTextureCS> ScaleCopyCS(GetGlobalShaderMap(GMaxRHIFeatureLevel));
-		FScaleCopyTextureCS::FParameters* PassParams = GraphBuilder.AllocParameters<FScaleCopyTextureCS::FParameters>();
-		PassParams->SimConstants = ConstantBuffer;
-		PassParams->ScaleFactor = 100.0f; // m to cm
-		PassParams->in0 = GraphBuilder.CreateSRV(SrcHeightTexture);
-		PassParams->outScaleCopy = GraphBuilder.CreateUAV(ExportHeightDest);
-
-		FComputeShaderUtils::AddPass(
-			GraphBuilder,
-			RDG_EVENT_NAME("SWE_ExportHeight_Scale"),
-			ERDGPassFlags::Compute,
-			ScaleCopyCS,
-			PassParams,
-			FIntVector(FMath::DivideAndRoundUp(GridSizeX, 16), FMath::DivideAndRoundUp(GridSizeY, 16), 1)
-		);
+		FRDGTextureRef SrcRDG = GraphBuilder.RegisterExternalTexture(CreateRenderTarget(DisplacementRT->GetRenderTargetResource()->GetTexture2DRHI(), TEXT("SWE_DispCurrent_CopySrc")));
+		FRDGTextureRef DestRDG = GraphBuilder.RegisterExternalTexture(CreateRenderTarget(DisplacementPastRT->GetRenderTargetResource()->GetTexture2DRHI(), TEXT("SWE_DispPast_CopyDest")));
+		AddCopyTexturePass(GraphBuilder, SrcRDG, DestRDG);
 	}
 
-	if (DisplacementOutputRT && DisplacementOutputRT->GetRenderTargetResource())
+	// Export Displacement: Combine dispX, dispY, and height H_RDG into a single PF_FloatRGBA Render Target
+	if (DisplacementRT && DisplacementRT->GetRenderTargetResource() && H_RDG)
 	{
-		FRDGTextureRef ExportDispDest = GraphBuilder.RegisterExternalTexture(CreateRenderTarget(DisplacementOutputRT->GetRenderTargetResource()->GetTexture2DRHI(), TEXT("SWE_DispExport")));
+		FRDGTextureRef ExportDispDest = GraphBuilder.RegisterExternalTexture(CreateRenderTarget(DisplacementRT->GetRenderTargetResource()->GetTexture2DRHI(), TEXT("SWE_DispExport")));
 
 		TShaderMapRef<FScaleCopyDisplacementCS> ScaleCopyCS(GetGlobalShaderMap(GMaxRHIFeatureLevel));
 		FScaleCopyDisplacementCS::FParameters* PassParams = GraphBuilder.AllocParameters<FScaleCopyDisplacementCS::FParameters>();
@@ -851,6 +854,7 @@ void UDispersiveSWESimulator::ExecuteSimulation_RenderThread(
 		PassParams->ScaleFactor = 100.0f; // m to cm
 		PassParams->inDispX = GraphBuilder.CreateSRV(dispX);
 		PassParams->inDispY = GraphBuilder.CreateSRV(dispY);
+		PassParams->inHeight = GraphBuilder.CreateSRV(H_RDG);
 		PassParams->outDisp4 = GraphBuilder.CreateUAV(ExportDispDest);
 
 		FComputeShaderUtils::AddPass(
@@ -863,27 +867,56 @@ void UDispersiveSWESimulator::ExecuteSimulation_RenderThread(
 		);
 	}
 
-	if (FoamOutputRT && FoamOutputRT->GetRenderTargetResource())
-	{
-		FRDGTextureRef SrcFoamTexture = delHx;
-		FRDGTextureRef ExportFoamDest = GraphBuilder.RegisterExternalTexture(CreateRenderTarget(FoamOutputRT->GetRenderTargetResource()->GetTexture2DRHI(), TEXT("SWE_FoamExport")));
+	// Import persistent foam texture state
+	FRDGTextureRef PreviousFoam_RDG = GraphBuilder.RegisterExternalTexture(TexFoam);
 
-		TShaderMapRef<FScaleCopyTextureCS> ScaleCopyCS(GetGlobalShaderMap(GMaxRHIFeatureLevel));
-		FScaleCopyTextureCS::FParameters* PassParams = GraphBuilder.AllocParameters<FScaleCopyTextureCS::FParameters>();
+	// Create transient texture for the updated foam state
+	FRDGTextureDesc FoamDesc = FRDGTextureDesc::Create2D(
+		FIntPoint(GridSizeX, GridSizeY),
+		PF_R32_FLOAT,
+		FClearValueBinding::None,
+		TexCreate_ShaderResource | TexCreate_UAV
+	);
+	FRDGTextureRef NewFoamRDG = GraphBuilder.CreateTexture(FoamDesc, TEXT("SWE_NewFoamState"));
+
+	// Initialize NewFoamRDG with previous foam by default
+	AddCopyTexturePass(GraphBuilder, PreviousFoam_RDG, NewFoamRDG);
+
+	// Export Surface Normal, Foam & JacobianDet: Calculate combined fields using unified compute shader
+	if (NormalRT && NormalRT->GetRenderTargetResource() &&
+		FoamRT && FoamRT->GetRenderTargetResource() &&
+		JacobianDetRT && JacobianDetRT->GetRenderTargetResource())
+	{
+		FRDGTextureRef ExportNormalDest = GraphBuilder.RegisterExternalTexture(CreateRenderTarget(NormalRT->GetRenderTargetResource()->GetTexture2DRHI(), TEXT("SWE_NormalExport")));
+		FRDGTextureRef ExportFoamDest = GraphBuilder.RegisterExternalTexture(CreateRenderTarget(FoamRT->GetRenderTargetResource()->GetTexture2DRHI(), TEXT("SWE_FoamExport")));
+		FRDGTextureRef ExportJacobianDest = GraphBuilder.RegisterExternalTexture(CreateRenderTarget(JacobianDetRT->GetRenderTargetResource()->GetTexture2DRHI(), TEXT("SWE_JacobianExport")));
+
+		TShaderMapRef<FCalcSurfaceNormalAndFoamCS> NormalAndFoamCS(GetGlobalShaderMap(GMaxRHIFeatureLevel));
+		FCalcSurfaceNormalAndFoamCS::FParameters* PassParams = GraphBuilder.AllocParameters<FCalcSurfaceNormalAndFoamCS::FParameters>();
 		PassParams->SimConstants = ConstantBuffer;
-		PassParams->ScaleFactor = 1.0f; // Keep dimensionless ratio as is
-		PassParams->in0 = GraphBuilder.CreateSRV(SrcFoamTexture);
-		PassParams->outScaleCopy = GraphBuilder.CreateUAV(ExportFoamDest);
+		PassParams->inDispX = GraphBuilder.CreateSRV(dispX);
+		PassParams->inDispY = GraphBuilder.CreateSRV(dispY);
+		PassParams->inHeight = GraphBuilder.CreateSRV(H_RDG);
+		PassParams->inPreviousFoam = GraphBuilder.CreateSRV(PreviousFoam_RDG);
+		PassParams->outNormal = GraphBuilder.CreateUAV(ExportNormalDest);
+		PassParams->outFoam = GraphBuilder.CreateUAV(NewFoamRDG);
+		PassParams->outJacobianDet = GraphBuilder.CreateUAV(ExportJacobianDest);
 
 		FComputeShaderUtils::AddPass(
 			GraphBuilder,
-			RDG_EVENT_NAME("SWE_ExportFoam_Copy"),
+			RDG_EVENT_NAME("SWE_CalcSurfaceNormalAndFoam"),
 			ERDGPassFlags::Compute,
-			ScaleCopyCS,
+			NormalAndFoamCS,
 			PassParams,
 			FIntVector(FMath::DivideAndRoundUp(GridSizeX, 16), FMath::DivideAndRoundUp(GridSizeY, 16), 1)
 		);
+
+		// Copy the updated foam values to the user-facing FoamRT Render Target
+		AddCopyTexturePass(GraphBuilder, NewFoamRDG, ExportFoamDest);
 	}
+
+	// Copy the new foam state back to the persistent TexFoam for next frame
+	AddCopyTexturePass(GraphBuilder, NewFoamRDG, PreviousFoam_RDG);
 
 	// ----------------------------------------------------
 	// ASYNC READBACK OF WATER HEIGHT FIELD (TexH)
@@ -1081,9 +1114,11 @@ bool UDispersiveSWESimulator::SaveParametersToJson(const FString& FilePath)
 
 	// Remove runtime properties or input/output targets that shouldn't be serialized in a parameters config
 	JsonObject->RemoveField(TEXT("terrainHeightInputRT"));
-	JsonObject->RemoveField(TEXT("heightOutputRT"));
-	JsonObject->RemoveField(TEXT("displacementOutputRT"));
-	JsonObject->RemoveField(TEXT("foamOutputRT"));
+	JsonObject->RemoveField(TEXT("displacementRT"));
+	JsonObject->RemoveField(TEXT("displacementPastRT"));
+	JsonObject->RemoveField(TEXT("normalRT"));
+	JsonObject->RemoveField(TEXT("foamRT"));
+	JsonObject->RemoveField(TEXT("jacobianDetRT"));
 	JsonObject->RemoveField(TEXT("jsonConfigFilePath"));
 
 	FString JsonString;

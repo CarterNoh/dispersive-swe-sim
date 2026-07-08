@@ -55,6 +55,18 @@ public:
     float WaterLevel = 0.0f; // Centimeters (Water plane height)
 
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="SWE | Configuration")
+    float FoamThreshold = 0.5f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="SWE | Configuration")
+    float FoamMultiplier = 1.0f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="SWE | Configuration")
+    float FoamFade = 1.0f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="SWE | Configuration")
+    float FoamBlur = 1.0f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="SWE | Configuration")
     UMaterialInterface* BaseWaterMaterial;
 
 private:
@@ -65,13 +77,19 @@ private:
     UTextureRenderTarget2D* TerrainCaptureRT;
 
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="SWE | Debug", meta=(AllowPrivateAccess="true"))
-    UTextureRenderTarget2D* HeightOutputRT;
+    UTextureRenderTarget2D* DisplacementRT;
 
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="SWE | Debug", meta=(AllowPrivateAccess="true"))
-    UTextureRenderTarget2D* DisplacementOutputRT;
+    UTextureRenderTarget2D* DisplacementPastRT;
 
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="SWE | Debug", meta=(AllowPrivateAccess="true"))
-    UTextureRenderTarget2D* FoamOutputRT;
+    UTextureRenderTarget2D* NormalRT;
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="SWE | Debug", meta=(AllowPrivateAccess="true"))
+    UTextureRenderTarget2D* FoamRT;
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="SWE | Debug", meta=(AllowPrivateAccess="true"))
+    UTextureRenderTarget2D* JacobianDetRT;
 
     // --- Material ---
     UPROPERTY()

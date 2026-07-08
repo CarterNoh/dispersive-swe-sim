@@ -214,23 +214,35 @@ void ASWESimulatorActor::BeginPlay()
     TerrainCaptureRT->AddressX = TA_Clamp;
     TerrainCaptureRT->AddressY = TA_Clamp;
 
-    HeightOutputRT = NewObject<UTextureRenderTarget2D>(this);
-    HeightOutputRT->bCanCreateUAV = true;
-    HeightOutputRT->InitCustomFormat(GridResolution, GridResolution, PF_FloatRGBA, false);
-    HeightOutputRT->AddressX = TA_Clamp;
-    HeightOutputRT->AddressY = TA_Clamp;
+    DisplacementRT = NewObject<UTextureRenderTarget2D>(this);
+    DisplacementRT->bCanCreateUAV = true;
+    DisplacementRT->InitCustomFormat(GridResolution, GridResolution, PF_FloatRGBA, false);
+    DisplacementRT->AddressX = TA_Clamp;
+    DisplacementRT->AddressY = TA_Clamp;
 
-    DisplacementOutputRT = NewObject<UTextureRenderTarget2D>(this);
-    DisplacementOutputRT->bCanCreateUAV = true;
-    DisplacementOutputRT->InitCustomFormat(GridResolution, GridResolution, PF_FloatRGBA, false);
-    DisplacementOutputRT->AddressX = TA_Clamp;
-    DisplacementOutputRT->AddressY = TA_Clamp;
+    DisplacementPastRT = NewObject<UTextureRenderTarget2D>(this);
+    DisplacementPastRT->bCanCreateUAV = true;
+    DisplacementPastRT->InitCustomFormat(GridResolution, GridResolution, PF_FloatRGBA, false);
+    DisplacementPastRT->AddressX = TA_Clamp;
+    DisplacementPastRT->AddressY = TA_Clamp;
 
-    FoamOutputRT = NewObject<UTextureRenderTarget2D>(this);
-    FoamOutputRT->bCanCreateUAV = true;
-    FoamOutputRT->InitCustomFormat(GridResolution, GridResolution, PF_FloatRGBA, false);
-    FoamOutputRT->AddressX = TA_Clamp;
-    FoamOutputRT->AddressY = TA_Clamp;
+    NormalRT = NewObject<UTextureRenderTarget2D>(this);
+    NormalRT->bCanCreateUAV = true;
+    NormalRT->InitCustomFormat(GridResolution, GridResolution, PF_FloatRGBA, false);
+    NormalRT->AddressX = TA_Clamp;
+    NormalRT->AddressY = TA_Clamp;
+
+    FoamRT = NewObject<UTextureRenderTarget2D>(this);
+    FoamRT->bCanCreateUAV = true;
+    FoamRT->InitCustomFormat(GridResolution, GridResolution, PF_FloatRGBA, false);
+    FoamRT->AddressX = TA_Clamp;
+    FoamRT->AddressY = TA_Clamp;
+
+    JacobianDetRT = NewObject<UTextureRenderTarget2D>(this);
+    JacobianDetRT->bCanCreateUAV = true;
+    JacobianDetRT->InitCustomFormat(GridResolution, GridResolution, PF_FloatRGBA, false);
+    JacobianDetRT->AddressX = TA_Clamp;
+    JacobianDetRT->AddressY = TA_Clamp;
 
     // 3. Setup Scene Capture Component properties
     float CameraZ = 5000.0f;
@@ -291,10 +303,17 @@ void ASWESimulatorActor::BeginPlay()
         SimComponent->WaterLevel = WaterLevel;
         SimComponent->TerrainCaptureCameraZ = CameraZ;
 
+        SimComponent->FoamThreshold = FoamThreshold;
+        SimComponent->FoamMultiplier = FoamMultiplier;
+        SimComponent->FoamFade = FoamFade;
+        SimComponent->FoamBlur = FoamBlur;
+
         SimComponent->TerrainHeightInputRT = TerrainCaptureRT;
-        SimComponent->HeightOutputRT = HeightOutputRT;
-        SimComponent->DisplacementOutputRT = DisplacementOutputRT;
-        SimComponent->FoamOutputRT = FoamOutputRT;
+        SimComponent->DisplacementRT = DisplacementRT;
+        SimComponent->DisplacementPastRT = DisplacementPastRT;
+        SimComponent->NormalRT = NormalRT;
+        SimComponent->FoamRT = FoamRT;
+        SimComponent->JacobianDetRT = JacobianDetRT;
     }
 
     // Call Super::BeginPlay() after components are fully configured to trigger correct InitializeSimulation grid sizes
@@ -310,15 +329,27 @@ void ASWESimulatorActor::BeginPlay()
     if (BaseWaterMaterial && WaterMeshComponent)
     {
         DynamicWaterMaterial = UMaterialInstanceDynamic::Create(BaseWaterMaterial, this);
-        DynamicWaterMaterial->SetTextureParameterValue(FName("HeightMap"), HeightOutputRT);
-        DynamicWaterMaterial->SetTextureParameterValue(FName("Height Map"), HeightOutputRT);
-        DynamicWaterMaterial->SetTextureParameterValue(FName("Height"), HeightOutputRT);
-        DynamicWaterMaterial->SetTextureParameterValue(FName("DisplacementMap"), DisplacementOutputRT);
-        DynamicWaterMaterial->SetTextureParameterValue(FName("Displacement Map"), DisplacementOutputRT);
-        DynamicWaterMaterial->SetTextureParameterValue(FName("Displacement"), DisplacementOutputRT);
-        DynamicWaterMaterial->SetTextureParameterValue(FName("FoamMap"), FoamOutputRT);
-        DynamicWaterMaterial->SetTextureParameterValue(FName("Foam Map"), FoamOutputRT);
-        DynamicWaterMaterial->SetTextureParameterValue(FName("Foam"), FoamOutputRT);
+        DynamicWaterMaterial->SetTextureParameterValue(FName("DisplacementMap"), DisplacementRT);
+        DynamicWaterMaterial->SetTextureParameterValue(FName("Displacement Map"), DisplacementRT);
+        DynamicWaterMaterial->SetTextureParameterValue(FName("Displacement"), DisplacementRT);
+
+        DynamicWaterMaterial->SetTextureParameterValue(FName("DisplacementPastMap"), DisplacementPastRT);
+        DynamicWaterMaterial->SetTextureParameterValue(FName("Displacement Past Map"), DisplacementPastRT);
+        DynamicWaterMaterial->SetTextureParameterValue(FName("DisplacementPast"), DisplacementPastRT);
+
+        DynamicWaterMaterial->SetTextureParameterValue(FName("NormalMap"), NormalRT);
+        DynamicWaterMaterial->SetTextureParameterValue(FName("Normal Map"), NormalRT);
+        DynamicWaterMaterial->SetTextureParameterValue(FName("SurfaceNormal"), NormalRT);
+        DynamicWaterMaterial->SetTextureParameterValue(FName("Surface Normal"), NormalRT);
+
+        DynamicWaterMaterial->SetTextureParameterValue(FName("FoamMap"), FoamRT);
+        DynamicWaterMaterial->SetTextureParameterValue(FName("Foam Map"), FoamRT);
+        DynamicWaterMaterial->SetTextureParameterValue(FName("Foam"), FoamRT);
+
+        DynamicWaterMaterial->SetTextureParameterValue(FName("JacobianDetMap"), JacobianDetRT);
+        DynamicWaterMaterial->SetTextureParameterValue(FName("Jacobian Det Map"), JacobianDetRT);
+        DynamicWaterMaterial->SetTextureParameterValue(FName("JacobianDet"), JacobianDetRT);
+
         WaterMeshComponent->SetMaterial(0, DynamicWaterMaterial);
     }
 }
