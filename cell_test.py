@@ -23,7 +23,8 @@ def solve_cellsize(d):
     return (-b + np.sqrt(b**2 - 4*a*(c-d))) / (2 * a)
 
 def solve_depth(cs):
-    return b2*cs**2 + b1*cs + b0
+    res = b2*cs**2 + b1*cs + b0
+    return res / (1 + 0.1) # add a safety factor of 10% to the depth
 
 # cs_des = 0.5
 # safety = 0.1
@@ -33,7 +34,7 @@ def solve_depth(cs):
 # min_cs = solve_cellsize(d_test)
 
 # print(solve_cellsize(30))
-print(solve_depth(4))
+print(solve_depth(1))
 
 
 # Note: stability also seems to be somewhat dependant on the timestep, but I didn't have time to do more testing. 
