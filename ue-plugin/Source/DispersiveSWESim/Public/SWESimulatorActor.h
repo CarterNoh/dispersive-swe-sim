@@ -55,16 +55,16 @@ public:
     float WaterLevel = 0.0f; // Centimeters (Water plane height)
 
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="SWE | Configuration")
-    float FoamThreshold = 0.5f;
+    float FoamThreshold = -0.5f;
 
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="SWE | Configuration")
     float FoamMultiplier = 1.0f;
 
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="SWE | Configuration")
-    float FoamFade = 1.0f;
+    float FoamFade = 0.1f;
 
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="SWE | Configuration")
-    float FoamBlur = 1.0f;
+    float FoamBlur = 0.3f;
 
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="SWE | Configuration")
     float IntegrationSamples = 100.0f;

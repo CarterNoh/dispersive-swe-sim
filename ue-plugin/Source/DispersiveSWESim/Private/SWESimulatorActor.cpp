@@ -45,7 +45,7 @@ ASWESimulatorActor::ASWESimulatorActor()
     bAutoLoadDefaultAssets = true;
 
     // Attempt to resolve the default water material
-    static ConstructorHelpers::FObjectFinder<UMaterialInterface> WaterMaterialFinder(TEXT("/DispersiveSWESim/M_PreviewOceanWater"));
+    static ConstructorHelpers::FObjectFinder<UMaterialInterface> WaterMaterialFinder(TEXT("/DispersiveSWESim/Materials/M_PreviewOceanWater"));
     if (WaterMaterialFinder.Succeeded())
     {
         BaseWaterMaterial = WaterMaterialFinder.Object;
@@ -246,7 +246,7 @@ void ASWESimulatorActor::BeginPlay()
 
     RoughnessRT = NewObject<UTextureRenderTarget2D>(this);
     RoughnessRT->bCanCreateUAV = true;
-    RoughnessRT->InitCustomFormat(GridResolution, 1, PF_R32_FLOAT, false);
+    RoughnessRT->InitCustomFormat(GridResolution, 1, PF_FloatRGBA, false);
     RoughnessRT->AddressX = TA_Clamp;
     RoughnessRT->AddressY = TA_Clamp;
 
@@ -332,7 +332,7 @@ void ASWESimulatorActor::BeginPlay()
     // 5. Try to load default material if not set
     if (!BaseWaterMaterial && bAutoLoadDefaultAssets)
     {
-        BaseWaterMaterial = Cast<UMaterialInterface>(StaticLoadObject(UMaterialInterface::StaticClass(), nullptr, TEXT("/DispersiveSWESim/M_PreviewOceanWater")));
+        BaseWaterMaterial = Cast<UMaterialInterface>(StaticLoadObject(UMaterialInterface::StaticClass(), nullptr, TEXT("/DispersiveSWESim/Materials/M_PreviewOceanWater")));
     }
 
     // 6. Create and bind dynamic material instance

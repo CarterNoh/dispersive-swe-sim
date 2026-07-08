@@ -95,11 +95,20 @@ void UDispersiveSWESimulator::AllocatePersistentTargets(FRHICommandListImmediate
 	GRenderTargetPool.FindFreeElement(RHICmdList, Desc, Texqtilde_y, TEXT("SWE_qtilde_y"));
 	GRenderTargetPool.FindFreeElement(RHICmdList, Desc, Texubar_x, TEXT("SWE_ubar_x"));
 	GRenderTargetPool.FindFreeElement(RHICmdList, Desc, Texubar_y, TEXT("SWE_ubar_y"));
-	GRenderTargetPool.FindFreeElement(RHICmdList, Desc, TexFoam, TEXT("SWE_FoamState"));
+
+	FPooledRenderTargetDesc FoamDesc = FPooledRenderTargetDesc::Create2DDesc(
+		FIntPoint(GridSizeX, GridSizeY),
+		PF_FloatRGBA,
+		FClearValueBinding::None,
+		TexCreate_None,
+		TexCreate_ShaderResource | TexCreate_UAV,
+		false
+	);
+	GRenderTargetPool.FindFreeElement(RHICmdList, FoamDesc, TexFoam, TEXT("SWE_FoamState"));
 
 	FPooledRenderTargetDesc RoughnessDesc = FPooledRenderTargetDesc::Create2DDesc(
 		FIntPoint(GridSizeX, 1),
-		PF_R32_FLOAT,
+		PF_FloatRGBA,
 		FClearValueBinding::None,
 		TexCreate_None,
 		TexCreate_ShaderResource | TexCreate_UAV,
@@ -890,7 +899,7 @@ void UDispersiveSWESimulator::ExecuteSimulation_RenderThread(
 	// Create transient texture for the updated foam state
 	FRDGTextureDesc FoamDesc = FRDGTextureDesc::Create2D(
 		FIntPoint(GridSizeX, GridSizeY),
-		PF_R32_FLOAT,
+		PF_FloatRGBA,
 		FClearValueBinding::None,
 		TexCreate_ShaderResource | TexCreate_UAV
 	);
@@ -944,7 +953,7 @@ void UDispersiveSWESimulator::ExecuteSimulation_RenderThread(
 
 		FRDGTextureDesc RoughnessDesc = FRDGTextureDesc::Create2D(
 			FIntPoint(GridSizeX, 1),
-			PF_R32_FLOAT,
+			PF_FloatRGBA,
 			FClearValueBinding::None,
 			TexCreate_ShaderResource | TexCreate_UAV
 		);
