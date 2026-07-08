@@ -97,6 +97,16 @@ void UDispersiveSWESimulator::AllocatePersistentTargets(FRHICommandListImmediate
 	GRenderTargetPool.FindFreeElement(RHICmdList, Desc, Texubar_y, TEXT("SWE_ubar_y"));
 	GRenderTargetPool.FindFreeElement(RHICmdList, Desc, TexFoam, TEXT("SWE_FoamState"));
 
+	FPooledRenderTargetDesc RoughnessDesc = FPooledRenderTargetDesc::Create2DDesc(
+		FIntPoint(GridSizeX, 1),
+		PF_R32_FLOAT,
+		FClearValueBinding::None,
+		TexCreate_None,
+		TexCreate_ShaderResource | TexCreate_UAV,
+		false
+	);
+	GRenderTargetPool.FindFreeElement(RHICmdList, RoughnessDesc, TexRoughness, TEXT("SWE_RoughnessState"));
+
 	// Complex/array targets use padded sizes and PF_G32R32F format
 	FPooledRenderTargetDesc ComplexArrayDesc = FPooledRenderTargetDesc::Create2DArrayDesc(
 		FIntPoint(PaddedSizeX, PaddedSizeY),
@@ -243,6 +253,13 @@ void UDispersiveSWESimulator::SetupInitialStates(FRHICommandListImmediate& RHICm
 		{
 			FRDGTextureRef Foam_RDG = GraphBuilder.RegisterExternalTexture(TexFoam);
 			AddClearRenderTargetPass(GraphBuilder, Foam_RDG, FLinearColor::Black);
+		}
+
+		// Initialize persistent roughness target to 0 (smooth water by default)
+		if (TexRoughness.IsValid())
+		{
+			FRDGTextureRef Roughness_RDG = GraphBuilder.RegisterExternalTexture(TexRoughness);
+			AddClearRenderTargetPass(GraphBuilder, Roughness_RDG, FLinearColor::Black);
 		}
 
 		GraphBuilder.Execute();
@@ -919,6 +936,53 @@ void UDispersiveSWESimulator::ExecuteSimulation_RenderThread(
 	AddCopyTexturePass(GraphBuilder, NewFoamRDG, PreviousFoam_RDG);
 
 	// ----------------------------------------------------
+	// CALCULATE ROUGHNESS LOOK-UP TABLE (LUT)
+	// ----------------------------------------------------
+	if (TexRoughness.IsValid())
+	{
+		FRDGTextureRef PreviousRoughness_RDG = GraphBuilder.RegisterExternalTexture(TexRoughness);
+
+		FRDGTextureDesc RoughnessDesc = FRDGTextureDesc::Create2D(
+			FIntPoint(GridSizeX, 1),
+			PF_R32_FLOAT,
+			FClearValueBinding::None,
+			TexCreate_ShaderResource | TexCreate_UAV
+		);
+		FRDGTextureRef NewRoughnessRDG = GraphBuilder.CreateTexture(RoughnessDesc, TEXT("SWE_NewRoughnessState"));
+
+		AddCopyTexturePass(GraphBuilder, PreviousRoughness_RDG, NewRoughnessRDG);
+
+		if (RoughnessRT && RoughnessRT->GetRenderTargetResource() && NormalRT && NormalRT->GetRenderTargetResource())
+		{
+			FRDGTextureRef ExportRoughnessDest = GraphBuilder.RegisterExternalTexture(CreateRenderTarget(RoughnessRT->GetRenderTargetResource()->GetTexture2DRHI(), TEXT("SWE_RoughnessExport")));
+			FRDGTextureRef CurrentNormal_RDG = GraphBuilder.RegisterExternalTexture(CreateRenderTarget(NormalRT->GetRenderTargetResource()->GetTexture2DRHI(), TEXT("SWE_NormalForRoughness")));
+
+			TShaderMapRef<FCalcRoughnessLUTCS> RoughnessCS(GetGlobalShaderMap(GMaxRHIFeatureLevel));
+			FCalcRoughnessLUTCS::FParameters* PassParams = GraphBuilder.AllocParameters<FCalcRoughnessLUTCS::FParameters>();
+			PassParams->SimConstants = ConstantBuffer;
+			PassParams->IntegrationSamples = IntegrationSamples;
+			PassParams->RoughnessPower = RoughnessPower;
+			PassParams->inNormal = GraphBuilder.CreateSRV(CurrentNormal_RDG);
+			PassParams->inPreviousRoughness = GraphBuilder.CreateSRV(PreviousRoughness_RDG);
+			PassParams->BilinearWrapSampler = TStaticSamplerState<SF_Bilinear, AM_Wrap, AM_Wrap, AM_Wrap>::GetRHI();
+			PassParams->outRoughness = GraphBuilder.CreateUAV(NewRoughnessRDG);
+
+			FComputeShaderUtils::AddPass(
+				GraphBuilder,
+				RDG_EVENT_NAME("SWE_CalcRoughnessLUT"),
+				ERDGPassFlags::Compute,
+				RoughnessCS,
+				PassParams,
+				FIntVector(FMath::DivideAndRoundUp(GridSizeX, 16), 1, 1)
+			);
+
+			AddCopyTexturePass(GraphBuilder, NewRoughnessRDG, ExportRoughnessDest);
+		}
+
+		AddCopyTexturePass(GraphBuilder, NewRoughnessRDG, PreviousRoughness_RDG);
+	}
+
+	// ----------------------------------------------------
 	// ASYNC READBACK OF WATER HEIGHT FIELD (TexH)
 	// ----------------------------------------------------
 	if (StagingTextures[StagingWriteIndex].IsValid() && H_RDG)
@@ -1119,6 +1183,7 @@ bool UDispersiveSWESimulator::SaveParametersToJson(const FString& FilePath)
 	JsonObject->RemoveField(TEXT("normalRT"));
 	JsonObject->RemoveField(TEXT("foamRT"));
 	JsonObject->RemoveField(TEXT("jacobianDetRT"));
+	JsonObject->RemoveField(TEXT("roughnessRT"));
 	JsonObject->RemoveField(TEXT("jsonConfigFilePath"));
 
 	FString JsonString;

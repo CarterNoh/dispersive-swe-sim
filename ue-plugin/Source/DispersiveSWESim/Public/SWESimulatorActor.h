@@ -67,6 +67,12 @@ public:
     float FoamBlur = 1.0f;
 
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="SWE | Configuration")
+    float IntegrationSamples = 100.0f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="SWE | Configuration")
+    float RoughnessPower = 1.0f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="SWE | Configuration")
     UMaterialInterface* BaseWaterMaterial;
 
 private:
@@ -90,6 +96,9 @@ private:
 
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="SWE | Debug", meta=(AllowPrivateAccess="true"))
     UTextureRenderTarget2D* JacobianDetRT;
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="SWE | Debug", meta=(AllowPrivateAccess="true"))
+    UTextureRenderTarget2D* RoughnessRT;
 
     // --- Material ---
     UPROPERTY()

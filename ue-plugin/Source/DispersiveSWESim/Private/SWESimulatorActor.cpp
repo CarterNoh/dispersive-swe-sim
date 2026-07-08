@@ -45,7 +45,7 @@ ASWESimulatorActor::ASWESimulatorActor()
     bAutoLoadDefaultAssets = true;
 
     // Attempt to resolve the default water material
-    static ConstructorHelpers::FObjectFinder<UMaterialInterface> WaterMaterialFinder(TEXT("/DispersiveSWESim/M_SWEDefaultWater"));
+    static ConstructorHelpers::FObjectFinder<UMaterialInterface> WaterMaterialFinder(TEXT("/DispersiveSWESim/M_PreviewOceanWater"));
     if (WaterMaterialFinder.Succeeded())
     {
         BaseWaterMaterial = WaterMaterialFinder.Object;
@@ -244,6 +244,12 @@ void ASWESimulatorActor::BeginPlay()
     JacobianDetRT->AddressX = TA_Clamp;
     JacobianDetRT->AddressY = TA_Clamp;
 
+    RoughnessRT = NewObject<UTextureRenderTarget2D>(this);
+    RoughnessRT->bCanCreateUAV = true;
+    RoughnessRT->InitCustomFormat(GridResolution, 1, PF_R32_FLOAT, false);
+    RoughnessRT->AddressX = TA_Clamp;
+    RoughnessRT->AddressY = TA_Clamp;
+
     // 3. Setup Scene Capture Component properties
     float CameraZ = 5000.0f;
     if (TerrainCaptureComponent)
@@ -308,12 +314,16 @@ void ASWESimulatorActor::BeginPlay()
         SimComponent->FoamFade = FoamFade;
         SimComponent->FoamBlur = FoamBlur;
 
+        SimComponent->IntegrationSamples = IntegrationSamples;
+        SimComponent->RoughnessPower = RoughnessPower;
+
         SimComponent->TerrainHeightInputRT = TerrainCaptureRT;
         SimComponent->DisplacementRT = DisplacementRT;
         SimComponent->DisplacementPastRT = DisplacementPastRT;
         SimComponent->NormalRT = NormalRT;
         SimComponent->FoamRT = FoamRT;
         SimComponent->JacobianDetRT = JacobianDetRT;
+        SimComponent->RoughnessRT = RoughnessRT;
     }
 
     // Call Super::BeginPlay() after components are fully configured to trigger correct InitializeSimulation grid sizes
@@ -322,7 +332,7 @@ void ASWESimulatorActor::BeginPlay()
     // 5. Try to load default material if not set
     if (!BaseWaterMaterial && bAutoLoadDefaultAssets)
     {
-        BaseWaterMaterial = Cast<UMaterialInterface>(StaticLoadObject(UMaterialInterface::StaticClass(), nullptr, TEXT("/DispersiveSWESim/M_SWEDefaultWater")));
+        BaseWaterMaterial = Cast<UMaterialInterface>(StaticLoadObject(UMaterialInterface::StaticClass(), nullptr, TEXT("/DispersiveSWESim/M_PreviewOceanWater")));
     }
 
     // 6. Create and bind dynamic material instance
@@ -349,6 +359,12 @@ void ASWESimulatorActor::BeginPlay()
         DynamicWaterMaterial->SetTextureParameterValue(FName("JacobianDetMap"), JacobianDetRT);
         DynamicWaterMaterial->SetTextureParameterValue(FName("Jacobian Det Map"), JacobianDetRT);
         DynamicWaterMaterial->SetTextureParameterValue(FName("JacobianDet"), JacobianDetRT);
+
+        DynamicWaterMaterial->SetTextureParameterValue(FName("RoughnessMap"), RoughnessRT);
+        DynamicWaterMaterial->SetTextureParameterValue(FName("Roughness Map"), RoughnessRT);
+        DynamicWaterMaterial->SetTextureParameterValue(FName("Roughness"), RoughnessRT);
+        DynamicWaterMaterial->SetTextureParameterValue(FName("RoughnessLUT"), RoughnessRT);
+        DynamicWaterMaterial->SetTextureParameterValue(FName("Roughness LUT"), RoughnessRT);
 
         WaterMeshComponent->SetMaterial(0, DynamicWaterMaterial);
     }

@@ -25,4 +25,5 @@ IMPLEMENT_GLOBAL_SHADER(FInitializeWaterHeightCS, "/Plugin/DispersiveSWESim/kern
 IMPLEMENT_GLOBAL_SHADER(FScaleCopyTextureCS,      "/Plugin/DispersiveSWESim/kernels.usf",  "ScaleCopyTexture",       SF_Compute);
 IMPLEMENT_GLOBAL_SHADER(FScaleCopyDisplacementCS, "/Plugin/DispersiveSWESim/kernels.usf",  "ScaleCopyDisplacement",  SF_Compute);
 IMPLEMENT_GLOBAL_SHADER(FCalcSurfaceNormalAndFoamCS, "/Plugin/DispersiveSWESim/kernels.usf",  "CalcSurfaceNormalAndFoam", SF_Compute);
+IMPLEMENT_GLOBAL_SHADER(FCalcRoughnessLUTCS,        "/Plugin/DispersiveSWESim/kernels.usf",  "CalcRoughnessLUT",        SF_Compute);
 

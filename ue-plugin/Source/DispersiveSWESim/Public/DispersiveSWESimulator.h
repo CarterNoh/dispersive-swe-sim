@@ -144,6 +144,13 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SWE Simulation|eWave|Foam")
 	float FoamBlur = 1.0f;
 
+	// Roughness scale integration samples and power parameter
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SWE Simulation|eWave|Roughness")
+	float IntegrationSamples = 100.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SWE Simulation|eWave|Roughness")
+	float RoughnessPower = 1.0f;
+
 	// Input Render Target containing the level's terrain/height capture map
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SWE Inputs")
 	UTextureRenderTarget2D* TerrainHeightInputRT = nullptr;
@@ -179,6 +186,9 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SWE Outputs")
 	UTextureRenderTarget2D* JacobianDetRT = nullptr;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SWE Outputs")
+	UTextureRenderTarget2D* RoughnessRT = nullptr;
 
 	UFUNCTION(BlueprintCallable, Category = "SWE Configuration")
 	bool LoadParametersFromJson(const FString& FilePath);
@@ -225,6 +235,7 @@ private:
 	TRefCountPtr<IPooledRenderTarget> Texubar_x;
 	TRefCountPtr<IPooledRenderTarget> Texubar_y;
 	TRefCountPtr<IPooledRenderTarget> TexFoam;
+	TRefCountPtr<IPooledRenderTarget> TexRoughness;
 
 	// Stateful complex textures array for wave FFT propagation
 	TRefCountPtr<IPooledRenderTarget> TexHPos;

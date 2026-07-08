@@ -825,4 +825,75 @@ void RecomputeH(uint3 id : SV_DispatchThreadID) {
     out0[id.xy] = in0[id.xy] + in3[id.xy];
 }
 
+Texture2D<float4> inNormal;
+Texture2D<float> inPreviousRoughness;
+SamplerState BilinearWrapSampler;
+RWTexture2D<float> outRoughness;
+
+float IntegrationSamples;
+float RoughnessPower;
+
+[numthreads(16, 1, 1)]
+void CalcRoughnessLUT(uint3 id : SV_DispatchThreadID) {
+    if (id.x >= (uint)gridSizeX) return;
+
+    // Seed for LCG random generator
+    uint Seed = id.x + uint(time * 1337.0f);
+    // Simple LCG random function (returns uniform float in [0, 1])
+    #define RAND_FLOAT() (Seed = Seed * 1103515245U + 12345U, float(Seed) / 4294967296.0f)
+
+    // MaxRange matches the material footprint divisor (2048 cm = 20.48 m)
+    float MaxRange = (float(id.x) / max(1.0f, float(gridSizeX - 1))) * 20.48f;
+
+    float RoughnessSum = 0.0f;
+    float GridWorldWidth = float(gridSizeX) * cellSize; // Total size of our grid in meters
+
+    for (int SampleIdx = 0; SampleIdx < 16; ++SampleIdx) {
+        // Generate random position A in world space (in meters)
+        // Limit to GridWorldWidth to wrap correctly in texture space [0, 1]
+        float2 PosA = float2(RAND_FLOAT() * GridWorldWidth, RAND_FLOAT() * GridWorldWidth);
+
+        // Generate second position B uniformly distributed on a circle within MaxRange
+        float sin_theta, cos_theta;
+        sincos(RAND_FLOAT() * 2.0f * PI, sin_theta, cos_theta);
+        float Radius = sqrt(RAND_FLOAT()) * MaxRange;
+        float2 PosB = PosA + float2(cos_theta, sin_theta) * Radius;
+
+        // Convert world space to normalized texture coordinates
+        float2 uvA = PosA / GridWorldWidth;
+        float2 uvB = PosB / GridWorldWidth;
+
+        // Sample normals from the normal map (which is periodic/wrapped)
+        float3 NormalA = inNormal.SampleLevel(BilinearWrapSampler, uvA, 0).xyz;
+        float3 NormalB = inNormal.SampleLevel(BilinearWrapSampler, uvB, 0).xyz;
+
+        // Express roughness as angle between pair of normals
+        float Roughness = dot(NormalA, NormalB);
+        Roughness = Roughness * 0.5f + 0.5f;
+
+        RoughnessSum += Roughness;
+    }
+
+    #undef RAND_FLOAT
+
+    RoughnessSum /= 16.0f;
+
+    // Load previous frame roughness
+    float PrevRoughness = inPreviousRoughness[int2(id.x, 0)];
+
+    float SampleW = 1.0f / max(1.0f, IntegrationSamples);
+    float PrevSampleW = 1.0f - SampleW;
+
+    // Invert roughness (aligned = smooth, opposite = rough)
+    float NewRoughness = 1.0f - saturate(RoughnessSum);
+
+    // Adjust by user power
+    NewRoughness = pow(max(0.0f, NewRoughness), RoughnessPower);
+
+    // Mix history
+    NewRoughness = PrevRoughness * PrevSampleW + NewRoughness * SampleW;
+
+    outRoughness[int2(id.x, 0)] = NewRoughness;
+}
+
 

@@ -455,3 +455,20 @@ public:
 	END_SHADER_PARAMETER_STRUCT()
 };
 
+class FCalcRoughnessLUTCS : public FDispersiveSWEComputeShader
+{
+public:
+	DECLARE_GLOBAL_SHADER(FCalcRoughnessLUTCS);
+	SHADER_USE_PARAMETER_STRUCT(FCalcRoughnessLUTCS, FDispersiveSWEComputeShader);
+
+	BEGIN_SHADER_PARAMETER_STRUCT(FParameters, )
+		SHADER_PARAMETER_STRUCT_REF(FSimConstants, SimConstants)
+		SHADER_PARAMETER(float, IntegrationSamples)
+		SHADER_PARAMETER(float, RoughnessPower)
+		SHADER_PARAMETER_RDG_TEXTURE_SRV(Texture2D<float4>, inNormal)
+		SHADER_PARAMETER_RDG_TEXTURE_SRV(Texture2D<float>, inPreviousRoughness)
+		SHADER_PARAMETER_SAMPLER(SamplerState, BilinearWrapSampler)
+		SHADER_PARAMETER_RDG_TEXTURE_UAV(RWTexture2D<float>, outRoughness)
+	END_SHADER_PARAMETER_STRUCT()
+};
+
