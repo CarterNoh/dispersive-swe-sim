@@ -456,13 +456,43 @@ void PropagateWaves(uint3 id : SV_DispatchThreadID) {
     DispXOut[id] = Dx;
     DispYOut[id] = Dy;
 
-    // Calculate Folding Map
+    // Calculate Foam Map
     float2 dDxdx = ComplexMul(Dx, float2(0, kx));
     float2 dDydy = ComplexMul(Dy, float2(0, ky));
     float2 dDxdy = ComplexMul(Dx, float2(0, ky));
     float2 Jxx = 1 + dDxdx;
     float2 Jyy = 1 + dDydy;
-    Jout[id.xy] = Jxx * Jyy - pow(dDxdy, 2);
+    float2 Jxy = dDxdy;
+    float2 JacDet = Jxx * Jyy - pow(dDxdy, 2); // Determinant of jacobian
+    float2 Jminus = 0.5f * ((Jxx + Jyy) - pow(ComplexMul(Jxx - Jyy, Jxx - Jyy) + 4.0f * ComplexMul(Jxy, Jxy) , 0.5f)); // smaller eigenvalue
+    Jout[id.xy] = Jminus; 
+    
+
+    // Bias Jacobian determinant by user parameter
+	JacDet = -JacDet + FoamThreshold[GDispatchThreadId.z] + 1;
+	
+    // /////// These should be done outside of fourier domain probably
+	// // Calculate foam injection from eigenvalue and user parameter;
+	// float Foam=FoamMultiplier[GDispatchThreadId.z]*saturate(+1-EigenValue_+ FoamThreshold[GDispatchThreadId.z] );
+	// // Load previous frame foam at current position
+	// float PreviousFoamCenter=0;
+	// SamplePos=GetWrappedPosition(position.xyz,int2(0,0));
+	// FoamGrid.GetPreviousFloatValue<Attribute="Foam">(SamplePos.x, SamplePos.y, PreviousFoamCenter);
+	// // Load previous frame foam at top, bottom, right and left texels and add result to accumulated foam.
+	// float AccumulatedFoam=0;
+	// for(int q=1; q<5; q++) {
+	// 	SamplePos=GetWrappedPosition(position.xyz,SampleOffsets[q]);
+	// 	float FoamSample;
+	// 	FoamGrid.GetPreviousFloatValue<Attribute="Foam">(SamplePos.x, SamplePos.y, FoamSample);
+	// 	AccumulatedFoam += FoamSample;
+	// }
+	// // interpolate from unblurrred previous foam to fully blurred previous foam using delta time and user parameter
+	// float2 PreviousFoam = lerp(PreviousFoamCenter,AccumulatedFoam*0.25f,saturate(DeltaTime * FoamBlur[GDispatchThreadId.z]));
+	// // Decrease previous foam by user parameter and delta time
+	// float2 FadedPreviousFoam = saturate(PreviousFoam-FoamFade[GDispatchThreadId.z]*DeltaTime);
+	// // Add this frame's foam to previous foam
+	// Foam = max(Foam, FadedPreviousFoam);
+
 }
 
 Texture2DArray<float2> HIn: register(t0);
