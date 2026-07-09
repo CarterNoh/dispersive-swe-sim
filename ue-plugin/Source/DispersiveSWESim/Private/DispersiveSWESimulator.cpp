@@ -14,20 +14,20 @@
 #include "ShaderCompilerCore.h"
 #include "GlobalShader.h"
 
-UDispersiveSWESimulator::UDispersiveSWESimulator()
+UDispersiveSWESimulator::UDispersiveSWESimulator() 
 {
 	PrimaryComponentTick.bCanEverTick = true;
 	PrimaryComponentTick.bStartWithTickEnabled = true;
 }
 
-void UDispersiveSWESimulator::BeginPlay()
+void UDispersiveSWESimulator::BeginPlay() 
 {
 	UE_LOG(LogTemp, Warning, TEXT("UDispersiveSWESimulator::BeginPlay() called"));
 	Super::BeginPlay();
 	InitializeSimulation();
 }
 
-int32 NextPowerOf2(int32 n)
+int32 NextPowerOf2(int32 n) 
 {
 	if (n <= 0) return 1;
 	int32 p = 1;
@@ -35,20 +35,31 @@ int32 NextPowerOf2(int32 n)
 	return p;
 }
 
-void UDispersiveSWESimulator::InitializeSimulation()
+void UDispersiveSWESimulator::InitializeSimulation() 
 {
 	UE_LOG(LogTemp, Warning, TEXT("InitializeSimulation() running: GridSizeX=%d, GridSizeY=%d, CellSize=%f, CapturedWorldWidth=%f"), GridSizeX, GridSizeY, CellSize, CapturedWorldWidth);
 
 	// Load configuration from JSON if path is provided
-	if (!JsonConfigFilePath.IsEmpty())
-	{
+	if (!JsonConfigFilePath.IsEmpty()) {
 		LoadParametersFromJson(JsonConfigFilePath);
 	}
 
 	// Automatically calculate CellSize based on CapturedWorldWidth and GridSizeX if enabled
-	if (bAutoCalculateCellSize && GridSizeX > 0)
-	{
+	if (bAutoCalculateCellSize && GridSizeX > 0) {
 		CellSize = CapturedWorldWidth / (float)GridSizeX;
+	} 
+
+	// Automatically calculate CalculatedMaxSafeDepth based on MaxSafeDepth
+	float CellSizeMeters = CellSize * 0.01f;
+	if (MaxSafeDepth > 0.0f) {
+		CalculatedMaxSafeDepth = MaxSafeDepth * 0.01f;
+	} else {
+		float a = 182.80027907467993f;
+		float b = 0.045464332332812774f;
+		float c = -0.14717654147795045f;
+		CalculatedMaxSafeDepth = a * CellSizeMeters * CellSizeMeters + b * CellSizeMeters + c;
+		CalculatedMaxSafeDepth *= StabilitySafetyFactor;
+		if (CalculatedMaxSafeDepth < 0.0f) CalculatedMaxSafeDepth = 0.0f;
 	}
 
 	PaddedSizeX = NextPowerOf2(GridSizeX);
@@ -56,8 +67,7 @@ void UDispersiveSWESimulator::InitializeSimulation()
 	SimulationTime = 0.0f;
 
 	ENQUEUE_RENDER_COMMAND(InitializeSWESimulation)(
-		[this](FRHICommandListImmediate& RHICmdList)
-		{
+		[this](FRHICommandListImmediate& RHICmdList) {
 			UE_LOG(LogTemp, Warning, TEXT("InitializeSWESimulation RenderCommand queueing AllocatePersistentTargets and SetupInitialStates"));
 			AllocatePersistentTargets(RHICmdList);
 			SetupInitialStates(RHICmdList);
@@ -67,7 +77,7 @@ void UDispersiveSWESimulator::InitializeSimulation()
 	);
 }
 
-void UDispersiveSWESimulator::AllocatePersistentTargets(FRHICommandListImmediate& RHICmdList)
+void UDispersiveSWESimulator::AllocatePersistentTargets(FRHICommandListImmediate& RHICmdList) 
 {
 	FPooledRenderTargetDesc Desc = FPooledRenderTargetDesc::Create2DDesc(
 		FIntPoint(GridSizeX, GridSizeY),
@@ -150,74 +160,61 @@ void UDispersiveSWESimulator::AllocatePersistentTargets(FRHICommandListImmediate
 	StagingReadIndex = 1;
 }
 
-void UDispersiveSWESimulator::SetupInitialStates(FRHICommandListImmediate& RHICmdList)
+void AssignConstants(FSimConstants Constants) 
 {
-	// 1. Setup the common uniform buffer first
-	FSimConstants CPUConstants = {};
-	CPUConstants.time = 0.0f;
-	CPUConstants.gridSizeX = GridSizeX;
-	CPUConstants.gridSizeY = GridSizeY;
-	CPUConstants.cellSize = CellSize * 0.01f; // Convert cm to meters
-	CPUConstants.timeStep = TimeStep;
-	CPUConstants.spongeThickness = SpongeThickness;
-	CPUConstants.minWaterHeight = MinWaterHeight * 0.01f; // Convert cm to meters
-	CPUConstants.surfaceTension = SurfaceTension;
-	CPUConstants.density = Density;
-	CPUConstants.diffusionIterations = DiffusionIterations;
-	CPUConstants.deltaT = DiffusionDeltaT;
-	CPUConstants.diffusionPenalty = DiffusionPenalty;
-	CPUConstants.slopeLimit = SlopeLimit;
-	CPUConstants.cflCondition = CFLCondition;
-	CPUConstants.gammaTransport = GammaTransport;
-	CPUConstants.depthNum = DepthLevels.Num();
-	CPUConstants.fetch = Fetch;
-	CPUConstants.windSpeed = WindSpeed;
-	CPUConstants.windAngle = WindAngle;
-	CPUConstants.swell = Swell;
-	CPUConstants.swellAngle = SwellAngle;
-	CPUConstants.choppiness = Choppiness;
-	CPUConstants.filterSmall = FilterSmall;
-	CPUConstants.filterBig = FilterBig;
-	CPUConstants.filterWidth = FilterWidth;
-	CPUConstants.filterMin = FilterMin;
-	CPUConstants.depthCutoff = DepthCutoff;
-	CPUConstants.paddedGridSizeX = PaddedSizeX;
-	CPUConstants.paddedGridSizeY = PaddedSizeY;
-	CPUConstants.foamThreshold = FoamThreshold;
-	CPUConstants.foamMultiplier = FoamMultiplier;
-	CPUConstants.foamFade = FoamFade;
-	CPUConstants.foamBlur = FoamBlur;
-
-	{
-		float CellSizeMeters = CellSize * 0.01f;
-		float CalculatedMaxSafeDepth;
-		if (MaxSafeDepth > 0.0f)
-		{
-			CalculatedMaxSafeDepth = MaxSafeDepth * 0.01f;
-		}
-		else
-		{
-			float a = 182.80027907467993f;
-			float b = 0.045464332332812774f;
-			float c = -0.14717654147795045f;
-			CalculatedMaxSafeDepth = a * CellSizeMeters * CellSizeMeters + b * CellSizeMeters + c;
-			CalculatedMaxSafeDepth *= StabilitySafetyFactor;
-			if (CalculatedMaxSafeDepth < 0.0f) CalculatedMaxSafeDepth = 0.0f;
-		}
-		CPUConstants.maxSafeDepth = CalculatedMaxSafeDepth;
-	}
-	for (int32 i = 0; i < 16; ++i)
-	{
+	Constants.time = SimulationTime;
+	Constants.gridSizeX = GridSizeX;
+	Constants.gridSizeY = GridSizeY;
+	Constants.cellSize = CellSize * 0.01f; // Convert cm to meters
+	Constants.timeStep = TimeStep;
+	Constants.spongeThickness = SpongeThickness;
+	Constants.minWaterHeight = MinWaterHeight * 0.01f; // Convert cm to meters
+	Constants.maxSafeDepth = CalculatedMaxSafeDepth;
+	Constants.surfaceTension = SurfaceTension;
+	Constants.density = Density;
+	Constants.diffusionIterations = DiffusionIterations;
+	Constants.deltaT = DiffusionDeltaT;
+	Constants.diffusionPenalty = DiffusionPenalty;
+	Constants.slopeLimit = SlopeLimit;
+	Constants.cflCondition = CFLCondition;
+	Constants.gammaTransport = GammaTransport;
+	Constants.depthNum = DepthLevels.Num();
+	Constants.fetch = Fetch;
+	Constants.windSpeed = WindSpeed;
+	Constants.windAngle = WindAngle;
+	Constants.swell = Swell;
+	Constants.swellAngle = SwellAngle;
+	Constants.choppiness = Choppiness;
+	Constants.filterSmall = FilterSmall;
+	Constants.filterBig = FilterBig;
+	Constants.filterWidth = FilterWidth;
+	Constants.filterMin = FilterMin;
+	Constants.depthCutoff = DepthCutoff;
+	Constants.paddedGridSizeX = PaddedSizeX;
+	Constants.paddedGridSizeY = PaddedSizeY;
+	Constants.foamThreshold = FoamThreshold;
+	Constants.foamMultiplier = FoamMultiplier;
+	Constants.foamFade = FoamFade;
+	Constants.foamBlur = FoamBlur;
+	for (int32 i = 0; i < 16; ++i) {
 		float Val = i < DepthLevels.Num() ? DepthLevels[i] : 0.0f;
-		CPUConstants.depthLevels[i / 4][i % 4] = Val;
+		Constants.depthLevels[i / 4][i % 4] = Val;
 	}
+}
+
+void UDispersiveSWESimulator::SetupInitialStates(FRHICommandListImmediate& RHICmdList) 
+{
+
+	// Setup the common uniform buffer
+	FSimConstants CPUConstants = {};
+	AssignConstants(Constants);
 
 	TUniformBufferRef<FSimConstants> ConstantBuffer = CreateUniformBufferImmediate(CPUConstants, EUniformBufferUsage::UniformBuffer_SingleFrame);
 
-	// 2. Initialize Terrain and Water Height fields
+	// Initialize Terrain and Water Height fields
 	if (TerrainHeightInputRT && 
 		TerrainHeightInputRT->GetRenderTargetResource() && 
-		TerrainHeightInputRT->GetRenderTargetResource()->GetTexture2DRHI())
+		TerrainHeightInputRT->GetRenderTargetResource()->GetTexture2DRHI()) 
 	{
 		FRDGBuilder GraphBuilder(RHICmdList);
 
@@ -234,8 +231,8 @@ void UDispersiveSWESimulator::SetupInitialStates(FRHICommandListImmediate& RHICm
 		FRDGTextureRef hbarOld_RDG = GraphBuilder.RegisterExternalTexture(TexhbarOld);
 
 		// Run the compute shader to initialize water height on GPU
-		TShaderMapRef<FInitializeWaterHeightCS> InitWaterHeightCS(GetGlobalShaderMap(GMaxRHIFeatureLevel));
-		FInitializeWaterHeightCS::FParameters* InitParams = GraphBuilder.AllocParameters<FInitializeWaterHeightCS::FParameters>();
+		TShaderMapRef<FInitializeWaterCS> InitWaterHeightCS(GetGlobalShaderMap(GMaxRHIFeatureLevel));
+		FInitializeWaterCS::FParameters* InitParams = GraphBuilder.AllocParameters<FInitializeWaterCS::FParameters>();
 		InitParams->SimConstants = ConstantBuffer;
 		InitParams->WaterLevel = WaterLevel * 0.01f; // Convert cm to meters
 		InitParams->TerrainCaptureCameraZ = TerrainCaptureCameraZ;
@@ -246,7 +243,7 @@ void UDispersiveSWESimulator::SetupInitialStates(FRHICommandListImmediate& RHICm
 
 		FComputeShaderUtils::AddPass(
 			GraphBuilder,
-			RDG_EVENT_NAME("SWE_InitializeWaterHeight_GPU"),
+			RDG_EVENT_NAME("SWE_InitializeWater_GPU"),
 			ERDGPassFlags::Compute,
 			InitWaterHeightCS,
 			InitParams,
@@ -258,15 +255,13 @@ void UDispersiveSWESimulator::SetupInitialStates(FRHICommandListImmediate& RHICm
 		AddCopyTexturePass(GraphBuilder, h_RDG, hbarOld_RDG);
 
 		// Initialize persistent foam target to 0
-		if (TexFoam.IsValid())
-		{
+		if (TexFoam.IsValid()) {
 			FRDGTextureRef Foam_RDG = GraphBuilder.RegisterExternalTexture(TexFoam);
 			AddClearRenderTargetPass(GraphBuilder, Foam_RDG, FLinearColor::Black);
 		}
 
 		// Initialize persistent roughness target to 0 (smooth water by default)
-		if (TexRoughness.IsValid())
-		{
+		if (TexRoughness.IsValid()) {
 			FRDGTextureRef Roughness_RDG = GraphBuilder.RegisterExternalTexture(TexRoughness);
 			AddClearRenderTargetPass(GraphBuilder, Roughness_RDG, FLinearColor::Black);
 		}
@@ -323,7 +318,7 @@ void UDispersiveSWESimulator::SetupInitialStates(FRHICommandListImmediate& RHICm
 		RHIUpdateTexture2D(hbarOldRHI, 0, Region, GridSizeX * sizeof(float), (uint8*)WaterData.GetData());
 	}
 
-	// 3. Initialize the Populated Wave Spectrum
+	// Initialize the Wave Spectrum
 	{
 		FRDGBuilder GraphBuilder(RHICmdList);
 
@@ -349,7 +344,9 @@ void UDispersiveSWESimulator::SetupInitialStates(FRHICommandListImmediate& RHICm
 	}
 }
 
-void UDispersiveSWESimulator::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
+
+
+void UDispersiveSWESimulator::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) 
 {
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
 
@@ -365,67 +362,10 @@ void UDispersiveSWESimulator::TickComponent(float DeltaTime, ELevelTick TickType
 	SimulationTime += TimeStep;
 
 	FSimConstants Constants = {};
-	Constants.time = SimulationTime;
-	Constants.gridSizeX = GridSizeX;
-	Constants.gridSizeY = GridSizeY;
-	Constants.cellSize = CellSize * 0.01f; // Convert cm to meters
-	Constants.timeStep = TimeStep;
-	Constants.spongeThickness = SpongeThickness;
-	Constants.minWaterHeight = MinWaterHeight * 0.01f; // Convert cm to meters
-	Constants.surfaceTension = SurfaceTension;
-	Constants.density = Density;
-	Constants.diffusionIterations = DiffusionIterations;
-	Constants.deltaT = DiffusionDeltaT;
-	Constants.diffusionPenalty = DiffusionPenalty;
-	Constants.slopeLimit = SlopeLimit;
-	Constants.cflCondition = CFLCondition;
-	Constants.gammaTransport = GammaTransport;
-	Constants.depthNum = DepthLevels.Num();
-	Constants.fetch = Fetch;
-	Constants.windSpeed = WindSpeed;
-	Constants.windAngle = WindAngle;
-	Constants.swell = Swell;
-	Constants.swellAngle = SwellAngle;
-	Constants.choppiness = Choppiness;
-	Constants.filterSmall = FilterSmall;
-	Constants.filterBig = FilterBig;
-	Constants.filterWidth = FilterWidth;
-	Constants.filterMin = FilterMin;
-	Constants.depthCutoff = DepthCutoff;
-	Constants.paddedGridSizeX = PaddedSizeX;
-	Constants.paddedGridSizeY = PaddedSizeY;
-	Constants.foamThreshold = FoamThreshold;
-	Constants.foamMultiplier = FoamMultiplier;
-	Constants.foamFade = FoamFade;
-	Constants.foamBlur = FoamBlur;
-
-	{
-		float CellSizeMeters = CellSize * 0.01f;
-		float CalculatedMaxSafeDepth;
-		if (MaxSafeDepth > 0.0f)
-		{
-			CalculatedMaxSafeDepth = MaxSafeDepth * 0.01f;
-		}
-		else
-		{
-			float a = 182.80027907467993f;
-			float b = 0.045464332332812774f;
-			float c = -0.14717654147795045f;
-			CalculatedMaxSafeDepth = a * CellSizeMeters * CellSizeMeters + b * CellSizeMeters + c;
-			CalculatedMaxSafeDepth *= StabilitySafetyFactor;
-			if (CalculatedMaxSafeDepth < 0.0f) CalculatedMaxSafeDepth = 0.0f;
-		}
-		Constants.maxSafeDepth = CalculatedMaxSafeDepth;
-	}
-	for (int32 i = 0; i < 16; ++i)
-	{
-		float Val = i < DepthLevels.Num() ? DepthLevels[i] : 0.0f;
-		Constants.depthLevels[i / 4][i % 4] = Val;
-	}
+	AssignConstants(Constants);
 
 	ENQUEUE_RENDER_COMMAND(ExecuteSWESimulation)(
-		[this, Constants](FRHICommandListImmediate& RHICmdList)
-		{
+		[this, Constants](FRHICommandListImmediate& RHICmdList) {
 			ExecuteSimulation_RenderThread(RHICmdList, Constants);
 		}
 	);
@@ -433,7 +373,7 @@ void UDispersiveSWESimulator::TickComponent(float DeltaTime, ELevelTick TickType
 
 void UDispersiveSWESimulator::ExecuteSimulation_RenderThread(
 	FRHICommandListImmediate& RHICmdList,
-	const FSimConstants& Constants)
+	const FSimConstants& Constants) 
 {
 	FRDGBuilder GraphBuilder(RHICmdList);
 
@@ -466,7 +406,6 @@ void UDispersiveSWESimulator::ExecuteSimulation_RenderThread(
 		FIntPoint(PaddedSizeX, PaddedSizeY), PF_R32_FLOAT, FClearValueBinding::None, TexCreate_UAV | TexCreate_ShaderResource);
 	FRDGTextureDesc ComplexPaddedDesc = FRDGTextureDesc::Create2D(
 		FIntPoint(PaddedSizeX, PaddedSizeY), PF_G32R32F, FClearValueBinding::None, TexCreate_UAV | TexCreate_ShaderResource);
-
 	FRDGTextureDesc ComplexArrayPaddedDesc = FRDGTextureDesc::Create2DArray(
 		FIntPoint(PaddedSizeX, PaddedSizeY),
 		PF_G32R32F,
@@ -475,7 +414,7 @@ void UDispersiveSWESimulator::ExecuteSimulation_RenderThread(
 		Constants.depthNum
 	);
 
-	// Temporary fields
+	// Decomposition transients
 	FRDGTextureRef alpha_H = GraphBuilder.CreateTexture(FloatDesc, TEXT("SWE_alpha_H"));
 	FRDGTextureRef alpha_Qx = GraphBuilder.CreateTexture(FloatDesc, TEXT("SWE_alpha_Qx"));
 	FRDGTextureRef alpha_Qy = GraphBuilder.CreateTexture(FloatDesc, TEXT("SWE_alpha_Qy"));
@@ -777,7 +716,7 @@ void UDispersiveSWESimulator::ExecuteSimulation_RenderThread(
 	AddCopyTexturePass(GraphBuilder, hbar_RDG, hbarOld_RDG);
 
 	// ----------------------------------------------------
-	// TRANSPORT STEP
+	// TRANSPORT & COMBINE STEP
 	// ----------------------------------------------------
 
 	// UpdateTilde (Advect wave height and flow rate)
@@ -820,10 +759,6 @@ void UDispersiveSWESimulator::ExecuteSimulation_RenderThread(
 	// Save past height
 	AddCopyTexturePass(GraphBuilder, h_RDG, hPast);
 
-	// ----------------------------------------------------
-	// COMPUTE FINAL VALUES STEP
-	// ----------------------------------------------------
-
 	// IntegrateH
 	{
 		TShaderMapRef<FIntegrateHCS> Shader(ShaderMap);
@@ -844,21 +779,21 @@ void UDispersiveSWESimulator::ExecuteSimulation_RenderThread(
 		FComputeShaderUtils::AddPass(GraphBuilder, RDG_EVENT_NAME("SWE_IntegrateH"), ERDGPassFlags::Compute, Shader, Params, GridGroups);
 	}
 
-	// Recompute total elevation H
+	// ----------------------------------------------------
+	// EXPORT VISUAL OUTPUTS TO RENDER TARGETS
+	// ----------------------------------------------------
+
+	// Recompute total elevation H for rendering
 	{
 		TShaderMapRef<FRecomputeHCS> Shader(ShaderMap);
 		FRecomputeHCS::FParameters* Params = GraphBuilder.AllocParameters<FRecomputeHCS::FParameters>();
 		Params->SimConstants = ConstantBuffer;
 		Params->in0 = GraphBuilder.CreateSRV(h_RDG);
-		Params->in3 = GraphBuilder.CreateSRV(Terrain_RDG);
+		Params->in1 = GraphBuilder.CreateSRV(Terrain_RDG);
 		Params->out0 = GraphBuilder.CreateUAV(H_RDG);
 
 		FComputeShaderUtils::AddPass(GraphBuilder, RDG_EVENT_NAME("SWE_Final_ReH"), ERDGPassFlags::Compute, Shader, Params, GridGroups);
 	}
-
-	// ----------------------------------------------------
-	// EXPORT VISUAL OUTPUTS TO RENDER TARGETS
-	// ----------------------------------------------------
 
 	// Copy current Displacement to DisplacementPast before updating
 	if (DisplacementPastRT && DisplacementPastRT->GetRenderTargetResource() &&
@@ -1055,7 +990,7 @@ void UDispersiveSWESimulator::DispatchFFT_RenderThread(
 	int32 SizeX,
 	int32 SizeY,
 	bool bInverse,
-	int32 NumLayers)
+	int32 NumLayers) 
 {
 	uint32 BitsX = 0, BitsY = 0;
 	int32 TmpX = SizeX;
@@ -1120,21 +1055,18 @@ void UDispersiveSWESimulator::DispatchFFT_RenderThread(
 	}
 }
 
-bool UDispersiveSWESimulator::LoadParametersFromJson(const FString& FilePath)
+bool UDispersiveSWESimulator::LoadParametersFromJson(const FString& FilePath) 
 {
 	FString FinalPath = FilePath;
-	if (FPaths::IsRelative(FinalPath))
-	{
+	if (FPaths::IsRelative(FinalPath)) {
 		FinalPath = FPaths::Combine(FPaths::ProjectDir(), FilePath);
 	}
 
 	FString JsonString;
-	if (!FFileHelper::LoadFileToString(JsonString, *FinalPath))
-	{
+	if (!FFileHelper::LoadFileToString(JsonString, *FinalPath)) {
 		// Try resolving relative to Content folder as a fallback
 		FString FallbackPath = FPaths::Combine(FPaths::ProjectContentDir(), FilePath);
-		if (!FFileHelper::LoadFileToString(JsonString, *FallbackPath))
-		{
+		if (!FFileHelper::LoadFileToString(JsonString, *FallbackPath)) {
 			UE_LOG(LogTemp, Warning, TEXT("Failed to load JSON file from path: %s (or fallback %s)"), *FinalPath, *FallbackPath);
 			return false;
 		}
@@ -1144,24 +1076,20 @@ bool UDispersiveSWESimulator::LoadParametersFromJson(const FString& FilePath)
 	TSharedPtr<FJsonObject> JsonObject;
 	TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(JsonString);
 
-	if (!FJsonSerializer::Deserialize(Reader, JsonObject) || !JsonObject.IsValid())
-	{
+	if (!FJsonSerializer::Deserialize(Reader, JsonObject) || !JsonObject.IsValid()) {
 		UE_LOG(LogTemp, Warning, TEXT("Failed to deserialize JSON string."));
 		return false;
 	}
 
 	// Map JSON fields directly to component properties
-	if (!FJsonObjectConverter::JsonObjectToUStruct(JsonObject.ToSharedRef(), GetClass(), this))
-	{
+	if (!FJsonObjectConverter::JsonObjectToUStruct(JsonObject.ToSharedRef(), GetClass(), this)) {
 		UE_LOG(LogTemp, Warning, TEXT("Failed to map JSON object to component properties."));
 		return false;
 	}
 
-	if (JsonObject->HasField(TEXT("CellSize")))
-	{
+	if (JsonObject->HasField(TEXT("CellSize"))) {
 		double CustomCellSize = 0.0;
-		if (JsonObject->TryGetNumberField(TEXT("CellSize"), CustomCellSize) && CustomCellSize > 0.0)
-		{
+		if (JsonObject->TryGetNumberField(TEXT("CellSize"), CustomCellSize) && CustomCellSize > 0.0) {
 			bAutoCalculateCellSize = false;
 		}
 	}
@@ -1170,17 +1098,15 @@ bool UDispersiveSWESimulator::LoadParametersFromJson(const FString& FilePath)
 	return true;
 }
 
-bool UDispersiveSWESimulator::SaveParametersToJson(const FString& FilePath)
+bool UDispersiveSWESimulator::SaveParametersToJson(const FString& FilePath) 
 {
 	FString FinalPath = FilePath;
-	if (FPaths::IsRelative(FinalPath))
-	{
+	if (FPaths::IsRelative(FinalPath)) {
 		FinalPath = FPaths::Combine(FPaths::ProjectDir(), FilePath);
 	}
 
 	TSharedRef<FJsonObject> JsonObject = MakeShared<FJsonObject>();
-	if (!FJsonObjectConverter::UStructToJsonObject(GetClass(), this, JsonObject))
-	{
+	if (!FJsonObjectConverter::UStructToJsonObject(GetClass(), this, JsonObject)) {
 		UE_LOG(LogTemp, Warning, TEXT("Failed to convert component properties to JSON object."));
 		return false;
 	}
@@ -1197,14 +1123,12 @@ bool UDispersiveSWESimulator::SaveParametersToJson(const FString& FilePath)
 
 	FString JsonString;
 	TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&JsonString);
-	if (!FJsonSerializer::Serialize(JsonObject, Writer))
-	{
+	if (!FJsonSerializer::Serialize(JsonObject, Writer)) {
 		UE_LOG(LogTemp, Warning, TEXT("Failed to serialize JSON object."));
 		return false;
 	}
 
-	if (!FFileHelper::SaveStringToFile(JsonString, *FinalPath))
-	{
+	if (!FFileHelper::SaveStringToFile(JsonString, *FinalPath)) {
 		UE_LOG(LogTemp, Warning, TEXT("Failed to save JSON string to path: %s"), *FinalPath);
 		return false;
 	}
@@ -1213,27 +1137,24 @@ bool UDispersiveSWESimulator::SaveParametersToJson(const FString& FilePath)
 	return true;
 }
 
-float UDispersiveSWESimulator::GetCachedHeight(int32 X, int32 Y) const
+float UDispersiveSWESimulator::GetCachedHeight(int32 X, int32 Y) const 
 {
 	int32 Index = Y * GridSizeX + X;
 	int32 ActiveIdx = ActiveCPUBufferIndex.load();
-	if (CPUHeightData[ActiveIdx].IsValidIndex(Index))
-	{
+	if (CPUHeightData[ActiveIdx].IsValidIndex(Index)) {
 		return CPUHeightData[ActiveIdx][Index];
 	}
 	return WaterLevel * 0.01f; // base water level in meters
 }
 
-float UDispersiveSWESimulator::GetWaterHeightAtLocation(const FVector& WorldLocation) const
+float UDispersiveSWESimulator::GetWaterHeightAtLocation(const FVector& WorldLocation) const 
 {
-	if (GridSizeX <= 1 || GridSizeY <= 1 || CapturedWorldWidth <= 0.0f)
-	{
+	if (GridSizeX <= 1 || GridSizeY <= 1 || CapturedWorldWidth <= 0.0f) {
 		return WaterLevel;
 	}
 
 	AActor* Owner = GetOwner();
-	if (!Owner)
-	{
+	if (!Owner) {
 		return WaterLevel;
 	}
 

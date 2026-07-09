@@ -18,6 +18,9 @@ public:
 	virtual void BeginPlay() override;
 	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
 
+
+	//////// Parameters ////////
+
 	// Grid Resolution in X dimension
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SWE Simulation")
 	int32 GridSizeX = 512;
@@ -42,7 +45,7 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SWE Simulation")
 	int32 SpongeThickness = 8;
 
-	// Minimum water height in centimeters for solver stability
+	// Minimum water height in centimeters for terrain boundary
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SWE Simulation")
 	float MinWaterHeight = 0.1f;
 
@@ -150,6 +153,11 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SWE Simulation|eWave|Roughness")
 	float RoughnessPower = 1.0f;
+
+	//////// Calculated Values ////////
+	float CalculatedMaxSafeDepth;
+
+	//////// Render Targets ////////
 
 	// Input Render Target containing the level's terrain/height capture map
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SWE Inputs")

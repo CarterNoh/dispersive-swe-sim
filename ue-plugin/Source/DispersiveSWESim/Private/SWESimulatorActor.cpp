@@ -366,6 +366,15 @@ void ASWESimulatorActor::BeginPlay()
         DynamicWaterMaterial->SetTextureParameterValue(FName("RoughnessLUT"), RoughnessRT);
         DynamicWaterMaterial->SetTextureParameterValue(FName("Roughness LUT"), RoughnessRT);
 
+        DynamicWaterMaterial->SetTextureParameterValue(FName("TerrainHeightMap"), TerrainCaptureRT);
+        DynamicWaterMaterial->SetTextureParameterValue(FName("Terrain Height Map"), TerrainCaptureRT);
+        DynamicWaterMaterial->SetTextureParameterValue(FName("TerrainHeight"), TerrainCaptureRT);
+        DynamicWaterMaterial->SetTextureParameterValue(FName("Terrain Height"), TerrainCaptureRT);
+        DynamicWaterMaterial->SetTextureParameterValue(FName("TerrainCapture"), TerrainCaptureRT);
+        DynamicWaterMaterial->SetTextureParameterValue(FName("Terrain Capture"), TerrainCaptureRT);
+
+        DynamicWaterMaterial->SetScalarParameterValue(FName("TerrainCaptureCameraZ"), CameraZ);
+
         WaterMeshComponent->SetMaterial(0, DynamicWaterMaterial);
     }
 }

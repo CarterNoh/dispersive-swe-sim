@@ -57,6 +57,23 @@ public:
 
 // --- Shaders from kernels.usf ---
 
+class FInitializeWaterCS : public FDispersiveSWEComputeShader
+{
+public:
+	DECLARE_GLOBAL_SHADER(FInitializeWaterCS);
+	SHADER_USE_PARAMETER_STRUCT(FInitializeWaterCS, FDispersiveSWEComputeShader);
+
+	BEGIN_SHADER_PARAMETER_STRUCT(FParameters, )
+		SHADER_PARAMETER_STRUCT_REF(FSimConstants, SimConstants)
+		SHADER_PARAMETER(float, WaterLevel)
+		SHADER_PARAMETER(float, TerrainCaptureCameraZ)
+		SHADER_PARAMETER_RDG_TEXTURE_SRV(Texture2D<float>, in3)
+		SHADER_PARAMETER_RDG_TEXTURE_UAV(RWTexture2D<float>, out0)
+		SHADER_PARAMETER_RDG_TEXTURE_UAV(RWTexture2D<float>, out1)
+		SHADER_PARAMETER_RDG_TEXTURE_UAV(RWTexture2D<float>, out2)
+	END_SHADER_PARAMETER_STRUCT()
+};
+
 class FInitDecompCS : public FDispersiveSWEComputeShader
 {
 public:
@@ -147,6 +164,56 @@ public:
 		SHADER_PARAMETER_RDG_TEXTURE_UAV(RWTexture2D<float>, out3)
 		SHADER_PARAMETER_RDG_TEXTURE_UAV(RWTexture2D<float>, out4)
 		SHADER_PARAMETER_RDG_TEXTURE_UAV(RWTexture2D<float>, out5)
+	END_SHADER_PARAMETER_STRUCT()
+};
+
+class FTransferToFFTCS : public FDispersiveSWEComputeShader
+{
+public:
+	DECLARE_GLOBAL_SHADER(FTransferToFFTCS);
+	SHADER_USE_PARAMETER_STRUCT(FTransferToFFTCS, FDispersiveSWEComputeShader);
+
+	BEGIN_SHADER_PARAMETER_STRUCT(FParameters, )
+		SHADER_PARAMETER_STRUCT_REF(FSimConstants, SimConstants)
+		SHADER_PARAMETER_RDG_TEXTURE_SRV(Texture2D<float>, in0)
+		SHADER_PARAMETER_RDG_TEXTURE_SRV(Texture2D<float>, in1)
+		SHADER_PARAMETER_RDG_TEXTURE_SRV(Texture2D<float>, in2)
+		SHADER_PARAMETER_RDG_TEXTURE_UAV(RWTexture2D<float>, out0)
+		SHADER_PARAMETER_RDG_TEXTURE_UAV(RWTexture2D<float2>, hHat)
+		SHADER_PARAMETER_RDG_TEXTURE_UAV(RWTexture2D<float2>, qHat_x)
+		SHADER_PARAMETER_RDG_TEXTURE_UAV(RWTexture2D<float2>, qHat_y)
+	END_SHADER_PARAMETER_STRUCT()
+};
+
+class FCalcEWaveCS : public FDispersiveSWEComputeShader
+{
+public:
+	DECLARE_GLOBAL_SHADER(FCalcEWaveCS);
+	SHADER_USE_PARAMETER_STRUCT(FCalcEWaveCS, FDispersiveSWEComputeShader);
+
+	BEGIN_SHADER_PARAMETER_STRUCT(FParameters, )
+		SHADER_PARAMETER_STRUCT_REF(FSimConstants, SimConstants)
+		SHADER_PARAMETER_RDG_TEXTURE_SRV(Texture2D<float2>, hhat)
+		SHADER_PARAMETER_RDG_TEXTURE_SRV(Texture2D<float2>, qhat_x)
+		SHADER_PARAMETER_RDG_TEXTURE_SRV(Texture2D<float2>, qhat_y)
+		SHADER_PARAMETER_RDG_TEXTURE_UAV(RWTexture2DArray<float2>, qhat_x_array)
+		SHADER_PARAMETER_RDG_TEXTURE_UAV(RWTexture2DArray<float2>, qhat_y_array)
+	END_SHADER_PARAMETER_STRUCT()
+};
+
+class FInterpQCS : public FDispersiveSWEComputeShader
+{
+public:
+	DECLARE_GLOBAL_SHADER(FInterpQCS);
+	SHADER_USE_PARAMETER_STRUCT(FInterpQCS, FDispersiveSWEComputeShader);
+
+	BEGIN_SHADER_PARAMETER_STRUCT(FParameters, )
+		SHADER_PARAMETER_STRUCT_REF(FSimConstants, SimConstants)
+		SHADER_PARAMETER_RDG_TEXTURE_SRV(Texture2D<float>, hbar)
+		SHADER_PARAMETER_RDG_TEXTURE_SRV(Texture2DArray<float2>, qHat_x_array)
+		SHADER_PARAMETER_RDG_TEXTURE_SRV(Texture2DArray<float2>, qHat_y_array)
+		SHADER_PARAMETER_RDG_TEXTURE_UAV(RWTexture2D<float>, qtilde_x)
+		SHADER_PARAMETER_RDG_TEXTURE_UAV(RWTexture2D<float>, qtilde_y)
 	END_SHADER_PARAMETER_STRUCT()
 };
 
@@ -247,53 +314,54 @@ public:
 	END_SHADER_PARAMETER_STRUCT()
 };
 
-class FTransferToFFTCS : public FDispersiveSWEComputeShader
+class FScaleCopyDisplacementCS : public FDispersiveSWEComputeShader
 {
 public:
-	DECLARE_GLOBAL_SHADER(FTransferToFFTCS);
-	SHADER_USE_PARAMETER_STRUCT(FTransferToFFTCS, FDispersiveSWEComputeShader);
+	DECLARE_GLOBAL_SHADER(FScaleCopyDisplacementCS);
+	SHADER_USE_PARAMETER_STRUCT(FScaleCopyDisplacementCS, FDispersiveSWEComputeShader);
 
 	BEGIN_SHADER_PARAMETER_STRUCT(FParameters, )
 		SHADER_PARAMETER_STRUCT_REF(FSimConstants, SimConstants)
-		SHADER_PARAMETER_RDG_TEXTURE_SRV(Texture2D<float>, in0)
-		SHADER_PARAMETER_RDG_TEXTURE_SRV(Texture2D<float>, in1)
-		SHADER_PARAMETER_RDG_TEXTURE_SRV(Texture2D<float>, in2)
-		SHADER_PARAMETER_RDG_TEXTURE_UAV(RWTexture2D<float>, out0)
-		SHADER_PARAMETER_RDG_TEXTURE_UAV(RWTexture2D<float2>, hHat)
-		SHADER_PARAMETER_RDG_TEXTURE_UAV(RWTexture2D<float2>, qHat_x)
-		SHADER_PARAMETER_RDG_TEXTURE_UAV(RWTexture2D<float2>, qHat_y)
+		SHADER_PARAMETER(float, ScaleFactor)
+		SHADER_PARAMETER_RDG_TEXTURE_SRV(Texture2D<float>, inDispX)
+		SHADER_PARAMETER_RDG_TEXTURE_SRV(Texture2D<float>, inDispY)
+		SHADER_PARAMETER_RDG_TEXTURE_SRV(Texture2D<float>, inHeight)
+		SHADER_PARAMETER_RDG_TEXTURE_UAV(RWTexture2D<float4>, outDisp4)
 	END_SHADER_PARAMETER_STRUCT()
 };
 
-class FCalcEWaveCS : public FDispersiveSWEComputeShader
+class FCalcSurfaceNormalAndFoamCS : public FDispersiveSWEComputeShader
 {
 public:
-	DECLARE_GLOBAL_SHADER(FCalcEWaveCS);
-	SHADER_USE_PARAMETER_STRUCT(FCalcEWaveCS, FDispersiveSWEComputeShader);
+	DECLARE_GLOBAL_SHADER(FCalcSurfaceNormalAndFoamCS);
+	SHADER_USE_PARAMETER_STRUCT(FCalcSurfaceNormalAndFoamCS, FDispersiveSWEComputeShader);
 
 	BEGIN_SHADER_PARAMETER_STRUCT(FParameters, )
 		SHADER_PARAMETER_STRUCT_REF(FSimConstants, SimConstants)
-		SHADER_PARAMETER_RDG_TEXTURE_SRV(Texture2D<float2>, hhat)
-		SHADER_PARAMETER_RDG_TEXTURE_SRV(Texture2D<float2>, qhat_x)
-		SHADER_PARAMETER_RDG_TEXTURE_SRV(Texture2D<float2>, qhat_y)
-		SHADER_PARAMETER_RDG_TEXTURE_UAV(RWTexture2DArray<float2>, qhat_x_array)
-		SHADER_PARAMETER_RDG_TEXTURE_UAV(RWTexture2DArray<float2>, qhat_y_array)
+		SHADER_PARAMETER_RDG_TEXTURE_SRV(Texture2D<float>, inDispX)
+		SHADER_PARAMETER_RDG_TEXTURE_SRV(Texture2D<float>, inDispY)
+		SHADER_PARAMETER_RDG_TEXTURE_SRV(Texture2D<float>, inHeight)
+		SHADER_PARAMETER_RDG_TEXTURE_SRV(Texture2D<float>, inPreviousFoam)
+		SHADER_PARAMETER_RDG_TEXTURE_UAV(RWTexture2D<float4>, outNormal)
+		SHADER_PARAMETER_RDG_TEXTURE_UAV(RWTexture2D<float>, outFoam)
+		SHADER_PARAMETER_RDG_TEXTURE_UAV(RWTexture2D<float>, outJacobianDet)
 	END_SHADER_PARAMETER_STRUCT()
 };
 
-class FInterpQCS : public FDispersiveSWEComputeShader
+class FCalcRoughnessLUTCS : public FDispersiveSWEComputeShader
 {
 public:
-	DECLARE_GLOBAL_SHADER(FInterpQCS);
-	SHADER_USE_PARAMETER_STRUCT(FInterpQCS, FDispersiveSWEComputeShader);
+	DECLARE_GLOBAL_SHADER(FCalcRoughnessLUTCS);
+	SHADER_USE_PARAMETER_STRUCT(FCalcRoughnessLUTCS, FDispersiveSWEComputeShader);
 
 	BEGIN_SHADER_PARAMETER_STRUCT(FParameters, )
 		SHADER_PARAMETER_STRUCT_REF(FSimConstants, SimConstants)
-		SHADER_PARAMETER_RDG_TEXTURE_SRV(Texture2D<float>, hbar)
-		SHADER_PARAMETER_RDG_TEXTURE_SRV(Texture2DArray<float2>, qHat_x_array)
-		SHADER_PARAMETER_RDG_TEXTURE_SRV(Texture2DArray<float2>, qHat_y_array)
-		SHADER_PARAMETER_RDG_TEXTURE_UAV(RWTexture2D<float>, qtilde_x)
-		SHADER_PARAMETER_RDG_TEXTURE_UAV(RWTexture2D<float>, qtilde_y)
+		SHADER_PARAMETER(float, IntegrationSamples)
+		SHADER_PARAMETER(float, RoughnessPower)
+		SHADER_PARAMETER_RDG_TEXTURE_SRV(Texture2D<float4>, inNormal)
+		SHADER_PARAMETER_RDG_TEXTURE_SRV(Texture2D<float>, inPreviousRoughness)
+		SHADER_PARAMETER_SAMPLER(SamplerState, BilinearWrapSampler)
+		SHADER_PARAMETER_RDG_TEXTURE_UAV(RWTexture2D<float>, outRoughness)
 	END_SHADER_PARAMETER_STRUCT()
 };
 
@@ -388,87 +456,5 @@ public:
 		OutEnvironment.SetDefine(TEXT("FFT_SIZE"), PermutationVector.Get<FFFTSizeDim>());
 		OutEnvironment.SetDefine(TEXT("IS_ARRAY"), PermutationVector.Get<FIsArrayDim>() ? 1 : 0);
 	}
-};
-
-class FInitializeWaterHeightCS : public FDispersiveSWEComputeShader
-{
-public:
-	DECLARE_GLOBAL_SHADER(FInitializeWaterHeightCS);
-	SHADER_USE_PARAMETER_STRUCT(FInitializeWaterHeightCS, FDispersiveSWEComputeShader);
-
-	BEGIN_SHADER_PARAMETER_STRUCT(FParameters, )
-		SHADER_PARAMETER_STRUCT_REF(FSimConstants, SimConstants)
-		SHADER_PARAMETER(float, WaterLevel)
-		SHADER_PARAMETER(float, TerrainCaptureCameraZ)
-		SHADER_PARAMETER_RDG_TEXTURE_SRV(Texture2D<float>, in3)
-		SHADER_PARAMETER_RDG_TEXTURE_UAV(RWTexture2D<float>, out0)
-		SHADER_PARAMETER_RDG_TEXTURE_UAV(RWTexture2D<float>, out1)
-		SHADER_PARAMETER_RDG_TEXTURE_UAV(RWTexture2D<float>, out2)
-	END_SHADER_PARAMETER_STRUCT()
-};
-
-class FScaleCopyTextureCS : public FDispersiveSWEComputeShader
-{
-public:
-	DECLARE_GLOBAL_SHADER(FScaleCopyTextureCS);
-	SHADER_USE_PARAMETER_STRUCT(FScaleCopyTextureCS, FDispersiveSWEComputeShader);
-
-	BEGIN_SHADER_PARAMETER_STRUCT(FParameters, )
-		SHADER_PARAMETER_STRUCT_REF(FSimConstants, SimConstants)
-		SHADER_PARAMETER(float, ScaleFactor)
-		SHADER_PARAMETER_RDG_TEXTURE_SRV(Texture2D<float>, in0)
-		SHADER_PARAMETER_RDG_TEXTURE_UAV(RWTexture2D<float4>, outScaleCopy)
-	END_SHADER_PARAMETER_STRUCT()
-};
-
-class FScaleCopyDisplacementCS : public FDispersiveSWEComputeShader
-{
-public:
-	DECLARE_GLOBAL_SHADER(FScaleCopyDisplacementCS);
-	SHADER_USE_PARAMETER_STRUCT(FScaleCopyDisplacementCS, FDispersiveSWEComputeShader);
-
-	BEGIN_SHADER_PARAMETER_STRUCT(FParameters, )
-		SHADER_PARAMETER_STRUCT_REF(FSimConstants, SimConstants)
-		SHADER_PARAMETER(float, ScaleFactor)
-		SHADER_PARAMETER_RDG_TEXTURE_SRV(Texture2D<float>, inDispX)
-		SHADER_PARAMETER_RDG_TEXTURE_SRV(Texture2D<float>, inDispY)
-		SHADER_PARAMETER_RDG_TEXTURE_SRV(Texture2D<float>, inHeight)
-		SHADER_PARAMETER_RDG_TEXTURE_UAV(RWTexture2D<float4>, outDisp4)
-	END_SHADER_PARAMETER_STRUCT()
-};
-
-class FCalcSurfaceNormalAndFoamCS : public FDispersiveSWEComputeShader
-{
-public:
-	DECLARE_GLOBAL_SHADER(FCalcSurfaceNormalAndFoamCS);
-	SHADER_USE_PARAMETER_STRUCT(FCalcSurfaceNormalAndFoamCS, FDispersiveSWEComputeShader);
-
-	BEGIN_SHADER_PARAMETER_STRUCT(FParameters, )
-		SHADER_PARAMETER_STRUCT_REF(FSimConstants, SimConstants)
-		SHADER_PARAMETER_RDG_TEXTURE_SRV(Texture2D<float>, inDispX)
-		SHADER_PARAMETER_RDG_TEXTURE_SRV(Texture2D<float>, inDispY)
-		SHADER_PARAMETER_RDG_TEXTURE_SRV(Texture2D<float>, inHeight)
-		SHADER_PARAMETER_RDG_TEXTURE_SRV(Texture2D<float>, inPreviousFoam)
-		SHADER_PARAMETER_RDG_TEXTURE_UAV(RWTexture2D<float4>, outNormal)
-		SHADER_PARAMETER_RDG_TEXTURE_UAV(RWTexture2D<float>, outFoam)
-		SHADER_PARAMETER_RDG_TEXTURE_UAV(RWTexture2D<float>, outJacobianDet)
-	END_SHADER_PARAMETER_STRUCT()
-};
-
-class FCalcRoughnessLUTCS : public FDispersiveSWEComputeShader
-{
-public:
-	DECLARE_GLOBAL_SHADER(FCalcRoughnessLUTCS);
-	SHADER_USE_PARAMETER_STRUCT(FCalcRoughnessLUTCS, FDispersiveSWEComputeShader);
-
-	BEGIN_SHADER_PARAMETER_STRUCT(FParameters, )
-		SHADER_PARAMETER_STRUCT_REF(FSimConstants, SimConstants)
-		SHADER_PARAMETER(float, IntegrationSamples)
-		SHADER_PARAMETER(float, RoughnessPower)
-		SHADER_PARAMETER_RDG_TEXTURE_SRV(Texture2D<float4>, inNormal)
-		SHADER_PARAMETER_RDG_TEXTURE_SRV(Texture2D<float>, inPreviousRoughness)
-		SHADER_PARAMETER_SAMPLER(SamplerState, BilinearWrapSampler)
-		SHADER_PARAMETER_RDG_TEXTURE_UAV(RWTexture2D<float>, outRoughness)
-	END_SHADER_PARAMETER_STRUCT()
 };
 
