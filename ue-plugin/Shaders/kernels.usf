@@ -219,6 +219,7 @@ void InitializeWater(uint3 id : SV_DispatchThreadID) {
     out0[id.xy] = h_val;
     out1[id.xy] = terrainHeight + h_val;
     out2[id.xy] = terrainHeight;
+    out3[id.xy] = terrainHeight * 100.0f; // Converted terrain height in centimeters
 }
 
 /////////// Decomposition ///////////
@@ -725,9 +726,9 @@ void IntegrateH(uint3 id : SV_DispatchThreadID) {
 
 [numthreads(16, 16, 1)]
 void RecomputeH(uint3 id : SV_DispatchThreadID) {
-    // Inputs: in0 = h, in1 = terrain
+    // Inputs: in0 = h, in3 = terrain
     if (id.x >= (uint)(gridSizeX) || id.y >= (uint)(gridSizeY)) return;
-    out0[id.xy] = in0[id.xy] + in1[id.xy];
+    out0[id.xy] = in0[id.xy] + in3[id.xy];
 }
 
 Texture2D<float> inDispX;

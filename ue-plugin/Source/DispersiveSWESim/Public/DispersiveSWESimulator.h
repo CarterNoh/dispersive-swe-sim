@@ -52,6 +52,7 @@ public:
 	// Maximum depth in centimeters allowed for safe, stable wave simulation. If <= 0, automatically calculated.
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SWE Simulation")
 	float MaxSafeDepth = 0.0f;
+	float CalculatedMaxSafeDepth;
 
 	// Safety multiplier applied to the calculated max safe depth curve to prevent numerical explosion.
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SWE Simulation", meta = (ToolTip = "Safety multiplier applied to the calculated max safe depth curve to prevent numerical explosion near the stability boundary. Defaults to 0.8."))
@@ -153,9 +154,7 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SWE Simulation|eWave|Roughness")
 	float RoughnessPower = 1.0f;
-
-	//////// Calculated Values ////////
-	float CalculatedMaxSafeDepth;
+	
 
 	//////// Render Targets ////////
 
@@ -180,6 +179,9 @@ public:
 	FString JsonConfigFilePath = "";
 
 	// Output target textures containing wave fields
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SWE Outputs")
+	UTextureRenderTarget2D* TerrainRT = nullptr;
+
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SWE Outputs")
 	UTextureRenderTarget2D* DisplacementRT = nullptr;
 
@@ -252,6 +254,7 @@ private:
 	void InitializeSimulation();
 	void AllocatePersistentTargets(FRHICommandListImmediate& RHICmdList);
 	void SetupInitialStates(FRHICommandListImmediate& RHICmdList);
+	void AssignConstants(FSimConstants& OutConstants) const;
 	
 	void ExecuteSimulation_RenderThread(FRHICommandListImmediate& RHICmdList, const FSimConstants& Constants);
 	void DispatchFFT_RenderThread(FRDGBuilder& GraphBuilder, FRDGTextureRef TargetTexture, int32 SizeX, int32 SizeY, bool bInverse, int32 NumLayers);

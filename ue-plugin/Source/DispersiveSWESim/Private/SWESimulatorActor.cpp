@@ -101,9 +101,9 @@ void ASWESimulatorActor::OnConstruction(const FTransform& Transform)
             }
         }
 
-        // Center horizontally and set the vertical level to WaterLevel
+        // Center horizontally and place actor at Z = 0.0f
         FVector NewLoc = Origin;
-        NewLoc.Z = WaterLevel;
+        NewLoc.Z = 0.0f;
         SetActorLocation(NewLoc);
 
         if (WaterMeshComponent)
@@ -191,7 +191,7 @@ void ASWESimulatorActor::BeginPlay()
         }
 
         FVector NewLoc = Origin;
-        NewLoc.Z = WaterLevel;
+        NewLoc.Z = 0.0f;
         SetActorLocation(NewLoc);
 
         if (WaterMeshComponent)
@@ -213,6 +213,12 @@ void ASWESimulatorActor::BeginPlay()
     TerrainCaptureRT->InitCustomFormat(GridResolution, GridResolution, PF_FloatRGBA, false);
     TerrainCaptureRT->AddressX = TA_Clamp;
     TerrainCaptureRT->AddressY = TA_Clamp;
+
+    TerrainRT = NewObject<UTextureRenderTarget2D>(this);
+    TerrainRT->bCanCreateUAV = true;
+    TerrainRT->InitCustomFormat(GridResolution, GridResolution, PF_FloatRGBA, false);
+    TerrainRT->AddressX = TA_Clamp;
+    TerrainRT->AddressY = TA_Clamp;
 
     DisplacementRT = NewObject<UTextureRenderTarget2D>(this);
     DisplacementRT->bCanCreateUAV = true;
@@ -318,6 +324,7 @@ void ASWESimulatorActor::BeginPlay()
         SimComponent->RoughnessPower = RoughnessPower;
 
         SimComponent->TerrainHeightInputRT = TerrainCaptureRT;
+        SimComponent->TerrainRT = TerrainRT;
         SimComponent->DisplacementRT = DisplacementRT;
         SimComponent->DisplacementPastRT = DisplacementPastRT;
         SimComponent->NormalRT = NormalRT;
@@ -366,14 +373,12 @@ void ASWESimulatorActor::BeginPlay()
         DynamicWaterMaterial->SetTextureParameterValue(FName("RoughnessLUT"), RoughnessRT);
         DynamicWaterMaterial->SetTextureParameterValue(FName("Roughness LUT"), RoughnessRT);
 
-        DynamicWaterMaterial->SetTextureParameterValue(FName("TerrainHeightMap"), TerrainCaptureRT);
-        DynamicWaterMaterial->SetTextureParameterValue(FName("Terrain Height Map"), TerrainCaptureRT);
-        DynamicWaterMaterial->SetTextureParameterValue(FName("TerrainHeight"), TerrainCaptureRT);
-        DynamicWaterMaterial->SetTextureParameterValue(FName("Terrain Height"), TerrainCaptureRT);
-        DynamicWaterMaterial->SetTextureParameterValue(FName("TerrainCapture"), TerrainCaptureRT);
-        DynamicWaterMaterial->SetTextureParameterValue(FName("Terrain Capture"), TerrainCaptureRT);
-
-        DynamicWaterMaterial->SetScalarParameterValue(FName("TerrainCaptureCameraZ"), CameraZ);
+        DynamicWaterMaterial->SetTextureParameterValue(FName("TerrainHeightMap"), TerrainRT);
+        DynamicWaterMaterial->SetTextureParameterValue(FName("Terrain Height Map"), TerrainRT);
+        DynamicWaterMaterial->SetTextureParameterValue(FName("TerrainHeight"), TerrainRT);
+        DynamicWaterMaterial->SetTextureParameterValue(FName("Terrain Height"), TerrainRT);
+        DynamicWaterMaterial->SetTextureParameterValue(FName("TerrainCapture"), TerrainRT);
+        DynamicWaterMaterial->SetTextureParameterValue(FName("Terrain Capture"), TerrainRT);
 
         WaterMeshComponent->SetMaterial(0, DynamicWaterMaterial);
     }

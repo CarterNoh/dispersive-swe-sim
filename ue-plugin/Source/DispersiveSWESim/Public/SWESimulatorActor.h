@@ -83,6 +83,9 @@ private:
     UTextureRenderTarget2D* TerrainCaptureRT;
 
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="SWE | Debug", meta=(AllowPrivateAccess="true"))
+    UTextureRenderTarget2D* TerrainRT;
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="SWE | Debug", meta=(AllowPrivateAccess="true"))
     UTextureRenderTarget2D* DisplacementRT;
 
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="SWE | Debug", meta=(AllowPrivateAccess="true"))

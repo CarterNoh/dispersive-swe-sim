@@ -160,7 +160,7 @@ void UDispersiveSWESimulator::AllocatePersistentTargets(FRHICommandListImmediate
 	StagingReadIndex = 1;
 }
 
-void AssignConstants(FSimConstants Constants) 
+void UDispersiveSWESimulator::AssignConstants(FSimConstants& Constants) const
 {
 	Constants.time = SimulationTime;
 	Constants.gridSizeX = GridSizeX;
@@ -207,7 +207,7 @@ void UDispersiveSWESimulator::SetupInitialStates(FRHICommandListImmediate& RHICm
 
 	// Setup the common uniform buffer
 	FSimConstants CPUConstants = {};
-	AssignConstants(Constants);
+	AssignConstants(CPUConstants);
 
 	TUniformBufferRef<FSimConstants> ConstantBuffer = CreateUniformBufferImmediate(CPUConstants, EUniformBufferUsage::UniformBuffer_SingleFrame);
 
@@ -240,6 +240,25 @@ void UDispersiveSWESimulator::SetupInitialStates(FRHICommandListImmediate& RHICm
 		InitParams->out0 = GraphBuilder.CreateUAV(h_RDG);
 		InitParams->out1 = GraphBuilder.CreateUAV(H_RDG);
 		InitParams->out2 = GraphBuilder.CreateUAV(Terrain_RDG);
+
+		FRDGTextureRef TerrainExportRDG;
+		if (TerrainRT && TerrainRT->GetRenderTargetResource())
+		{
+			TerrainExportRDG = GraphBuilder.RegisterExternalTexture(
+				CreateRenderTarget(TerrainRT->GetRenderTargetResource()->GetTexture2DRHI(), TEXT("SWE_TerrainExport"))
+			);
+		}
+		else
+		{
+			FRDGTextureDesc DummyDesc = FRDGTextureDesc::Create2D(
+				FIntPoint(GridSizeX, GridSizeY),
+				PF_R32_FLOAT,
+				FClearValueBinding::None,
+				TexCreate_ShaderResource | TexCreate_UAV
+			);
+			TerrainExportRDG = GraphBuilder.CreateTexture(DummyDesc, TEXT("SWE_TerrainExportDummy"));
+		}
+		InitParams->out3 = GraphBuilder.CreateUAV(TerrainExportRDG);
 
 		FComputeShaderUtils::AddPass(
 			GraphBuilder,
@@ -343,8 +362,6 @@ void UDispersiveSWESimulator::SetupInitialStates(FRHICommandListImmediate& RHICm
 		GraphBuilder.Execute();
 	}
 }
-
-
 
 void UDispersiveSWESimulator::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) 
 {
@@ -789,7 +806,7 @@ void UDispersiveSWESimulator::ExecuteSimulation_RenderThread(
 		FRecomputeHCS::FParameters* Params = GraphBuilder.AllocParameters<FRecomputeHCS::FParameters>();
 		Params->SimConstants = ConstantBuffer;
 		Params->in0 = GraphBuilder.CreateSRV(h_RDG);
-		Params->in1 = GraphBuilder.CreateSRV(Terrain_RDG);
+		Params->in3 = GraphBuilder.CreateSRV(Terrain_RDG);
 		Params->out0 = GraphBuilder.CreateUAV(H_RDG);
 
 		FComputeShaderUtils::AddPass(GraphBuilder, RDG_EVENT_NAME("SWE_Final_ReH"), ERDGPassFlags::Compute, Shader, Params, GridGroups);
