@@ -75,6 +75,20 @@ public:
 	END_SHADER_PARAMETER_STRUCT()
 };
 
+class FDiffuseTerrainCS : public FDispersiveSWEComputeShader
+{
+public:
+	DECLARE_GLOBAL_SHADER(FDiffuseTerrainCS);
+	SHADER_USE_PARAMETER_STRUCT(FDiffuseTerrainCS, FDispersiveSWEComputeShader);
+
+	BEGIN_SHADER_PARAMETER_STRUCT(FParameters, )
+		SHADER_PARAMETER_STRUCT_REF(FSimConstants, SimConstants)
+		SHADER_PARAMETER_RDG_TEXTURE_SRV(Texture2D<float>, in0)
+		SHADER_PARAMETER_RDG_TEXTURE_SRV(Texture2D<float>, in1)
+		SHADER_PARAMETER_RDG_TEXTURE_UAV(RWTexture2D<float>, out0)
+	END_SHADER_PARAMETER_STRUCT()
+};
+
 class FInitDecompCS : public FDispersiveSWEComputeShader
 {
 public:
@@ -123,6 +137,8 @@ public:
 	END_SHADER_PARAMETER_STRUCT()
 };
 
+
+
 class FDiffusionStepCS : public FDispersiveSWEComputeShader
 {
 public:
@@ -159,6 +175,7 @@ public:
 		SHADER_PARAMETER_RDG_TEXTURE_SRV(Texture2D<float>, in4)
 		SHADER_PARAMETER_RDG_TEXTURE_SRV(Texture2D<float>, in5)
 		SHADER_PARAMETER_RDG_TEXTURE_SRV(Texture2D<float>, in6)
+		SHADER_PARAMETER_RDG_TEXTURE_SRV(Texture2D<float>, in7)
 		SHADER_PARAMETER_RDG_TEXTURE_UAV(RWTexture2D<float>, out0)
 		SHADER_PARAMETER_RDG_TEXTURE_UAV(RWTexture2D<float>, out1)
 		SHADER_PARAMETER_RDG_TEXTURE_UAV(RWTexture2D<float>, out2)

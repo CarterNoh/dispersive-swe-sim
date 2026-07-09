@@ -247,6 +247,16 @@ void CalcDiffusionCoeffs(uint3 id : SV_DispatchThreadID) {
 }
 
 [numthreads(16, 16, 1)]
+void DiffuseTerrain(uint3 id : SV_DispatchThreadID) {
+    // Inputs: in0 = TerrainPast, in1 = alpha_H
+    // Outputs: out0 = TerrainNew
+    if (id.x >= (uint)(gridSizeX) || id.y >= (uint)(gridSizeY)) return;
+
+    float invCellSizeSq = 1.0f / (cellSize * cellSize);
+    out0[id.xy] = in0[id.xy] + deltaT * CalcDiffusion(in0, in1, id.xy, invCellSizeSq);
+}
+
+[numthreads(16, 16, 1)]
 void DiffusionStep(uint3 id : SV_DispatchThreadID) {
     // Inputs: in0 = terrain, in1 = HPast, in2 = QPast_x, in3 = QPast_y, 
     //         in4 = alpha_H, in5 = alpha_Q_x, in6 = alpha_Q_y
@@ -263,7 +273,7 @@ void DiffusionStep(uint3 id : SV_DispatchThreadID) {
 [numthreads(16, 16, 1)]
 void DecomposeFields(uint3 id : SV_DispatchThreadID) {
     // Inputs: in0 = H, in1 = Q_x, in2 = Q_y
-    //         in3 = h, in4 = q_x, in5 = q_y, in6 = terrain
+    //         in3 = h, in4 = q_x, in5 = q_y, in6 = terrain, in7 = terrain_bar
     // Outputs: out0 = hbar, out1 = qbar_x, out2 = qbar_y, 
     //          out3 = htilde, out4 = qtilde_x, out5 = qtilde_y
     if (id.x >= (uint)(gridSizeX) || id.y >= (uint)(gridSizeY)) return;
@@ -272,6 +282,7 @@ void DecomposeFields(uint3 id : SV_DispatchThreadID) {
     int2 maxGrid = int2(gridSizeX - 1, gridSizeY - 1);
     
     float t_curr = in6[curr];
+    float t_bar_curr = in7[curr];
     float hbar = clamp(in0[curr] - t_curr, 0.f, maxSafeDepth);
     out0[curr] = hbar;
     out1[curr] = in1[curr];
