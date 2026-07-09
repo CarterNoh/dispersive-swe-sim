@@ -137,16 +137,16 @@ public:
 
 	// Foam threshold, multiplier, decay fade and blur rates
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SWE Simulation|eWave|Foam")
-	float FoamThreshold = 0.5f;
+	float FoamThreshold = -0.5f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SWE Simulation|eWave|Foam")
 	float FoamMultiplier = 1.0f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SWE Simulation|eWave|Foam")
-	float FoamFade = 1.0f;
+	float FoamFade = 0.1f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SWE Simulation|eWave|Foam")
-	float FoamBlur = 1.0f;
+	float FoamBlur = 3.0f;
 
 	// Roughness scale integration samples and power parameter
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SWE Simulation|eWave|Roughness")
