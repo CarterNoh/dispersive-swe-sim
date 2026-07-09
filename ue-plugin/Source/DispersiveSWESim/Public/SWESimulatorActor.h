@@ -33,9 +33,15 @@ public:
     UDispersiveSWESimulator* SimComponent;
 
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="SWE | Components")
-    class UProceduralMeshComponent* WaterMeshComponent;
+    UStaticMeshComponent* WaterMeshComponent;
 
     // --- Configuration ---
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="SWE | Configuration")
+    UStaticMesh* WaterStaticMeshAsset;
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="SWE | Configuration", meta=(ToolTip="The default size of the static mesh in centimeters. Unreal Engine's basic shape plane is 100.0."))
+    float StaticMeshDefaultSize = 4200.0f;
+
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="SWE | Configuration")
     int32 GridResolution = 512;
 
@@ -76,8 +82,6 @@ public:
     UMaterialInterface* BaseWaterMaterial;
 
 private:
-    void GenerateWaterGrid();
-
     // --- Runtime Render Targets ---
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="SWE | Debug", meta=(AllowPrivateAccess="true"))
     UTextureRenderTarget2D* TerrainCaptureRT;

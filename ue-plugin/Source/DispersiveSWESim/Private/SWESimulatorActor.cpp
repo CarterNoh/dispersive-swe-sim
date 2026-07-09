@@ -30,7 +30,7 @@ ASWESimulatorActor::ASWESimulatorActor()
     TerrainCaptureComponent->SetRelativeRotation(FRotator(-90.0f, 0.0f, -90.0f)); // Pointing down
 
     // 3. Attach water mesh representation (flat plane)
-    WaterMeshComponent = CreateDefaultSubobject<UProceduralMeshComponent>(TEXT("WaterMesh"));
+    WaterMeshComponent = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("WaterMesh"));
     WaterMeshComponent->SetupAttachment(Root);
     WaterMeshComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 
@@ -43,6 +43,15 @@ ASWESimulatorActor::ASWESimulatorActor()
     CapturedWorldWidth = 51200.0f;
     bAutoFitToTerrain = true;
     bAutoLoadDefaultAssets = true;
+    StaticMeshDefaultSize = 4200.0f;
+
+    // Attempt to resolve default plane1024 mesh
+    static ConstructorHelpers::FObjectFinder<UStaticMesh> PlaneMeshFinder(TEXT("/DispersiveSWESim/Meshes/plane1024"));
+    if (PlaneMeshFinder.Succeeded())
+    {
+        WaterStaticMeshAsset = PlaneMeshFinder.Object;
+        WaterMeshComponent->SetStaticMesh(WaterStaticMeshAsset);
+    }
 
     // Attempt to resolve the default water material
     static ConstructorHelpers::FObjectFinder<UMaterialInterface> WaterMaterialFinder(TEXT("/DispersiveSWESim/Materials/M_PreviewOceanWater"));
@@ -127,17 +136,31 @@ void ASWESimulatorActor::OnConstruction(const FTransform& Transform)
         }
     }
 
-    // 5. Generate procedural water mesh
+    // 5. Setup static water mesh representation and scale it
     if (WaterMeshComponent)
     {
-        WaterMeshComponent->SetWorldScale3D(FVector(1.0f, 1.0f, 1.0f));
-        GenerateWaterGrid();
-    }
+        WaterMeshComponent->SetVisibility(true);
+        if (WaterStaticMeshAsset)
+        {
+            WaterMeshComponent->SetStaticMesh(WaterStaticMeshAsset);
+            float ScaleFactor = CapturedWorldWidth / FMath::Max(1.0f, StaticMeshDefaultSize);
+            WaterMeshComponent->SetWorldScale3D(FVector(ScaleFactor, ScaleFactor, 1.0f));
+        }
+        else if (bAutoLoadDefaultAssets)
+        {
+            UStaticMesh* DefaultPlane = Cast<UStaticMesh>(StaticLoadObject(UStaticMesh::StaticClass(), nullptr, TEXT("/Engine/BasicShapes/Plane")));
+            if (DefaultPlane)
+            {
+                WaterMeshComponent->SetStaticMesh(DefaultPlane);
+                float ScaleFactor = CapturedWorldWidth / 100.0f; // Basic shapes plane is 100x100
+                WaterMeshComponent->SetWorldScale3D(FVector(ScaleFactor, ScaleFactor, 1.0f));
+            }
+        }
 
-    // Auto-assign the base water material so it is visible in the editor viewport
-    if (BaseWaterMaterial && WaterMeshComponent)
-    {
-        WaterMeshComponent->SetMaterial(0, BaseWaterMaterial);
+        if (BaseWaterMaterial)
+        {
+            WaterMeshComponent->SetMaterial(0, BaseWaterMaterial);
+        }
     }
 }
 
@@ -200,11 +223,25 @@ void ASWESimulatorActor::BeginPlay()
         }
     }
 
-    // Generate procedural water mesh at runtime
+    // Set up static water mesh at runtime
     if (WaterMeshComponent)
     {
-        WaterMeshComponent->SetWorldScale3D(FVector(1.0f, 1.0f, 1.0f));
-        GenerateWaterGrid();
+        if (WaterStaticMeshAsset)
+        {
+            WaterMeshComponent->SetStaticMesh(WaterStaticMeshAsset);
+            float ScaleFactor = CapturedWorldWidth / FMath::Max(1.0f, StaticMeshDefaultSize);
+            WaterMeshComponent->SetWorldScale3D(FVector(ScaleFactor, ScaleFactor, 1.0f));
+        }
+        else if (bAutoLoadDefaultAssets)
+        {
+            UStaticMesh* DefaultPlane = Cast<UStaticMesh>(StaticLoadObject(UStaticMesh::StaticClass(), nullptr, TEXT("/Engine/BasicShapes/Plane")));
+            if (DefaultPlane)
+            {
+                WaterMeshComponent->SetStaticMesh(DefaultPlane);
+                float ScaleFactor = CapturedWorldWidth / 100.0f;
+                WaterMeshComponent->SetWorldScale3D(FVector(ScaleFactor, ScaleFactor, 1.0f));
+            }
+        }
     }
 
     // 2. Programmatically allocate 32-bit float Render Targets to avoid asset cluttering
@@ -343,7 +380,7 @@ void ASWESimulatorActor::BeginPlay()
     }
 
     // 6. Create and bind dynamic material instance
-    if (BaseWaterMaterial && WaterMeshComponent)
+    if (BaseWaterMaterial)
     {
         DynamicWaterMaterial = UMaterialInstanceDynamic::Create(BaseWaterMaterial, this);
         DynamicWaterMaterial->SetTextureParameterValue(FName("DisplacementMap"), DisplacementRT);
@@ -393,74 +430,4 @@ float ASWESimulatorActor::GetWaterHeightAtLocation(const FVector& WorldLocation)
     return WaterLevel;
 }
 
-void ASWESimulatorActor::GenerateWaterGrid()
-{
-    if (!WaterMeshComponent) return;
 
-    int32 N = GridResolution;
-    if (N <= 0) return;
-
-    TArray<FVector> Vertices;
-    TArray<int32> Triangles;
-    TArray<FVector> Normals;
-    TArray<FVector2D> UV0;
-    TArray<FProcMeshTangent> Tangents;
-    TArray<FLinearColor> VertexColors;
-
-    Vertices.Reserve((N + 1) * (N + 1));
-    UV0.Reserve((N + 1) * (N + 1));
-    Normals.Reserve((N + 1) * (N + 1));
-    Tangents.Reserve((N + 1) * (N + 1));
-
-    float HalfWidth = CapturedWorldWidth * 0.5f;
-
-    for (int32 y = 0; y <= N; ++y)
-    {
-        float V = (float)y / N;
-        float YPos = -HalfWidth + V * CapturedWorldWidth;
-
-        for (int32 x = 0; x <= N; ++x)
-        {
-            float U = (float)x / N;
-            float XPos = -HalfWidth + U * CapturedWorldWidth;
-
-            Vertices.Add(FVector(XPos, YPos, 0.0f));
-            UV0.Add(FVector2D(U, V));
-            Normals.Add(FVector(0.0f, 0.0f, 1.0f));
-            Tangents.Add(FProcMeshTangent(1.0f, 0.0f, 0.0f));
-        }
-    }
-
-    Triangles.Reserve(N * N * 6);
-    for (int32 y = 0; y < N; ++y)
-    {
-        for (int32 x = 0; x < N; ++x)
-        {
-            int32 IndexBL = y * (N + 1) * 1 + x;
-            int32 IndexBR = IndexBL + 1;
-            int32 IndexTL = (y + 1) * (N + 1) * 1 + x;
-            int32 IndexTR = IndexTL + 1;
-
-            // Winding order: Clockwise
-            Triangles.Add(IndexBL);
-            Triangles.Add(IndexTL);
-            Triangles.Add(IndexBR);
-
-            Triangles.Add(IndexBR);
-            Triangles.Add(IndexTL);
-            Triangles.Add(IndexTR);
-        }
-    }
-
-    WaterMeshComponent->ClearAllMeshSections();
-    WaterMeshComponent->CreateMeshSection_LinearColor(
-        0,
-        Vertices,
-        Triangles,
-        Normals,
-        UV0,
-        VertexColors,
-        Tangents,
-        true // Create collision
-    );
-}
