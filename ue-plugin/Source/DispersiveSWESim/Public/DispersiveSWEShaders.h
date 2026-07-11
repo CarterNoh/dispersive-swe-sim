@@ -196,6 +196,7 @@ public:
 		SHADER_PARAMETER_RDG_TEXTURE_SRV(Texture2D<float>, in0)
 		SHADER_PARAMETER_RDG_TEXTURE_SRV(Texture2D<float>, in1)
 		SHADER_PARAMETER_RDG_TEXTURE_SRV(Texture2D<float>, in2)
+		SHADER_PARAMETER_RDG_TEXTURE_SRV(Texture2D<float>, in3)   // htildeOld read-only copy (previous frame)
 		SHADER_PARAMETER_RDG_TEXTURE_UAV(RWTexture2D<float>, out0)
 		SHADER_PARAMETER_RDG_TEXTURE_UAV(RWTexture2D<float2>, hHat)
 		SHADER_PARAMETER_RDG_TEXTURE_UAV(RWTexture2D<float2>, qHat_x)

@@ -336,8 +336,8 @@ RWTexture2D<float2> qHat_x; // Complex
 RWTexture2D<float2> qHat_y; // Complex
 [numthreads(16, 16, 1)]
 void TransferToFFT(uint3 id : SV_DispatchThreadID) {
-    // Inputs: in0 = htilde, in1 = qtilde_x, in2 = qtilde_y
-    // Outputs: out0 = htildeOld, out1 = hHat, out2 = qHat_x, out3 = qHat_y
+    // Inputs: in0 = htilde, in1 = qtilde_x, in2 = qtilde_y, in3 = htildeOld (read-only copy)
+    // Outputs: out0 = htildeOld (write new value), hHat, qHat_x, qHat_y
     if (id.x >= (uint)(paddedGridSizeX) || id.y >= (uint)(paddedGridSizeY)) return;
 
     if (id.x >= (uint)(gridSizeX) || id.y >= (uint)(gridSizeY)) {
@@ -348,7 +348,9 @@ void TransferToFFT(uint3 id : SV_DispatchThreadID) {
     }
 
     // Average htilde in time to get on same timestep as q, then prep variables for FFT
-    float h_real = 0.5 * (in0[id.xy] + out0[id.xy]);
+    // in3 holds the previous frame's htildeOld as a read-only SRV copy, avoiding
+    // a simultaneous read-write UAV hazard that RDG cannot track between frames.
+    float h_real = 0.5 * (in0[id.xy] + in3[id.xy]);
     out0[id.xy]   = in0[id.xy];
     hHat[id.xy]   = float2(h_real, 0.0f);
     qHat_x[id.xy] = float2(in1[id.xy], 0.0f);

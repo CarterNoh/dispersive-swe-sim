@@ -212,6 +212,24 @@ void UDispersiveSWESimulator::SetupInitialStates(FRHICommandListImmediate& RHICm
 
 	TUniformBufferRef<FSimConstants> ConstantBuffer = CreateUniformBufferImmediate(CPUConstants, EUniformBufferUsage::UniformBuffer_SingleFrame);
 
+	// Clear all persistent simulation state textures to zero to avoid uninitialized GPU garbage
+	{
+		FRDGBuilder GraphBuilder(RHICmdList);
+		if (TexQ_x.IsValid()) AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(GraphBuilder.RegisterExternalTexture(TexQ_x)), FLinearColor::Black);
+		if (TexQ_y.IsValid()) AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(GraphBuilder.RegisterExternalTexture(TexQ_y)), FLinearColor::Black);
+		if (Texq_x.IsValid()) AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(GraphBuilder.RegisterExternalTexture(Texq_x)), FLinearColor::Black);
+		if (Texq_y.IsValid()) AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(GraphBuilder.RegisterExternalTexture(Texq_y)), FLinearColor::Black);
+		if (Texqbar_x.IsValid()) AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(GraphBuilder.RegisterExternalTexture(Texqbar_x)), FLinearColor::Black);
+		if (Texqbar_y.IsValid()) AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(GraphBuilder.RegisterExternalTexture(Texqbar_y)), FLinearColor::Black);
+		if (Texhtilde.IsValid()) AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(GraphBuilder.RegisterExternalTexture(Texhtilde)), FLinearColor::Black);
+		if (TexhtildeOld.IsValid()) AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(GraphBuilder.RegisterExternalTexture(TexhtildeOld)), FLinearColor::Black);
+		if (Texqtilde_x.IsValid()) AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(GraphBuilder.RegisterExternalTexture(Texqtilde_x)), FLinearColor::Black);
+		if (Texqtilde_y.IsValid()) AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(GraphBuilder.RegisterExternalTexture(Texqtilde_y)), FLinearColor::Black);
+		if (Texubar_x.IsValid()) AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(GraphBuilder.RegisterExternalTexture(Texubar_x)), FLinearColor::Black);
+		if (Texubar_y.IsValid()) AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(GraphBuilder.RegisterExternalTexture(Texubar_y)), FLinearColor::Black);
+		GraphBuilder.Execute();
+	}
+
 	// Initialize Terrain and Water Height fields
 	if (TerrainHeightInputRT && 
 		TerrainHeightInputRT->GetRenderTargetResource() && 
@@ -277,13 +295,13 @@ void UDispersiveSWESimulator::SetupInitialStates(FRHICommandListImmediate& RHICm
 		// Initialize persistent foam target to 0
 		if (TexFoam.IsValid()) {
 			FRDGTextureRef Foam_RDG = GraphBuilder.RegisterExternalTexture(TexFoam);
-			AddClearRenderTargetPass(GraphBuilder, Foam_RDG, FLinearColor::Black);
+			AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(Foam_RDG), FLinearColor::Black);
 		}
 
 		// Initialize persistent roughness target to 0 (smooth water by default)
 		if (TexRoughness.IsValid()) {
 			FRDGTextureRef Roughness_RDG = GraphBuilder.RegisterExternalTexture(TexRoughness);
-			AddClearRenderTargetPass(GraphBuilder, Roughness_RDG, FLinearColor::Black);
+			AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(Roughness_RDG), FLinearColor::Black);
 		}
 
 		GraphBuilder.Execute();
@@ -727,13 +745,22 @@ void UDispersiveSWESimulator::ExecuteSimulation_RenderThread(
 
 	// Transfer variables to fourier domain
 	{
+		// Copy htildeOld to a transient texture so the shader can read the previous frame's value
+		// as an SRV (in3) without creating a simultaneous UAV read/write hazard that RDG cannot track.
+		// Previously the shader read from 'out0' (htildeOld UAV) before writing to it — RDG
+		// cannot insert a proper inter-frame barrier for a UAV that is also read in the same pass,
+		// which caused stale/garbage values and instability.
+		FRDGTextureRef htildeOldCopy = GraphBuilder.CreateTexture(FloatDesc, TEXT("SWE_htildeOld_ReadCopy"));
+		AddCopyTexturePass(GraphBuilder, htildeOld_RDG, htildeOldCopy);
+
 		TShaderMapRef<FTransferToFFTCS> Shader(ShaderMap);
 		FTransferToFFTCS::FParameters* Params = GraphBuilder.AllocParameters<FTransferToFFTCS::FParameters>();
 		Params->SimConstants = ConstantBuffer;
 		Params->in0 = GraphBuilder.CreateSRV(htilde_RDG);
 		Params->in1 = GraphBuilder.CreateSRV(qtildex_RDG);
 		Params->in2 = GraphBuilder.CreateSRV(qtildey_RDG);
-		Params->out0 = GraphBuilder.CreateUAV(htildeOld_RDG);
+		Params->in3 = GraphBuilder.CreateSRV(htildeOldCopy);   // Read-only copy of previous htildeOld
+		Params->out0 = GraphBuilder.CreateUAV(htildeOld_RDG);  // Write the new htildeOld value
 		Params->hHat = GraphBuilder.CreateUAV(hHat);
 		Params->qHat_x = GraphBuilder.CreateUAV(qHatX);
 		Params->qHat_y = GraphBuilder.CreateUAV(qHatY);
