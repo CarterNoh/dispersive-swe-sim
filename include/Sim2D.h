@@ -13,7 +13,7 @@ public:
 	// Simulation parameters
 	static constexpr int GRIDSIZE_X = 512; // grid size in X dimension (# cells)
 	static constexpr int GRIDSIZE_Y = 512; // grid size in Y dimension (# cells)
-	static constexpr float DOMAIN_SIZE_X = 512.f; // domain size in meters
+	static constexpr float DOMAIN_SIZE_X = 252.f; // domain size in meters
 	static constexpr float CELLSIZE = DOMAIN_SIZE_X / GRIDSIZE_X;	// cell size in one dimension (meters/cell)
 	static constexpr float TIMESTEP = 1.f / 60.f;
 	static constexpr int SPONGE_THICKNESS = 8; // thickness in cells of the sponge layer used to absorb waves at the boundaries
@@ -22,8 +22,8 @@ public:
     static constexpr float DENSITY = 999.f;
 
 	// Terrain & Water Parameters
-	static constexpr int TERRAIN_TYPE = 4; 		   // 0 = flat, 1 = ramp, 2 = bumps, 3 = basins, 4 = beach, 5 = 1D hill, 6 = 2D hill
-	static constexpr int WATER_TYPE   = 0; 		   // 0 = flat, 1 = step/dam break, 2 = diagonal slope, 3 = splash, 4 = ripples, 5 = basin flood
+	static constexpr int TERRAIN_TYPE = 7; 		   // 0 = flat, 1 = ramp, 2 = bumps, 3 = basins, 4 = beach, 5 = 1D hill, 6 = 2D hill
+	static constexpr int WATER_TYPE   = 1; 		   // 0 = flat, 1 = step/dam break, 2 = diagonal slope, 3 = splash, 4 = ripples, 5 = basin flood
 	static constexpr float TERRAIN_HEIGHT = -13.f; // base height of terrain features (meters)
 	static constexpr float TERRAIN_SCALE = 20.f;    // scale of terrain features (meters)
 	static constexpr float WATER_LEVEL = 0.f; 	   // level of water free surface at start (H)

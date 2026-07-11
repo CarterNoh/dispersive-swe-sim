@@ -10,6 +10,7 @@
 #include "RenderTargetPool.h"
 #include "RHI.h"
 #include "RHIResources.h"
+#include "RHIGPUReadback.h"
 #include "ShaderParameterUtils.h"
 #include "ShaderCompilerCore.h"
 #include "GlobalShader.h"
@@ -444,6 +445,51 @@ void UDispersiveSWESimulator::SetupInitialStates(FRHICommandListImmediate& RHICm
 		);
 
 		GraphBuilder.Execute();
+	}
+
+	// Export the captured terrain to a raw float32 file for standalone simulation testing
+	if (TexTerrain.IsValid())
+	{
+		FRHITexture2D* TerrainRHI = static_cast<FRHITexture2D*>(TexTerrain->GetRHI());
+		
+		FRHIGPUTextureReadback* GPUReadback = new FRHIGPUTextureReadback(TEXT("TerrainExportReadback"));
+		GPUReadback->EnqueueCopy(RHICmdList, TerrainRHI);
+
+		// Force GPU to finish all work so we can read immediately (fine since this is one-time startup)
+		RHICmdList.BlockUntilGPUIdle();
+
+		if (GPUReadback->IsReady())
+		{
+			int32 OutWidth = 0;
+			int32 OutHeight = 0;
+			float* FloatData = static_cast<float*>(GPUReadback->Lock(OutWidth, &OutHeight));
+			if (FloatData)
+			{
+				TArray<float> RawFloatData;
+				RawFloatData.SetNumUninitialized(GridSizeX * GridSizeY);
+				// Stride / Row pitch can sometimes be larger than GridSizeX, so copy row by row
+				for (int32 y = 0; y < GridSizeY; ++y)
+				{
+					FMemory::Memcpy(&RawFloatData[y * GridSizeX], &FloatData[y * OutWidth], GridSizeX * sizeof(float));
+				}
+				
+				GPUReadback->Unlock();
+
+				FString ExportFilePath = FPaths::ProjectDir() / TEXT("terrain_captured.raw");
+				FArchive* Ar = IFileManager::Get().CreateFileWriter(*ExportFilePath);
+				if (Ar)
+				{
+					Ar->Serialize(RawFloatData.GetData(), RawFloatData.Num() * sizeof(float));
+					delete Ar;
+					UE_LOG(LogTemp, Warning, TEXT("DispersiveSWESim: Successfully exported captured terrain to %s"), *ExportFilePath);
+				}
+				else
+				{
+					UE_LOG(LogTemp, Error, TEXT("DispersiveSWESim: Failed to create export file for terrain!"));
+				}
+			}
+		}
+		delete GPUReadback;
 	}
 }
 

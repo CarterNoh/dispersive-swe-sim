@@ -1,5 +1,8 @@
 #define NOMINMAX
 #include <windows.h>
+#include <fstream>
+#include <iostream>
+#include <algorithm>
 #include "Sim2D.h"
 
 // ********************************************************************************************************************
@@ -9,6 +12,55 @@
 std::vector<float> Sim::SetTerrain() {
 	std::vector<float> terrain(GRIDSIZE_X * GRIDSIZE_Y, 0.0f);
 	float boundary = 2.f * abs(TERRAIN_HEIGHT);
+
+	if (TERRAIN_TYPE == 7) { // Load from terrain_captured.raw and resample
+		// Size to resample from (should match the exported file's resolution)
+		const int rawWidth = 512;
+		const int rawHeight = 512;
+
+		std::ifstream file("terrain_captured.raw", std::ios::binary);
+		if (file.is_open()) {
+			std::vector<float> rawData(rawWidth * rawHeight);
+			file.read(reinterpret_cast<char*>(rawData.data()), rawData.size() * sizeof(float));
+			file.close();
+
+			for (int y = 0; y < GRIDSIZE_Y; y++) {
+				for (int x = 0; x < GRIDSIZE_X; x++) {
+					// Map coordinates from [0, GRIDSIZE - 1] to [0, rawSize - 1]
+					float rx = (float)x / (GRIDSIZE_X - 1) * (rawWidth - 1);
+					float ry = (float)y / (GRIDSIZE_Y - 1) * (rawHeight - 1);
+
+					int x0 = (int)rx;
+					int y0 = (int)ry;
+					int x1 = std::min(x0 + 1, rawWidth - 1);
+					int y1 = std::min(y0 + 1, rawHeight - 1);
+
+					float tx = rx - x0;
+					float ty = ry - y0;
+
+					float h00 = rawData[y0 * rawWidth + x0];
+					float h10 = rawData[y0 * rawWidth + x1];
+					float h01 = rawData[y1 * rawWidth + x0];
+					float h11 = rawData[y1 * rawWidth + x1];
+
+					float height = (1.f - tx) * (1.f - ty) * h00 +
+					               tx * (1.f - ty) * h10 +
+					               (1.f - tx) * ty * h01 +
+					               tx * ty * h11;
+
+					int i = idx(x, y);
+					terrain[i] = height; // Already scaled and in meters
+				}
+			}
+			std::cout << "Successfully loaded and resampled terrain_captured.raw float32 heightmap!" << std::endl;
+		}
+		else {
+			std::cerr << "Failed to open terrain_captured.raw! Defaulting to flat terrain." << std::endl;
+			std::fill(terrain.begin(), terrain.end(), TERRAIN_HEIGHT);
+		}
+		return terrain;
+	}
+
     for (int y = 0; y < GRIDSIZE_Y; y++) {
         for (int x = 0; x < GRIDSIZE_X; x++) {
             float xf = (float)x / (GRIDSIZE_X - 1);
@@ -67,7 +119,7 @@ std::vector<float> Sim::SetWater(std::vector<float>& terrain) {
 				// do nothing
 			}
 			else if (WATER_TYPE == 1) { // Step/Dam Break
-                if (xf < 0.3f) 
+                if (yf < 0.3f) 
 					waterSurface += WATER_SCALE;
             }
 			else if (WATER_TYPE == 2) { // Diagonal slope on 1st half

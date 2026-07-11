@@ -393,8 +393,8 @@ void CalcSWE(uint3 id : SV_DispatchThreadID) {
     // Calculate FFT wave forcing
     float invDepthCutoff = 1.0f / depthCutoff;
     float depth_weight = SafeTanh(in2[curr] * invDepthCutoff); // scaling term to reduce FFT waves in shallow water
-    dux_dt += depth_weight * GRAVITY * in4[curr]; // FFT wave pressure gradient 
-    duy_dt += depth_weight * GRAVITY * in5[curr];
+    //dux_dt += depth_weight * GRAVITY * in4[curr]; // FFT wave pressure gradient 
+    //duy_dt += depth_weight * GRAVITY * in5[curr];
 
     // Integrate u, calculate q
     float cflFactor = cflCondition * cellSize / timeStep;

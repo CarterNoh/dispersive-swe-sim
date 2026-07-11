@@ -216,6 +216,9 @@ void InitializeWater(uint3 id : SV_DispatchThreadID) {
     if (id.x >= (uint)(gridSizeX) || id.y >= (uint)(gridSizeY)) return;
     float terrainHeight = (TerrainCaptureCameraZ - in3[id.xy]) * 0.01f;
     float h_val = max(0.f, WaterLevel - terrainHeight);
+    if (id.y < 0.25 * gridSizeX) {
+        h_val += 2;
+    }
     out0[id.xy] = h_val;
     out1[id.xy] = terrainHeight + h_val;
     out2[id.xy] = terrainHeight;
@@ -546,8 +549,12 @@ void CalcSWE(uint3 id : SV_DispatchThreadID) {
     float q_y_1 = 0.5f * (q_y_p05 + q_y_p15);
     
     // Calculate h_(i+0.5,j)
-    float h_x_p05 = clamp((in2[curr] + in2[right]) * 0.5f, minWaterHeight, maxSafeDepth);  
-    float h_y_p05 = clamp((in2[curr] + in2[up]) * 0.5f, minWaterHeight, maxSafeDepth);
+    // float h_x_p05 = (in2[curr] + in2[right]) * 0.5f;  
+    // float h_y_p05 = (in2[curr] + in2[up]) * 0.5f;
+    float h_x_p05 = (q_x_p05 >= 0.f) ? in2[curr] : in2[right];
+    float h_y_p05 = (q_y_p05 >= 0.f) ? in2[curr] : in2[up];
+    h_x_p05 = clamp(h_x_p05, minWaterHeight, maxSafeDepth);
+    h_y_p05 = clamp(h_y_p05, minWaterHeight, maxSafeDepth);
 
     // Calculate corresponding values for u_x_(i,j) using upwinding
     float u_x_0 = (q_x_0 >= 0.f) ? in0[left] : in0[curr];
@@ -571,8 +578,15 @@ void CalcSWE(uint3 id : SV_DispatchThreadID) {
     // Calculate FFT wave forcing
     float invDepthCutoff = 1.0f / depthCutoff;
     float depth_weight = SafeTanh(in2[curr] * invDepthCutoff); // scaling term to reduce FFT waves in shallow water
-    dux_dt += depth_weight * GRAVITY * in4[curr]; // FFT wave pressure gradient 
-    duy_dt += depth_weight * GRAVITY * in5[curr];
+    //dux_dt += depth_weight * GRAVITY * in4[curr]; // FFT wave pressure gradient 
+    //duy_dt += depth_weight * GRAVITY * in5[curr];
+
+    // Damp grid-scale oscillations
+    float lap_u_x = (in0[left] - 2.f*in0[curr] + in0[right]) + (in0[down] - 2.f*in0[curr] + in0[up]); // laplacian
+    float lap_u_y = (in1[left] - 2.f*in1[curr] + in1[right]) + (in1[down] - 2.f*in1[curr] + in1[up]);
+    float nu = 0.1 / timeStep;
+    // dux_dt += nu * lap_u_x;
+    // duy_dt += nu * lap_u_y;
 
     // Integrate u, calculate q
     float cflFactor = cflCondition * cellSize / timeStep;
