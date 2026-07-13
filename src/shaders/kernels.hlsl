@@ -491,7 +491,8 @@ void CalcQAdvect(uint3 id : SV_DispatchThreadID) {
 [numthreads(16, 16, 1)]
 void IntegrateH(uint3 id : SV_DispatchThreadID) {
     // Inputs: in0 = qbar_x, in1 = qtilde_x, in2 = qAdvect_x, 
-    //         in3 = qbar_y, in4 = qtilde_y, in5 = qAdvect_y, in6 = hPast, in7 = terrain
+    //         in3 = qbar_y, in4 = qtilde_y, in5 = qAdvect_y, 
+    //         in6 = hPast, in7 = terrain
     // Outputs: out0 = h, out1 = q_x, out2 = q_y
     if (id.x >= (uint)(gridSizeX) || id.y >= (uint)(gridSizeY)) return;
 
