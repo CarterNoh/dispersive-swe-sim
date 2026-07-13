@@ -751,16 +751,16 @@ void IntegrateH(uint3 id : SV_DispatchThreadID) {
     int2 down  = clamp(curr + int2(0, -1), int2(0, 0), maxGrid);
 
     // q = qbar + qtilde + qAdvect
-    float localQ_x  = qbarIn_x[curr] + qtildeIn_x[curr] + qAdvectIn_x[curr];
-    float localQ_y  = qbarIn_y[curr] + qtildeIn_y[curr] + qAdvectIn_y[curr];
+    float q_x  = qbarIn_x[curr] + qtildeIn_x[curr] + qAdvectIn_x[curr];
+    float q_y  = qbarIn_y[curr] + qtildeIn_y[curr] + qAdvectIn_y[curr];
     float q_xm = qbarIn_x[left] + qtildeIn_x[left] + qAdvectIn_x[left];
     float q_ym = qbarIn_y[down] + qtildeIn_y[down] + qAdvectIn_y[down];
 
     // sponge layer: damp q near edges to absorb waves, simulate an open boundary
     float damping = SpongeDamping(id.xy);
-    localQ_x  *= damping;
+    q_x  *= damping;
     q_xm *= damping;
-    localQ_y  *= damping;
+    q_y  *= damping;
     q_ym *= damping;
 
     float h_curr = hPast[curr];
@@ -775,25 +775,25 @@ void IntegrateH(uint3 id : SV_DispatchThreadID) {
     float t_down = terrain[down];
 
     float cflFactor = cflCondition * cellSize / timeStep;
-    localQ_x  = LimitFlowRate(localQ_x,  h_curr, h_right, cflFactor);
-    localQ_y  = LimitFlowRate(localQ_y,  h_curr, h_up, cflFactor);
+    q_x  = LimitFlowRate(q_x,  h_curr, h_right, cflFactor);
+    q_y  = LimitFlowRate(q_y,  h_curr, h_up, cflFactor);
     q_xm = LimitFlowRate(q_xm, h_left, h_curr, cflFactor);
     q_ym = LimitFlowRate(q_ym, h_down, h_curr, cflFactor);
 
     if (StopFlowOnTerrainBoundary(h_curr, t_curr, h_right, t_right))
-        localQ_x = 0.f;
+        q_x = 0.f;
     if (StopFlowOnTerrainBoundary(h_curr, t_curr, h_up, t_up))
-        localQ_y = 0.f;
+        q_y = 0.f;
     if (StopFlowOnTerrainBoundary(h_left, t_left, h_curr, t_curr))
         q_xm = 0.f;
     if (StopFlowOnTerrainBoundary(h_down, t_down, h_curr, t_curr))
         q_ym = 0.f;
 
     float invCellSize = 1.0f / cellSize;
-    float div_q = (localQ_x - q_xm + localQ_y - q_ym) * invCellSize;
+    float div_q = (q_x - q_xm + q_y - q_ym) * invCellSize;
 	hOut[curr] = clamp(h_curr - timeStep * div_q, 0.f, maxSafeDepth);
-    qOut_x[curr] = localQ_x - qAdvectIn_x[curr]; // qbar + qtilde, removing qAdvect
-    qOut_y[curr] = localQ_y - qAdvectIn_y[curr];
+    qOut_x[curr] = q_x - qAdvectIn_x[curr]; // qbar + qtilde, removing qAdvect
+    qOut_y[curr] = q_y - qAdvectIn_y[curr];
     qOut_x[curr] = LimitFlowRate(qOut_x[curr], h_curr, h_right, cflFactor);
     qOut_y[curr] = LimitFlowRate(qOut_y[curr], h_curr, h_up, cflFactor);
     if (StopFlowOnTerrainBoundary(h_curr, t_curr, h_right, t_right))
