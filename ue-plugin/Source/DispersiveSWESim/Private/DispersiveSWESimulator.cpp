@@ -914,8 +914,8 @@ void UDispersiveSWESimulator::ExecuteSimulation_RenderThread(
 		Params->ubarNewIn_x = GraphBuilder.CreateSRV(ubarNewX);
 		Params->ubarNewIn_y = GraphBuilder.CreateSRV(ubarNewY);
 		Params->htildeIn = GraphBuilder.CreateSRV(htilde_RDG);
-		Params->qAdvect_x = GraphBuilder.CreateUAV(qAdvectX);
-		Params->qAdvect_y = GraphBuilder.CreateUAV(qAdvectY);
+		Params->qAdvectOut_x = GraphBuilder.CreateUAV(qAdvectX);
+		Params->qAdvectOut_y = GraphBuilder.CreateUAV(qAdvectY);
 
 		FComputeShaderUtils::AddPass(GraphBuilder, RDG_EVENT_NAME("SWE_CalcQAdvect"), ERDGPassFlags::Compute, Shader, Params, GridGroups);
 	}
@@ -930,10 +930,10 @@ void UDispersiveSWESimulator::ExecuteSimulation_RenderThread(
 		Params->SimConstants = ConstantBuffer;
 		Params->qbarIn_x = GraphBuilder.CreateSRV(qbarx_RDG);
 		Params->qtildeIn_x = GraphBuilder.CreateSRV(qtildex_RDG);
-		Params->qAdvect_x = GraphBuilder.CreateSRV(qAdvectX);
+		Params->qAdvectIn_x = GraphBuilder.CreateSRV(qAdvectX);
 		Params->qbarIn_y = GraphBuilder.CreateSRV(qbary_RDG);
 		Params->qtildeIn_y = GraphBuilder.CreateSRV(qtildey_RDG);
-		Params->qAdvect_y = GraphBuilder.CreateSRV(qAdvectY);
+		Params->qAdvectIn_y = GraphBuilder.CreateSRV(qAdvectY);
 		Params->hPast = GraphBuilder.CreateSRV(hPast);
 		Params->terrain = GraphBuilder.CreateSRV(Terrain_RDG);
 		Params->hOut = GraphBuilder.CreateUAV(h_RDG);

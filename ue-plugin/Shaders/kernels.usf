@@ -74,6 +74,8 @@ Texture2D<float>   qtildePast_x;
 Texture2D<float>   qtildePast_y;
 Texture2D<float>   htildeCopy;
 Texture2D<float>   hPast;
+Texture2D<float>   qAdvectIn_x;
+Texture2D<float>   qAdvectIn_y;
 Texture2D<float2>  hhat;
 Texture2D<float2>  qhat_x;
 Texture2D<float2>  qhat_y;
@@ -114,8 +116,8 @@ RWTexture2D<float> ubarOut_x;
 RWTexture2D<float> ubarOut_y;
 RWTexture2D<float> ubarNewOut_x;
 RWTexture2D<float> ubarNewOut_y;
-RWTexture2D<float> qAdvect_x;
-RWTexture2D<float> qAdvect_y;
+RWTexture2D<float> qAdvectOut_x;
+RWTexture2D<float> qAdvectOut_y;
 RWTexture2D<float> qOut_x;
 RWTexture2D<float> qOut_y;
 RWTexture2DArray<float2> qhat_x_array;
@@ -730,8 +732,8 @@ void CalcQAdvect(uint3 id : SV_DispatchThreadID) {
     float step_y = 0.5f - ubarNewIn_y[id.xy] * halfTimeStepOverCellSize;
     float2 samplePos = float2(id.x + step_x, id.y + step_y);
     float h_sample = SampleCubicClamped2D(htildeIn, samplePos);
-    qAdvect_x[id.xy] = ubarNewIn_x[id.xy] * h_sample;
-    qAdvect_y[id.xy] = ubarNewIn_y[id.xy] * h_sample;
+    qAdvectOut_x[id.xy] = ubarNewIn_x[id.xy] * h_sample;
+    qAdvectOut_y[id.xy] = ubarNewIn_y[id.xy] * h_sample;
 }
 
 [numthreads(16, 16, 1)]
@@ -749,10 +751,10 @@ void IntegrateH(uint3 id : SV_DispatchThreadID) {
     int2 down  = clamp(curr + int2(0, -1), int2(0, 0), maxGrid);
 
     // q = qbar + qtilde + qAdvect
-    float localQ_x  = qbarIn_x[curr] + qtildeIn_x[curr] + qAdvect_x[curr];
-    float localQ_y  = qbarIn_y[curr] + qtildeIn_y[curr] + qAdvect_y[curr];
-    float q_xm = qbarIn_x[left] + qtildeIn_x[left] + qAdvect_x[left];
-    float q_ym = qbarIn_y[down] + qtildeIn_y[down] + qAdvect_y[down];
+    float localQ_x  = qbarIn_x[curr] + qtildeIn_x[curr] + qAdvectIn_x[curr];
+    float localQ_y  = qbarIn_y[curr] + qtildeIn_y[curr] + qAdvectIn_y[curr];
+    float q_xm = qbarIn_x[left] + qtildeIn_x[left] + qAdvectIn_x[left];
+    float q_ym = qbarIn_y[down] + qtildeIn_y[down] + qAdvectIn_y[down];
 
     // sponge layer: damp q near edges to absorb waves, simulate an open boundary
     float damping = SpongeDamping(id.xy);
@@ -790,8 +792,8 @@ void IntegrateH(uint3 id : SV_DispatchThreadID) {
     float invCellSize = 1.0f / cellSize;
     float div_q = (localQ_x - q_xm + localQ_y - q_ym) * invCellSize;
 	hOut[curr] = clamp(h_curr - timeStep * div_q, 0.f, maxSafeDepth);
-    qOut_x[curr] = localQ_x - qAdvect_x[curr]; // qbar + qtilde, removing qAdvect
-    qOut_y[curr] = localQ_y - qAdvect_y[curr];
+    qOut_x[curr] = localQ_x - qAdvectIn_x[curr]; // qbar + qtilde, removing qAdvect
+    qOut_y[curr] = localQ_y - qAdvectIn_y[curr];
     qOut_x[curr] = LimitFlowRate(qOut_x[curr], h_curr, h_right, cflFactor);
     qOut_y[curr] = LimitFlowRate(qOut_y[curr], h_curr, h_up, cflFactor);
     if (StopFlowOnTerrainBoundary(h_curr, t_curr, h_right, t_right))

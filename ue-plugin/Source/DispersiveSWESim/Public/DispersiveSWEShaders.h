@@ -306,8 +306,8 @@ public:
 		SHADER_PARAMETER_RDG_TEXTURE_SRV(Texture2D<float>, ubarNewIn_x)
 		SHADER_PARAMETER_RDG_TEXTURE_SRV(Texture2D<float>, ubarNewIn_y)
 		SHADER_PARAMETER_RDG_TEXTURE_SRV(Texture2D<float>, htildeIn)
-		SHADER_PARAMETER_RDG_TEXTURE_UAV(RWTexture2D<float>, qAdvect_x)
-		SHADER_PARAMETER_RDG_TEXTURE_UAV(RWTexture2D<float>, qAdvect_y)
+		SHADER_PARAMETER_RDG_TEXTURE_UAV(RWTexture2D<float>, qAdvectOut_x)
+		SHADER_PARAMETER_RDG_TEXTURE_UAV(RWTexture2D<float>, qAdvectOut_y)
 	END_SHADER_PARAMETER_STRUCT()
 };
 
@@ -321,10 +321,10 @@ public:
 		SHADER_PARAMETER_STRUCT_REF(FSimConstants, SimConstants)
 		SHADER_PARAMETER_RDG_TEXTURE_SRV(Texture2D<float>, qbarIn_x)
 		SHADER_PARAMETER_RDG_TEXTURE_SRV(Texture2D<float>, qtildeIn_x)
-		SHADER_PARAMETER_RDG_TEXTURE_SRV(Texture2D<float>, qAdvect_x)
+		SHADER_PARAMETER_RDG_TEXTURE_SRV(Texture2D<float>, qAdvectIn_x)
 		SHADER_PARAMETER_RDG_TEXTURE_SRV(Texture2D<float>, qbarIn_y)
 		SHADER_PARAMETER_RDG_TEXTURE_SRV(Texture2D<float>, qtildeIn_y)
-		SHADER_PARAMETER_RDG_TEXTURE_SRV(Texture2D<float>, qAdvect_y)
+		SHADER_PARAMETER_RDG_TEXTURE_SRV(Texture2D<float>, qAdvectIn_y)
 		SHADER_PARAMETER_RDG_TEXTURE_SRV(Texture2D<float>, hPast)
 		SHADER_PARAMETER_RDG_TEXTURE_SRV(Texture2D<float>, terrain)
 		SHADER_PARAMETER_RDG_TEXTURE_UAV(RWTexture2D<float>, qOut_x)
