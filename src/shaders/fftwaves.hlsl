@@ -385,17 +385,15 @@ void PopulateSpectrum(uint3 id : SV_DispatchThreadID) {
 
 Texture2DArray<float2>   HPosIn : register(t0);
 Texture2DArray<float2>   HNegIn : register(t1);
-RWTexture2DArray<float2> HPropOut : register(u0);
-RWTexture2DArray<float2> DelHxOut : register(u1);
-RWTexture2DArray<float2> DelHyOut : register(u2);
-RWTexture2DArray<float2> DispXOut : register(u3);
-RWTexture2DArray<float2> DispYOut : register(u4);
+RWTexture2DArray<float2> DelHxOut : register(u0);
+RWTexture2DArray<float2> DelHyOut : register(u1);
+RWTexture2DArray<float2> DispXOut : register(u2);
+RWTexture2DArray<float2> DispYOut : register(u3);
 [numthreads(16, 16, 1)]
 void PropagateWaves(uint3 id : SV_DispatchThreadID) {
     if (id.x >= (uint)(paddedGridSizeX) || id.y >= (uint)(paddedGridSizeY)) return;
 
     if (id.x == 0 && id.y == 0) {
-        HPropOut[id] = float2(0.f, 0.f);
         DelHxOut[id] = float2(0.f, 0.f);
         DelHyOut[id] = float2(0.f, 0.f);
         DispXOut[id] = float2(0.f, 0.f);
@@ -416,7 +414,6 @@ void PropagateWaves(uint3 id : SV_DispatchThreadID) {
     float ky = (float)freqY * dKy;
     float k2 = kx * kx + ky * ky;
     if (k2 < 1e-12) {
-        HPropOut[id] = float2(0.f, 0.f);
         DelHxOut[id] = float2(0.f, 0.f);
         DelHyOut[id] = float2(0.f, 0.f);
         DispXOut[id] = float2(0.f, 0.f);
@@ -439,7 +436,6 @@ void PropagateWaves(uint3 id : SV_DispatchThreadID) {
     float2 HPlus = ComplexMul(HPosIn[id], fwd);
     float2 HMin = ComplexMul(HNegIn[id], bkwd);
     float2 HProp = HPlus + HMin;
-    HPropOut[id] = HProp;
 
     // Calculate spatial derivative of H, shifted to cell faces
     float2 dhdx = ComplexMul(HProp, float2(0, kx));
@@ -457,16 +453,15 @@ void PropagateWaves(uint3 id : SV_DispatchThreadID) {
     DispYOut[id] = ComplexMul(HProp, float2(0.f, ky_ * choppiness));
 }
 
-Texture2DArray<float2> HIn: register(t0);
-Texture2DArray<float2> HxIn: register(t1);
-Texture2DArray<float2> HyIn: register(t2);
-Texture2DArray<float2> DxIn: register(t3);
-Texture2DArray<float2> DyIn: register(t4);
-Texture2D<float>       hbar: register(t5);
-RWTexture2D<float> HxOut: register(u1);
-RWTexture2D<float> HyOut: register(u2);
-RWTexture2D<float> DxOut: register(u3);
-RWTexture2D<float> DyOut: register(u4);
+Texture2DArray<float2> HxIn: register(t0);
+Texture2DArray<float2> HyIn: register(t1);
+Texture2DArray<float2> DxIn: register(t2);
+Texture2DArray<float2> DyIn: register(t3);
+Texture2D<float>       hbar: register(t4);
+RWTexture2D<float> HxOut: register(u0);
+RWTexture2D<float> HyOut: register(u1);
+RWTexture2D<float> DxOut: register(u2);
+RWTexture2D<float> DyOut: register(u3);
 [numthreads(16, 16, 1)]
 void Interp(uint3 id : SV_DispatchThreadID) {
     if (id.x >= (uint)(gridSizeX) || id.y >= (uint)(gridSizeY)) return;
