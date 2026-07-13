@@ -110,4 +110,6 @@ private:
     // --- Material ---
     UPROPERTY()
     UMaterialInstanceDynamic* DynamicWaterMaterial;
+
+    void FitToTerrain();
 };

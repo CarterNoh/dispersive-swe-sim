@@ -13,7 +13,7 @@ public:
 	// Simulation parameters
 	static constexpr int GRIDSIZE_X = 512; // grid size in X dimension (# cells)
 	static constexpr int GRIDSIZE_Y = 512; // grid size in Y dimension (# cells)
-	static constexpr float DOMAIN_SIZE_X = 512.f; // domain size in meters
+	static constexpr float DOMAIN_SIZE_X = 252.f; // domain size in meters
 	static constexpr float CELLSIZE = DOMAIN_SIZE_X / GRIDSIZE_X;	// cell size in one dimension (meters/cell)
 	static constexpr float TIMESTEP = 1.f / 60.f;
 	static constexpr int SPONGE_THICKNESS = 8; // thickness in cells of the sponge layer used to absorb waves at the boundaries
