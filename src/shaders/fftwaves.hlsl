@@ -463,7 +463,6 @@ Texture2DArray<float2> HyIn: register(t2);
 Texture2DArray<float2> DxIn: register(t3);
 Texture2DArray<float2> DyIn: register(t4);
 Texture2D<float>       hbar: register(t5);
-RWTexture2D<float> HOut : register(u0);
 RWTexture2D<float> HxOut: register(u1);
 RWTexture2D<float> HyOut: register(u2);
 RWTexture2D<float> DxOut: register(u3);
@@ -474,7 +473,6 @@ void Interp(uint3 id : SV_DispatchThreadID) {
 
     float waterDepth = min(hbar[id.xy], maxSafeDepth);
     if (waterDepth <= minWaterHeight) {
-        HOut[id.xy] = 0.f;
         HxOut[id.xy] = 0.f;
         HyOut[id.xy] = 0.f;
         DxOut[id.xy] = 0.f;
@@ -485,14 +483,24 @@ void Interp(uint3 id : SV_DispatchThreadID) {
     for (int d = 0; d < depthNum; d++)
         if (waterDepth >= depth[d]) d1 = d;
     int d2 = min(depthNum - 1, d1 + 1);
-    float s = 0.f;
-    if (d1 != d2)
-        s = (depth[d2] - waterDepth) / (depth[d2] - depth[d1]);
-    uint3 id1 = uint3(id.x, id.y, d1);
-    uint3 id2 = uint3(id.x, id.y, d2);
-    HOut [id.xy] = s * HIn [id1].x + (1.f - s) * HIn [id2].x;
-    HxOut[id.xy] = s * HxIn[id1].x + (1.f - s) * HxIn[id2].x;
-    HyOut[id.xy] = s * HyIn[id1].x + (1.f - s) * HyIn[id2].x;
-    DxOut[id.xy] = s * DxIn[id1].x + (1.f - s) * DxIn[id2].x;
-    DyOut[id.xy] = s * DyIn[id1].x + (1.f - s) * DyIn[id2].x;
+
+    if (waterDepth < depth[0]) {
+        // Handle shallowest case separately
+        float s = waterDepth / depth[0];
+        HxOut[id.xy] = s * HxIn[uint3(id.x, id.y, 0)].x;
+        HyOut[id.xy] = s * HyIn[uint3(id.x, id.y, 0)].x;
+        DxOut[id.xy] = s * DxIn[uint3(id.x, id.y, 0)].x;
+        DyOut[id.xy] = s * DyIn[uint3(id.x, id.y, 0)].x;
+    } else {
+        // Interpolate between depths
+        float s = 0.f;
+        if (d1 != d2)
+            s = (depth[d2] - waterDepth) / (depth[d2] - depth[d1]);
+        uint3 id1 = uint3(id.x, id.y, d1);
+        uint3 id2 = uint3(id.x, id.y, d2);
+        HxOut[id.xy] = s * HxIn[id1].x + (1.f - s) * HxIn[id2].x;
+        HyOut[id.xy] = s * HyIn[id1].x + (1.f - s) * HyIn[id2].x;
+        DxOut[id.xy] = s * DxIn[id1].x + (1.f - s) * DxIn[id2].x;
+        DyOut[id.xy] = s * DyIn[id1].x + (1.f - s) * DyIn[id2].x;
+    }
 }

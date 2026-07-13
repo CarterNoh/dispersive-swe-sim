@@ -474,13 +474,25 @@ void Interp(uint3 id : SV_DispatchThreadID) {
     for (int d = 0; d < depthNum; d++)
         if (waterDepth >= getDepthLevel(d)) d1 = d;
     int d2 = min(depthNum - 1, d1 + 1);
-    float s = 0.f;
-    if (d1 != d2)
-        s = (getDepthLevel(d2) - waterDepth) / (getDepthLevel(d2) - getDepthLevel(d1));
+
     uint3 id1 = uint3(id.x, id.y, d1);
     uint3 id2 = uint3(id.x, id.y, d2);
-    HxOut[id.xy] = s * HxIn[id1].x + (1.f - s) * HxIn[id2].x;
-    HyOut[id.xy] = s * HyIn[id1].x + (1.f - s) * HyIn[id2].x;
-    DxOut[id.xy] = s * DxIn[id1].x + (1.f - s) * DxIn[id2].x;
-    DyOut[id.xy] = s * DyIn[id1].x + (1.f - s) * DyIn[id2].x;
+
+    if (waterDepth < getDepthLevel(0)) {
+        // Handle shallowest case separately
+        float s = waterDepth / getDepthLevel(0);
+        HxOut[id.xy] = s * HxIn[uint3(id.x, id.y, 0)].x;
+        HyOut[id.xy] = s * HyIn[uint3(id.x, id.y, 0)].x;
+        DxOut[id.xy] = s * DxIn[uint3(id.x, id.y, 0)].x;
+        DyOut[id.xy] = s * DyIn[uint3(id.x, id.y, 0)].x;
+    } else {
+        // Interpolate between depths
+        float s = 0.f;
+        if (d1 != d2)
+            s = (getDepthLevel(d2) - waterDepth) / (getDepthLevel(d2) - getDepthLevel(d1));
+        HxOut[id.xy] = s * HxIn[id1].x + (1.f - s) * HxIn[id2].x;
+        HyOut[id.xy] = s * HyIn[id1].x + (1.f - s) * HyIn[id2].x;
+        DxOut[id.xy] = s * DxIn[id1].x + (1.f - s) * DxIn[id2].x;
+        DyOut[id.xy] = s * DyIn[id1].x + (1.f - s) * DyIn[id2].x;
+    }
 }

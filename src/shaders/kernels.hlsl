@@ -710,10 +710,22 @@ void InterpQ(uint3 id : SV_DispatchThreadID) {
     int d2_y = min(depthNum - 1, d1_y + 1);
     float sx = 0.f;
     float sy = 0.f;
-    if (d1_x != d2_x)
-        sx = (in8[d2_x] - waterDepth_x) / (in8[d2_x] - in8[d1_x]);
-    if (d1_y != d2_y)
-        sy = (in8[d2_y] - waterDepth_y) / (in8[d2_y] - in8[d1_y]);
-    qtilde_x[id.xy] = sx * qHat_x_array[uint3(id.x, id.y, d1_x)].x + (1.f - sx) * qHat_x_array[uint3(id.x, id.y, d2_x)].x;
-    qtilde_y[id.xy] = sy * qHat_y_array[uint3(id.x, id.y, d1_y)].x + (1.f - sy) * qHat_y_array[uint3(id.x, id.y, d2_y)].x;
+
+    // Depth Interpolation (handle shallowest case separately)
+    if (waterDepth_x < in8[0]) {
+        sx = waterDepth_x / in8[0];
+        qtilde_x[id.xy] = sx * qHat_x_array[uint3(id.x, id.y, 0)].x;
+    } else {
+        if (d1_x != d2_x)
+            sx = (in8[d2_x] - waterDepth_x) / (in8[d2_x] - in8[d1_x]);
+        qtilde_x[id.xy] = sx * qHat_x_array[uint3(id.x, id.y, d1_x)].x + (1.f - sx) * qHat_x_array[uint3(id.x, id.y, d2_x)].x;
+    }
+    if (waterDepth_y < in8[0]) {
+        sy = waterDepth_y / in8[0];
+        qtilde_y[id.xy] = sy * qHat_y_array[uint3(id.x, id.y, 0)].x;
+    } else {
+        if (d1_y != d2_y)
+            sy = (in8[d2_y] - waterDepth_y) / (in8[d2_y] - in8[d1_y]);
+        qtilde_y[id.xy] = sy * qHat_y_array[uint3(id.x, id.y, d1_y)].x + (1.f - sy) * qHat_y_array[uint3(id.x, id.y, d2_y)].x;
+    }
 }

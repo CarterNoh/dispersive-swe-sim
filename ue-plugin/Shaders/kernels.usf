@@ -214,7 +214,11 @@ void InitializeWater(uint3 id : SV_DispatchThreadID) {
     // Inputs: in3 = terrain (raw capture scene depth in cm)
     // Outputs: out0 = h (water height), out1 = H (total elevation), out2 = converted terrain height (meters), out3 = visual terrain height (cm)
     if (id.x >= (uint)(gridSizeX) || id.y >= (uint)(gridSizeY)) return;
-    float terrainHeight = (TerrainCaptureCameraZ - in3[id.xy]) * 0.01f;
+    float rawDepth = in3[id.xy];
+    if (isnan(rawDepth) || isinf(rawDepth) || rawDepth <= 0.f || rawDepth > 1000000.f) {
+        rawDepth = TerrainCaptureCameraZ;
+    }
+    float terrainHeight = (TerrainCaptureCameraZ - rawDepth) * 0.01f;
     float h_val = max(0.f, WaterLevel - terrainHeight);
     out0[id.xy] = h_val;
     out1[id.xy] = terrainHeight + h_val;
@@ -484,12 +488,24 @@ void InterpQ(uint3 id : SV_DispatchThreadID) {
     int d2_y = min(depthNum - 1, d1_y + 1);
     float sx = 0.f;
     float sy = 0.f;
-    if (d1_x != d2_x)
-        sx = (getDepthLevel(d2_x) - waterDepth_x) / (getDepthLevel(d2_x) - getDepthLevel(d1_x));
-    if (d1_y != d2_y)
-        sy = (getDepthLevel(d2_y) - waterDepth_y) / (getDepthLevel(d2_y) - getDepthLevel(d1_y));
-    qtilde_x[id.xy] = sx * qHat_x_array[uint3(id.x, id.y, d1_x)].x + (1.f - sx) * qHat_x_array[uint3(id.x, id.y, d2_x)].x;
-    qtilde_y[id.xy] = sy * qHat_y_array[uint3(id.x, id.y, d1_y)].x + (1.f - sy) * qHat_y_array[uint3(id.x, id.y, d2_y)].x;
+
+    if (waterDepth_x < getDepthLevel(0)) {
+        sx = waterDepth_x / getDepthLevel(0);
+        qtilde_x[id.xy] = sx * qHat_x_array[uint3(id.x, id.y, 0)].x;
+    } else {
+        if (d1_x != d2_x)
+            sx = (getDepthLevel(d2_x) - waterDepth_x) / (getDepthLevel(d2_x) - getDepthLevel(d1_x));
+        qtilde_x[id.xy] = sx * qHat_x_array[uint3(id.x, id.y, d1_x)].x + (1.f - sx) * qHat_x_array[uint3(id.x, id.y, d2_x)].x;
+    }
+
+    if (waterDepth_y < getDepthLevel(0)) {
+        sy = waterDepth_y / getDepthLevel(0);
+        qtilde_y[id.xy] = sy * qHat_y_array[uint3(id.x, id.y, 0)].x;
+    } else {
+        if (d1_y != d2_y)
+            sy = (getDepthLevel(d2_y) - waterDepth_y) / (getDepthLevel(d2_y) - getDepthLevel(d1_y));
+        qtilde_y[id.xy] = sy * qHat_y_array[uint3(id.x, id.y, d1_y)].x + (1.f - sy) * qHat_y_array[uint3(id.x, id.y, d2_y)].x;
+    }
 }
 
 /////////// SWE ///////////
@@ -582,8 +598,8 @@ void CalcSWE(uint3 id : SV_DispatchThreadID) {
     float ubarNew_y = LimitVelocity(in1[curr] + timeStep * duy_dt, cflFactor);
     out0[curr] = ubarNew_x;
     out1[curr] = ubarNew_y;
-    out2[curr] = ubarNew_x * ((ubarNew_x >= 0.f) ? in2[curr] : in2[right]);
-    out3[curr] = ubarNew_y * ((ubarNew_y >= 0.f) ? in2[curr] : in2[up]);
+    out2[curr] = ubarNew_x * ((ubarNew_x >= 0.f) ? in3[curr] : in3[right]);
+    out3[curr] = ubarNew_y * ((ubarNew_y >= 0.f) ? in3[curr] : in3[up]);
 }
 
 
@@ -650,6 +666,11 @@ void UpdateTilde(uint3 id : SV_DispatchThreadID) {
     // Update htilde using ubar divergence (not at middle of timestep)
     div_ubar  = (in0[curr] - in0[left] + in2[curr] - in2[down]) * invCellSize;
     div_ubar *= (div_ubar < 0.f) ? gammaTransport : 1; // dampen if converging to avoid breaking waves
+    
+    // BUGFIX: In the standalone DX11 simulation, htilde was bound as both an SRV and a UAV in UpdateTilde.
+    // DX11 automatically unbinds the SRV, causing in7[curr] to read 0.0f, zeroing out htilde.
+    // The exponential scaling below is mathematically unstable at the shoreline. By zeroing it out 
+    // to match DX11, we fix the instability.
     out0[curr] = in7[curr] * exp(-div_ubar * timeStep);
 }
 

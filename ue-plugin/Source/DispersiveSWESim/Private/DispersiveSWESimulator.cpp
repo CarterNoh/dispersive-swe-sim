@@ -854,6 +854,11 @@ void UDispersiveSWESimulator::ExecuteSimulation_RenderThread(
 		AddCopyTexturePass(GraphBuilder, qtildex_RDG, qtildePastX);
 		AddCopyTexturePass(GraphBuilder, qtildey_RDG, qtildePastY);
 
+		// Copy htilde to a transient texture so the shader can read it as an SRV (in7)
+		// without causing a simultaneous UAV-SRV read-write hazard on htilde_RDG.
+		FRDGTextureRef htildeCopy = GraphBuilder.CreateTexture(FloatDesc, TEXT("SWE_htilde_ReadCopy"));
+		AddCopyTexturePass(GraphBuilder, htilde_RDG, htildeCopy);
+
 		TShaderMapRef<FUpdateTildeCS> Shader(ShaderMap);
 		FUpdateTildeCS::FParameters* Params = GraphBuilder.AllocParameters<FUpdateTildeCS::FParameters>();
 		Params->SimConstants = ConstantBuffer;
@@ -864,8 +869,8 @@ void UDispersiveSWESimulator::ExecuteSimulation_RenderThread(
 		Params->in4 = GraphBuilder.CreateSRV(qtildePastX);
 		Params->in5 = GraphBuilder.CreateSRV(qtildePastY);
 		Params->in6 = GraphBuilder.CreateSRV(h_RDG);
-		Params->in7 = GraphBuilder.CreateSRV(htilde_RDG);
-		Params->out0 = GraphBuilder.CreateUAV(htilde_RDG);
+		Params->in7 = GraphBuilder.CreateSRV(htildeCopy);     // Read-only copy of previous htilde
+		Params->out0 = GraphBuilder.CreateUAV(htilde_RDG);    // Write the new htilde value
 		Params->out1 = GraphBuilder.CreateUAV(qtildex_RDG);
 		Params->out2 = GraphBuilder.CreateUAV(qtildey_RDG);
 
