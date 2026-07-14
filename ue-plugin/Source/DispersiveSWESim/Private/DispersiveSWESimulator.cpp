@@ -89,7 +89,6 @@ void UDispersiveSWESimulator::AllocatePersistentTargets(FRHICommandListImmediate
 	);
 
 	GRenderTargetPool.FindFreeElement(RHICmdList, Desc, TexTerrain, TEXT("SWE_Terrain"));
-	GRenderTargetPool.FindFreeElement(RHICmdList, Desc, TexTerrainBulk, TEXT("SWE_TerrainBulk"));
 	GRenderTargetPool.FindFreeElement(RHICmdList, Desc, TexH, TEXT("SWE_H"));
 	GRenderTargetPool.FindFreeElement(RHICmdList, Desc, TexQ_x, TEXT("SWE_Q_x"));
 	GRenderTargetPool.FindFreeElement(RHICmdList, Desc, TexQ_y, TEXT("SWE_Q_y"));
@@ -356,89 +355,6 @@ void UDispersiveSWESimulator::SetupInitialStates(FRHICommandListImmediate& RHICm
 		RHIUpdateTexture2D(hbarOldRHI, 0, Region, GridSizeX * sizeof(float), (uint8*)WaterData.GetData());
 	}
 
-	// Perform one-time diffusion of the terrain to create bulk terrain (TexTerrainBulk)
-	{
-		FRDGBuilder GraphBuilder(RHICmdList);
-
-		FGlobalShaderMap* ShaderMap = GetGlobalShaderMap(GMaxRHIFeatureLevel);
-
-		FRDGTextureRef Terrain_RDG = GraphBuilder.RegisterExternalTexture(TexTerrain);
-		FRDGTextureRef TerrainBulk_RDG = GraphBuilder.RegisterExternalTexture(TexTerrainBulk);
-
-		// First, copy TexTerrain to TexTerrainBulk to start with the raw terrain values
-		AddCopyTexturePass(GraphBuilder, Terrain_RDG, TerrainBulk_RDG);
-
-		// We need to calculate diffusion coefficients for the terrain.
-		FRDGTextureDesc FloatDesc = FRDGTextureDesc::Create2D(
-			FIntPoint(GridSizeX, GridSizeY), PF_R32_FLOAT, FClearValueBinding::None, TexCreate_UAV | TexCreate_ShaderResource);
-		FRDGTextureRef TempH = GraphBuilder.CreateTexture(FloatDesc, TEXT("SWE_TempH_TerrainDecomp"));
-		FRDGTextureRef TempQx = GraphBuilder.CreateTexture(FloatDesc, TEXT("SWE_TempQx_TerrainDecomp"));
-		FRDGTextureRef TempQy = GraphBuilder.CreateTexture(FloatDesc, TEXT("SWE_TempQy_TerrainDecomp"));
-
-		FRDGTextureRef h_RDG = GraphBuilder.RegisterExternalTexture(Texh);
-		FRDGTextureRef qx_RDG = GraphBuilder.RegisterExternalTexture(Texq_x);
-		FRDGTextureRef qy_RDG = GraphBuilder.RegisterExternalTexture(Texq_y);
-
-		TShaderMapRef<FInitDecompCS> InitDecompShader(ShaderMap);
-		FInitDecompCS::FParameters* InitDecompParams = GraphBuilder.AllocParameters<FInitDecompCS::FParameters>();
-		InitDecompParams->SimConstants = ConstantBuffer;
-		InitDecompParams->hIn = GraphBuilder.CreateSRV(h_RDG);
-		InitDecompParams->qIn_x = GraphBuilder.CreateSRV(qx_RDG);
-		InitDecompParams->qIn_y = GraphBuilder.CreateSRV(qy_RDG);
-		InitDecompParams->terrain = GraphBuilder.CreateSRV(Terrain_RDG);
-		InitDecompParams->H_elevOut = GraphBuilder.CreateUAV(TempH);
-		InitDecompParams->Q_bulkOut_x = GraphBuilder.CreateUAV(TempQx);
-		InitDecompParams->Q_bulkOut_y = GraphBuilder.CreateUAV(TempQy);
-
-		FIntVector GridGroups(FMath::DivideAndRoundUp(GridSizeX, 16), FMath::DivideAndRoundUp(GridSizeY, 16), 1);
-		FComputeShaderUtils::AddPass(GraphBuilder, RDG_EVENT_NAME("SWE_TerrainDecomp_Init"), ERDGPassFlags::Compute, InitDecompShader, InitDecompParams, GridGroups);
-
-		// Now calculate diffusion coefficients using TempH and raw Terrain
-		FRDGTextureRef alpha_H = GraphBuilder.CreateTexture(FloatDesc, TEXT("SWE_alpha_H_TerrainDecomp"));
-		FRDGTextureRef alpha_Qx = GraphBuilder.CreateTexture(FloatDesc, TEXT("SWE_alpha_Qx_TerrainDecomp"));
-		FRDGTextureRef alpha_Qy = GraphBuilder.CreateTexture(FloatDesc, TEXT("SWE_alpha_Qy_TerrainDecomp"));
-
-		TShaderMapRef<FCalcDiffusionCoeffsCS> CoeffsShader(ShaderMap);
-		FCalcDiffusionCoeffsCS::FParameters* CoeffsParams = GraphBuilder.AllocParameters<FCalcDiffusionCoeffsCS::FParameters>();
-		CoeffsParams->SimConstants = ConstantBuffer;
-		CoeffsParams->H_elevIn = GraphBuilder.CreateSRV(TempH);
-		CoeffsParams->terrain = GraphBuilder.CreateSRV(Terrain_RDG);
-		CoeffsParams->alpha_HOut = GraphBuilder.CreateUAV(alpha_H);
-		CoeffsParams->alpha_QOut_x = GraphBuilder.CreateUAV(alpha_Qx);
-		CoeffsParams->alpha_QOut_y = GraphBuilder.CreateUAV(alpha_Qy);
-
-		FComputeShaderUtils::AddPass(GraphBuilder, RDG_EVENT_NAME("SWE_TerrainDecomp_Coeffs"), ERDGPassFlags::Compute, CoeffsShader, CoeffsParams, GridGroups);
-
-		// Now diffuse TerrainBulk_RDG using FDiffuseTerrainCS
-		FRDGTextureRef TerrainBulk_Src = GraphBuilder.CreateTexture(FloatDesc, TEXT("SWE_TerrainBulk_Src"));
-		AddCopyTexturePass(GraphBuilder, TerrainBulk_RDG, TerrainBulk_Src);
-
-		FRDGTextureRef Src = TerrainBulk_Src;
-		FRDGTextureRef Dst = TerrainBulk_RDG;
-
-		TShaderMapRef<FDiffuseTerrainCS> DiffuseTerrainShader(ShaderMap);
-		for (int32 j = 0; j < CPUConstants.diffusionIterations; j++)
-		{
-			FDiffuseTerrainCS::FParameters* DiffuseParams = GraphBuilder.AllocParameters<FDiffuseTerrainCS::FParameters>();
-			DiffuseParams->SimConstants = ConstantBuffer;
-			DiffuseParams->terrainPast = GraphBuilder.CreateSRV(Src);
-			DiffuseParams->alpha_HIn = GraphBuilder.CreateSRV(alpha_H);
-			DiffuseParams->terrainNew = GraphBuilder.CreateUAV(Dst);
-
-			FComputeShaderUtils::AddPass(GraphBuilder, RDG_EVENT_NAME("SWE_TerrainDecomp_Diffuse"), ERDGPassFlags::Compute, DiffuseTerrainShader, DiffuseParams, GridGroups);
-
-			Swap(Src, Dst);
-		}
-
-		// Ensure the final diffused result is in TerrainBulk_RDG (which is TexTerrainBulk)
-		if (Src != TerrainBulk_RDG)
-		{
-			AddCopyTexturePass(GraphBuilder, Src, TerrainBulk_RDG);
-		}
-
-		GraphBuilder.Execute();
-	}
-
 	// Initialize the Wave Spectrum
 	{
 		FRDGBuilder GraphBuilder(RHICmdList);
@@ -469,47 +385,6 @@ void UDispersiveSWESimulator::TickComponent(float DeltaTime, ELevelTick TickType
 {
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
 
-	// static int32 TickCount = 0;
-	// if (TickCount < 10)
-	// {
-	// 	TickCount++;
-	// 	UE_LOG(LogTemp, Warning, TEXT("UDispersiveSWESimulator::TickComponent() called. Frame %d, bInitialized=%d"), TickCount, bInitialized ? 1 : 0);
-		
-	// 	if (bInitialized && DisplacementRT)
-	// 	{
-	// 		FTextureRenderTargetResource* Resource = DisplacementRT->GameThread_GetRenderTargetResource();
-	// 		TArray<FFloat16Color> Pixels;
-	// 		if (Resource && Resource->ReadFloat16Pixels(Pixels))
-	// 		{
-	// 			float MinR = 1e20f, MaxR = -1e20f, SumR = 0.f;
-	// 			float MinG = 1e20f, MaxG = -1e20f, SumG = 0.f;
-	// 			float MinB = 1e20f, MaxB = -1e20f, SumB = 0.f;
-	// 			int32 NaNCount = 0;
-	// 			for (const FFloat16Color& Pixel : Pixels)
-	// 			{
-	// 				float R = Pixel.R.GetFloat();
-	// 				float G = Pixel.G.GetFloat();
-	// 				float B = Pixel.B.GetFloat();
-	// 				if (!FMath::IsFinite(R) || !FMath::IsFinite(G) || !FMath::IsFinite(B))
-	// 				{
-	// 					NaNCount++;
-	// 					continue;
-	// 				}
-	// 				if (R < MinR) MinR = R; if (R > MaxR) MaxR = R; SumR += R;
-	// 				if (G < MinG) MinG = G; if (G > MaxG) MaxG = G; SumG += G;
-	// 				if (B < MinB) MinB = B; if (B > MaxB) MaxB = B; SumB += B;
-	// 			}
-	// 			float Div = Pixels.Num() > NaNCount ? Pixels.Num() - NaNCount : 1;
-	// 			UE_LOG(LogTemp, Warning, TEXT("Frame %d DisplacementRT Diagnostic: MinR=%f, MaxR=%f, AvgR=%f | MinG=%f, MaxG=%f, AvgG=%f | MinB=%f, MaxB=%f, AvgB=%f | NaNCount=%d / %d"),
-	// 				TickCount, MinR, MaxR, SumR/Div, MinG, MaxG, SumG/Div, MinB, MaxB, SumB/Div, NaNCount, Pixels.Num());
-	// 		}
-	// 		else
-	// 		{
-	// 			UE_LOG(LogTemp, Warning, TEXT("Frame %d DisplacementRT Diagnostic: Failed to read pixels."), TickCount);
-	// 		}
-	// 	}
-	// }
-
 	if (!bInitialized) return;
 
 	SimulationTime += TimeStep;
@@ -532,7 +407,6 @@ void UDispersiveSWESimulator::ExecuteSimulation_RenderThread(
 
 	// 1. Import persistent buffers
 	FRDGTextureRef Terrain_RDG = GraphBuilder.RegisterExternalTexture(TexTerrain);
-	FRDGTextureRef TerrainBulk_RDG = GraphBuilder.RegisterExternalTexture(TexTerrainBulk);
 
 	FRDGTextureRef H_RDG = GraphBuilder.RegisterExternalTexture(TexH);
 	FRDGTextureRef Qx_RDG = GraphBuilder.RegisterExternalTexture(TexQ_x);
@@ -707,7 +581,6 @@ void UDispersiveSWESimulator::ExecuteSimulation_RenderThread(
 		Params->qIn_x = GraphBuilder.CreateSRV(qx_RDG);
 		Params->qIn_y = GraphBuilder.CreateSRV(qy_RDG);
 		Params->terrain = GraphBuilder.CreateSRV(Terrain_RDG);
-		Params->terrainBulk = GraphBuilder.CreateSRV(TerrainBulk_RDG);
 		Params->hbarOut = GraphBuilder.CreateUAV(hbar_RDG);
 		Params->qbarOut_x = GraphBuilder.CreateUAV(qbarx_RDG);
 		Params->qbarOut_y = GraphBuilder.CreateUAV(qbary_RDG);

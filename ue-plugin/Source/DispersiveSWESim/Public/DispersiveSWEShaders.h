@@ -75,20 +75,6 @@ public:
 	END_SHADER_PARAMETER_STRUCT()
 };
 
-class FDiffuseTerrainCS : public FDispersiveSWEComputeShader
-{
-public:
-	DECLARE_GLOBAL_SHADER(FDiffuseTerrainCS);
-	SHADER_USE_PARAMETER_STRUCT(FDiffuseTerrainCS, FDispersiveSWEComputeShader);
-
-	BEGIN_SHADER_PARAMETER_STRUCT(FParameters, )
-		SHADER_PARAMETER_STRUCT_REF(FSimConstants, SimConstants)
-		SHADER_PARAMETER_RDG_TEXTURE_SRV(Texture2D<float>, terrainPast)
-		SHADER_PARAMETER_RDG_TEXTURE_SRV(Texture2D<float>, alpha_HIn)
-		SHADER_PARAMETER_RDG_TEXTURE_UAV(RWTexture2D<float>, terrainNew)
-	END_SHADER_PARAMETER_STRUCT()
-};
-
 class FInitDecompCS : public FDispersiveSWEComputeShader
 {
 public:
@@ -175,7 +161,6 @@ public:
 		SHADER_PARAMETER_RDG_TEXTURE_SRV(Texture2D<float>, qIn_x)
 		SHADER_PARAMETER_RDG_TEXTURE_SRV(Texture2D<float>, qIn_y)
 		SHADER_PARAMETER_RDG_TEXTURE_SRV(Texture2D<float>, terrain)
-		SHADER_PARAMETER_RDG_TEXTURE_SRV(Texture2D<float>, terrainBulk)
 		SHADER_PARAMETER_RDG_TEXTURE_UAV(RWTexture2D<float>, hbarOut)
 		SHADER_PARAMETER_RDG_TEXTURE_UAV(RWTexture2D<float>, qbarOut_x)
 		SHADER_PARAMETER_RDG_TEXTURE_UAV(RWTexture2D<float>, qbarOut_y)
@@ -474,6 +459,7 @@ public:
 		FPermutationDomain PermutationVector(Parameters.PermutationId);
 		OutEnvironment.SetDefine(TEXT("FFT_SIZE"), PermutationVector.Get<FFFTSizeDim>());
 		OutEnvironment.SetDefine(TEXT("IS_ARRAY"), PermutationVector.Get<FIsArrayDim>() ? 1 : 0);
+		OutEnvironment.CompilerFlags.Add(CFLAG_AllowTypedUAVLoads);
 	}
 };
 

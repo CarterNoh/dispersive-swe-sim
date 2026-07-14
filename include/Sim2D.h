@@ -58,7 +58,7 @@ public:
 	static constexpr float DEPTH_CUTOFF = 8.f; 		// depth to start attenuating FFT waves
 
 	// Simulation variables
-	GPUField terrain, terrainBulk, H, Q_x, Q_y, h, q_x, q_y, 
+	GPUField terrain, H, Q_x, Q_y, h, q_x, q_y, 
 			 HPast, QPast_x, QPast_y, alpha_H, alpha_Q_x, alpha_Q_y, 
 			 hbar, qbar_x, qbar_y, htilde, qtilde_x, qtilde_y,
 			 ubar_x, ubar_y, ubarNew_x, ubarNew_y,
@@ -68,8 +68,8 @@ public:
     GPUField HPos, HNeg, HProp, DelH_x, DelH_y, Disp_x, Disp_y, // Outputs of PopulateSpectrum, PropagateWaves (complex arrays)
              hFFT, delH_x, delH_y, disp_x, disp_y; // iFFT'd variables after interpolation
              
-	GPUField* fields[36] = {
-		&terrain, &terrainBulk, &H, &Q_x, &Q_y, &h, &q_x, &q_y,
+	GPUField* fields[35] = {
+		&terrain, &H, &Q_x, &Q_y, &h, &q_x, &q_y,
 		&HPast, &QPast_x, &QPast_y, &alpha_H, &alpha_Q_x, &alpha_Q_y,
 		&hbar, &qbar_x, &qbar_y, &htilde, &qtilde_x, &qtilde_y,
 		&ubar_x, &ubar_y, &ubarNew_x, &ubarNew_y,
@@ -111,14 +111,14 @@ private:
 	// Compute Shaders
 	ID3D11ComputeShader *InitDecomp, *CalcDiffusionCoeffs, *DiffusionStep, *DecomposeFields, 
 						*CalcUbar, *CalcSWE, *UpdateTilde, *CalcQAdvect, *IntegrateH, 
-						*TransferToFFT, *CalcEWave, *InterpQ, *DiffuseTerrain;
-	ID3D11ComputeShader** shaders[13] = {
+						*TransferToFFT, *CalcEWave, *InterpQ;
+	ID3D11ComputeShader** shaders[12] = {
 						&InitDecomp, &CalcDiffusionCoeffs, &DiffusionStep, &DecomposeFields, 
 						&CalcUbar, &CalcSWE, &UpdateTilde, &CalcQAdvect, &IntegrateH, 
-						&TransferToFFT, &CalcEWave, &InterpQ, &DiffuseTerrain};
-	char* names[13] = {"InitDecomp", "CalcDiffusionCoeffs", "DiffusionStep", "DecomposeFields", 
+						&TransferToFFT, &CalcEWave, &InterpQ};
+	char* names[12] = {"InitDecomp", "CalcDiffusionCoeffs", "DiffusionStep", "DecomposeFields", 
 					   "CalcUbar", "CalcSWE", "UpdateTilde", "CalcQAdvect", "IntegrateH", 
-					   "TransferToFFT", "CalcEWave", "InterpQ", "DiffuseTerrain"};
+					   "TransferToFFT", "CalcEWave", "InterpQ"};
     // FFT Wave Compute Shaders
 	ID3D11ComputeShader *PopulateSpectrum, *PropagateWaves, *Interp;
 	ID3D11ComputeShader** waveShaders[3] = {&PopulateSpectrum, &PropagateWaves, &Interp};
