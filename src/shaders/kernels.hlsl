@@ -167,20 +167,29 @@ float LoadClamped(Texture2D<float> tex, int2 coord) {
 
 float CalcDiffusion(Texture2D<float> f, Texture2D<float> a, uint2 curr, float invCellSizeSq) {
     int2 id = int2(curr);
-    float f_curr = f[curr];
-    float a_curr = a[curr];
 
+    float f_curr = f[curr];
     float f_right = LoadClamped(f, id + int2(1, 0));
     float f_left  = LoadClamped(f, id + int2(-1, 0));
     float f_up    = LoadClamped(f, id + int2(0, 1));
     float f_down  = LoadClamped(f, id + int2(0, -1));
 
+    float a_curr = a[curr];
+    float a_right = LoadClamped(a, id + int2(1, 0));
     float a_left  = LoadClamped(a, id + int2(-1, 0));
+    float a_up    = LoadClamped(a, id + int2(0, 1));
     float a_down  = LoadClamped(a, id + int2(0, -1));
+    
+    // Face-average the diffusion coefficients
+    float a_east = 0.5*(a_curr + a_right);
+    float a_west = 0.5*(a_curr + a_left);
+    float a_north = 0.5*(a_curr + a_up);
+    float a_south = 0.5*(a_curr + a_down);
 
-    float dF_x = a_curr * (f_right - f_curr) - a_left * (f_curr - f_left);
-    float dF_y = a_curr * (f_up - f_curr) - a_down * (f_curr - f_down);
+    float dF_x = a_east * (f_right - f_curr) - a_west * (f_curr - f_left);
+    float dF_y = a_north * (f_up - f_curr) - a_south * (f_curr - f_down);
     float dFdX = (dF_x + dF_y) * invCellSizeSq;
+    
     return dFdX;
 }
 

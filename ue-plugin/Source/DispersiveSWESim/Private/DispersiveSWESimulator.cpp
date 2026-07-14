@@ -449,6 +449,9 @@ void UDispersiveSWESimulator::ExecuteSimulation_RenderThread(
 	FRDGTextureRef HPast = GraphBuilder.CreateTexture(FloatDesc, TEXT("SWE_HPast"));
 	FRDGTextureRef QPastX = GraphBuilder.CreateTexture(FloatDesc, TEXT("SWE_QPastX"));
 	FRDGTextureRef QPastY = GraphBuilder.CreateTexture(FloatDesc, TEXT("SWE_QPastY"));
+	FRDGTextureRef HNext = GraphBuilder.CreateTexture(FloatDesc, TEXT("SWE_HNext"));
+	FRDGTextureRef QNextX = GraphBuilder.CreateTexture(FloatDesc, TEXT("SWE_QNextX"));
+	FRDGTextureRef QNextY = GraphBuilder.CreateTexture(FloatDesc, TEXT("SWE_QNextY"));
 
 	// FFT Wave propagation transients (DEPTH_NUM layers)
 	FRDGTextureRef DelHx = GraphBuilder.CreateTexture(ComplexArrayPaddedDesc, TEXT("SWE_DelHx"));
@@ -524,17 +527,17 @@ void UDispersiveSWESimulator::ExecuteSimulation_RenderThread(
 
 	// Diffusion loop - low pass filter H and Q
 	{
-		FRDGTextureRef H_Src = H_RDG;
-		FRDGTextureRef H_Dst = HPast;
-		FRDGTextureRef Qx_Src = Qx_RDG;
-		FRDGTextureRef Qx_Dst = QPastX;
-		FRDGTextureRef Qy_Src = Qy_RDG;
-		FRDGTextureRef Qy_Dst = QPastY;
+		FRDGTextureRef H_Src = HPast;
+		FRDGTextureRef H_Dst = HNext;
+		FRDGTextureRef Qx_Src = QPastX;
+		FRDGTextureRef Qx_Dst = QNextX;
+		FRDGTextureRef Qy_Src = QPastY;
+		FRDGTextureRef Qy_Dst = QNextY;
 
 		// Copy initial states to buffer destinations
-		AddCopyTexturePass(GraphBuilder, H_Src, H_Dst);
-		AddCopyTexturePass(GraphBuilder, Qx_Src, Qx_Dst);
-		AddCopyTexturePass(GraphBuilder, Qy_Src, Qy_Dst);
+		AddCopyTexturePass(GraphBuilder, H_RDG, H_Src);
+		AddCopyTexturePass(GraphBuilder, Qx_RDG, Qx_Src);
+		AddCopyTexturePass(GraphBuilder, Qy_RDG, Qy_Src);
 
 		TShaderMapRef<FDiffusionStepCS> Shader(ShaderMap);
 		for (int32 j = 0; j < Constants.diffusionIterations; j++)
@@ -561,12 +564,9 @@ void UDispersiveSWESimulator::ExecuteSimulation_RenderThread(
 		}
 
 		// Ensure final result is in H_RDG, Qx_RDG, Qy_RDG
-		if (H_Src != H_RDG)
-		{
-			AddCopyTexturePass(GraphBuilder, H_Src, H_RDG);
-			AddCopyTexturePass(GraphBuilder, Qx_Src, Qx_RDG);
-			AddCopyTexturePass(GraphBuilder, Qy_Src, Qy_RDG);
-		}
+		AddCopyTexturePass(GraphBuilder, H_Src, H_RDG);
+		AddCopyTexturePass(GraphBuilder, Qx_Src, Qx_RDG);
+		AddCopyTexturePass(GraphBuilder, Qy_Src, Qy_RDG);
 	}
 
 	// DecomposeFields
