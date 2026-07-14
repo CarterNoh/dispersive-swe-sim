@@ -27,7 +27,7 @@ std::vector<float> Sim::SetTerrain() {
 			for (int y = 0; y < GRIDSIZE_Y; y++) {
 				for (int x = 0; x < GRIDSIZE_X; x++) {
 					// Map coordinates from [0, GRIDSIZE - 1] to [0, rawSize - 1]
-					float rx = (float)x / (GRIDSIZE_X - 1) * (rawWidth - 1);
+					float rx = (float)(GRIDSIZE_X - x - 1) / (GRIDSIZE_X - 1) * (rawWidth - 1);
 					float ry = (float)y / (GRIDSIZE_Y - 1) * (rawHeight - 1);
 
 					int x0 = (int)rx;
