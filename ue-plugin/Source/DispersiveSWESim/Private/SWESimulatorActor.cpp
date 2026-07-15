@@ -5,6 +5,9 @@
 #include "Engine/StaticMesh.h"
 #include "UObject/ConstructorHelpers.h"
 #include "Math/Float16Color.h"
+#include "Components/StaticMeshComponent.h"
+#include "TextureResource.h"
+
 
 #if WITH_EDITOR
 #include "LandscapeProxy.h"
@@ -26,6 +29,8 @@ ASWESimulatorActor::ASWESimulatorActor()
     // 2. Attach Scene Capture (positioned facing straight down)
     TerrainCaptureComponent = CreateDefaultSubobject<USceneCaptureComponent2D>(TEXT("TerrainCapture"));
     TerrainCaptureComponent->SetupAttachment(Root);
+    TerrainCaptureComponent->bCaptureEveryFrame = false;
+    TerrainCaptureComponent->bCaptureOnMovement = false;
     TerrainCaptureComponent->SetRelativeLocation(FVector(0.0f, 0.0f, 5000.0f)); // default 50m above
     TerrainCaptureComponent->SetRelativeRotation(FRotator(-90.0f, 0.0f, -90.0f)); // Pointing down
 

@@ -252,6 +252,38 @@ private:
 	TRefCountPtr<IPooledRenderTarget> TexHPos;
 	TRefCountPtr<IPooledRenderTarget> TexHNeg;
 
+	// Persistent buffers for transient textures to speed up RDG
+	TRefCountPtr<IPooledRenderTarget> TexAlpha_H;
+	TRefCountPtr<IPooledRenderTarget> TexAlpha_Qx;
+	TRefCountPtr<IPooledRenderTarget> TexAlpha_Qy;
+	TRefCountPtr<IPooledRenderTarget> TexHNext;
+	TRefCountPtr<IPooledRenderTarget> TexQNextX;
+	TRefCountPtr<IPooledRenderTarget> TexQNextY;
+	TRefCountPtr<IPooledRenderTarget> TexDelHx;
+	TRefCountPtr<IPooledRenderTarget> TexDelHy;
+	TRefCountPtr<IPooledRenderTarget> TexDispX;
+	TRefCountPtr<IPooledRenderTarget> TexDispY;
+	TRefCountPtr<IPooledRenderTarget> TexDelHx_Out;
+	TRefCountPtr<IPooledRenderTarget> TexDelHy_Out;
+	TRefCountPtr<IPooledRenderTarget> TexDispX_Out;
+	TRefCountPtr<IPooledRenderTarget> TexDispY_Out;
+	TRefCountPtr<IPooledRenderTarget> TexHHat;
+	TRefCountPtr<IPooledRenderTarget> TexQHatX;
+	TRefCountPtr<IPooledRenderTarget> TexQHatY;
+	TRefCountPtr<IPooledRenderTarget> TexQHatXArray;
+	TRefCountPtr<IPooledRenderTarget> TexQHatYArray;
+	TRefCountPtr<IPooledRenderTarget> TexQTildePastX;
+	TRefCountPtr<IPooledRenderTarget> TexQTildePastY;
+	TRefCountPtr<IPooledRenderTarget> TexQAdvectX;
+	TRefCountPtr<IPooledRenderTarget> TexQAdvectY;
+	TRefCountPtr<IPooledRenderTarget> TexHPast_Transport;
+	TRefCountPtr<IPooledRenderTarget> TexUbarNewX;
+	TRefCountPtr<IPooledRenderTarget> TexUbarNewY;
+	TRefCountPtr<IPooledRenderTarget> TexHtildeOldCopy;
+	TRefCountPtr<IPooledRenderTarget> TexHtildeCopy;
+	TRefCountPtr<IPooledRenderTarget> TexNewFoam;
+	TRefCountPtr<IPooledRenderTarget> TexNewRoughness;
+
 	void InitializeSimulation();
 	void AllocatePersistentTargets(FRHICommandListImmediate& RHICmdList);
 	void SetupInitialStates(FRHICommandListImmediate& RHICmdList);

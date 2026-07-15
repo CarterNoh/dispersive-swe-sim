@@ -459,7 +459,9 @@ public:
 		FPermutationDomain PermutationVector(Parameters.PermutationId);
 		OutEnvironment.SetDefine(TEXT("FFT_SIZE"), PermutationVector.Get<FFFTSizeDim>());
 		OutEnvironment.SetDefine(TEXT("IS_ARRAY"), PermutationVector.Get<FIsArrayDim>() ? 1 : 0);
+#if WITH_EDITOR
 		OutEnvironment.CompilerFlags.Add(CFLAG_AllowTypedUAVLoads);
+#endif
 	}
 };
 
