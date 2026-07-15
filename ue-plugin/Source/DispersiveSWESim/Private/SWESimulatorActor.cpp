@@ -187,6 +187,11 @@ void ASWESimulatorActor::BeginPlay()
         {
             WaterMeshComponent->SetVisibility(false);
         }
+        if (TerrainActor)
+        {
+            TerrainCaptureComponent->ShowOnlyActors.Add(TerrainActor);
+            TerrainCaptureComponent->PrimitiveRenderMode = ESceneCapturePrimitiveRenderMode::PRM_UseShowOnlyList;
+        }
 
         TerrainCaptureComponent->ProjectionType = ECameraProjectionMode::Orthographic;
         TerrainCaptureComponent->OrthoWidth = CapturedWorldWidth;
