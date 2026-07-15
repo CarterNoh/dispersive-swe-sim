@@ -183,22 +183,24 @@ public:
 	UTextureRenderTarget2D* TerrainRT = nullptr;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SWE Outputs")
-	UTextureRenderTarget2D* DisplacementRT = nullptr;
+	TArray<UTextureRenderTarget2D*> DisplacementRT;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SWE Outputs")
-	UTextureRenderTarget2D* DisplacementPastRT = nullptr;
+	TArray<UTextureRenderTarget2D*> NormalRT;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SWE Outputs")
-	UTextureRenderTarget2D* NormalRT = nullptr;
+	TArray<UTextureRenderTarget2D*> FoamRT;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SWE Outputs")
-	UTextureRenderTarget2D* FoamRT = nullptr;
+	TArray<UTextureRenderTarget2D*> JacobianDetRT;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SWE Outputs")
-	UTextureRenderTarget2D* JacobianDetRT = nullptr;
+	TArray<UTextureRenderTarget2D*> RoughnessRT;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SWE Outputs")
-	UTextureRenderTarget2D* RoughnessRT = nullptr;
+	// Index helpers for double-buffered and triple-buffered outputs
+	int32 GetReadIndex() const { return (FrameCounter + 1) % 2; }
+	int32 GetDispReadIndex() const { return (FrameCounter + 2) % 3; }
+	int32 GetDispPastIndex() const { return (FrameCounter + 1) % 3; }
 
 	UFUNCTION(BlueprintCallable, Category = "SWE Configuration")
 	bool LoadParametersFromJson(const FString& FilePath);
@@ -219,6 +221,9 @@ private:
 	FTextureRHIRef StagingTextures[2];
 	int32 StagingWriteIndex = 0;
 	int32 StagingReadIndex = 1;
+
+	// Frame counter for determining double-buffer and triple-buffer indices
+	uint64 FrameCounter = 0;
 
 	// Thread-safe double-buffered CPU height cache (in meters)
 	TArray<float> CPUHeightData[2];
@@ -289,6 +294,6 @@ private:
 	void SetupInitialStates(FRHICommandListImmediate& RHICmdList);
 	void AssignConstants(FSimConstants& OutConstants) const;
 	
-	void ExecuteSimulation_RenderThread(FRHICommandListImmediate& RHICmdList, const FSimConstants& Constants);
+	void ExecuteSimulation_RenderThread(FRHICommandListImmediate& RHICmdList, const FSimConstants& Constants, int32 ThisWriteIndex, int32 ThisDispWriteIndex);
 	void DispatchFFT_RenderThread(FRDGBuilder& GraphBuilder, FRDGTextureRef TargetTexture, int32 SizeX, int32 SizeY, bool bInverse, int32 NumLayers);
 };

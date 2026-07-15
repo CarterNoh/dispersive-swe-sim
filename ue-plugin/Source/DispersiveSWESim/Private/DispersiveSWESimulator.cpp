@@ -436,16 +436,22 @@ void UDispersiveSWESimulator::TickComponent(float DeltaTime, ELevelTick TickType
 	FSimConstants Constants = {};
 	AssignConstants(Constants);
 
+	FrameCounter++;
+	int32 ThisWriteIndex = FrameCounter % 2;
+	int32 ThisDispWriteIndex = FrameCounter % 3;
+
 	ENQUEUE_RENDER_COMMAND(ExecuteSWESimulation)(
-		[this, Constants](FRHICommandListImmediate& RHICmdList) {
-			ExecuteSimulation_RenderThread(RHICmdList, Constants);
+		[this, Constants, ThisWriteIndex, ThisDispWriteIndex](FRHICommandListImmediate& RHICmdList) {
+			ExecuteSimulation_RenderThread(RHICmdList, Constants, ThisWriteIndex, ThisDispWriteIndex);
 		}
 	);
 }
 
 void UDispersiveSWESimulator::ExecuteSimulation_RenderThread(
 	FRHICommandListImmediate& RHICmdList,
-	const FSimConstants& Constants) 
+	const FSimConstants& Constants, 
+	int32 ThisWriteIndex,
+	int32 ThisDispWriteIndex) 
 {
 	FRDGBuilder GraphBuilder(RHICmdList);
 
@@ -862,19 +868,13 @@ void UDispersiveSWESimulator::ExecuteSimulation_RenderThread(
 		FComputeShaderUtils::AddPass(GraphBuilder, RDG_EVENT_NAME("SWE_Final_ReH"), ERDGPassFlags::AsyncCompute, Shader, Params, GridGroups);
 	}
 
-	// Copy current Displacement to DisplacementPast before updating
-	if (DisplacementPastRT && DisplacementPastRT->GetRenderTargetResource() &&
-		DisplacementRT && DisplacementRT->GetRenderTargetResource())
-	{
-		FRDGTextureRef SrcRDG = GraphBuilder.RegisterExternalTexture(CreateRenderTarget(DisplacementRT->GetRenderTargetResource()->GetTexture2DRHI(), TEXT("SWE_DispCurrent_CopySrc")));
-		FRDGTextureRef DestRDG = GraphBuilder.RegisterExternalTexture(CreateRenderTarget(DisplacementPastRT->GetRenderTargetResource()->GetTexture2DRHI(), TEXT("SWE_DispPast_CopyDest")));
-		AddCopyTexturePass(GraphBuilder, SrcRDG, DestRDG);
-	}
-
 	// Export Displacement: Combine dispX, dispY, and height H_RDG into a single PF_FloatRGBA Render Target
-	if (DisplacementRT && DisplacementRT->GetRenderTargetResource() && H_RDG)
+	if (DisplacementRT.IsValidIndex(ThisDispWriteIndex) && DisplacementRT[ThisDispWriteIndex] && 
+		DisplacementRT[ThisDispWriteIndex]->GetRenderTargetResource() && H_RDG)
 	{
-		FRDGTextureRef ExportDispDest = GraphBuilder.RegisterExternalTexture(CreateRenderTarget(DisplacementRT->GetRenderTargetResource()->GetTexture2DRHI(), TEXT("SWE_DispExport")));
+		FRDGTextureRef ExportDispDest = GraphBuilder.RegisterExternalTexture(
+			CreateRenderTarget(DisplacementRT[ThisDispWriteIndex]->GetRenderTargetResource()->GetTexture2DRHI(), 
+			TEXT("SWE_DispExport")));
 
 		TShaderMapRef<FScaleCopyDisplacementCS> ScaleCopyCS(GetGlobalShaderMap(GMaxRHIFeatureLevel));
 		FScaleCopyDisplacementCS::FParameters* PassParams = GraphBuilder.AllocParameters<FScaleCopyDisplacementCS::FParameters>();
@@ -905,13 +905,19 @@ void UDispersiveSWESimulator::ExecuteSimulation_RenderThread(
 	AddCopyTexturePass(GraphBuilder, PreviousFoam_RDG, NewFoamRDG);
 
 	// Export Surface Normal, Foam & JacobianDet: Calculate combined fields using unified compute shader
-	if (NormalRT && NormalRT->GetRenderTargetResource() &&
-		FoamRT && FoamRT->GetRenderTargetResource() &&
-		JacobianDetRT && JacobianDetRT->GetRenderTargetResource())
+	if (NormalRT[ThisWriteIndex] && NormalRT[ThisWriteIndex]->GetRenderTargetResource() &&
+		FoamRT[ThisWriteIndex] && FoamRT[ThisWriteIndex]->GetRenderTargetResource() &&
+		JacobianDetRT[ThisWriteIndex] && JacobianDetRT[ThisWriteIndex]->GetRenderTargetResource())
 	{
-		FRDGTextureRef ExportNormalDest = GraphBuilder.RegisterExternalTexture(CreateRenderTarget(NormalRT->GetRenderTargetResource()->GetTexture2DRHI(), TEXT("SWE_NormalExport")));
-		FRDGTextureRef ExportFoamDest = GraphBuilder.RegisterExternalTexture(CreateRenderTarget(FoamRT->GetRenderTargetResource()->GetTexture2DRHI(), TEXT("SWE_FoamExport")));
-		FRDGTextureRef ExportJacobianDest = GraphBuilder.RegisterExternalTexture(CreateRenderTarget(JacobianDetRT->GetRenderTargetResource()->GetTexture2DRHI(), TEXT("SWE_JacobianExport")));
+		FRDGTextureRef ExportNormalDest = GraphBuilder.RegisterExternalTexture(
+			CreateRenderTarget(NormalRT[ThisWriteIndex]->GetRenderTargetResource()->GetTexture2DRHI(), 
+			TEXT("SWE_NormalExport")));
+		FRDGTextureRef ExportFoamDest = GraphBuilder.RegisterExternalTexture(
+			CreateRenderTarget(FoamRT[ThisWriteIndex]->GetRenderTargetResource()->GetTexture2DRHI(), 
+			TEXT("SWE_FoamExport")));
+		FRDGTextureRef ExportJacobianDest = GraphBuilder.RegisterExternalTexture(
+			CreateRenderTarget(JacobianDetRT[ThisWriteIndex]->GetRenderTargetResource()->GetTexture2DRHI(), 
+			TEXT("SWE_JacobianExport")));
 
 		TShaderMapRef<FCalcSurfaceNormalAndFoamCS> NormalAndFoamCS(GetGlobalShaderMap(GMaxRHIFeatureLevel));
 		FCalcSurfaceNormalAndFoamCS::FParameters* PassParams = GraphBuilder.AllocParameters<FCalcSurfaceNormalAndFoamCS::FParameters>();
@@ -951,10 +957,15 @@ void UDispersiveSWESimulator::ExecuteSimulation_RenderThread(
 
 		AddCopyTexturePass(GraphBuilder, PreviousRoughness_RDG, NewRoughnessRDG);
 
-		if (RoughnessRT && RoughnessRT->GetRenderTargetResource() && NormalRT && NormalRT->GetRenderTargetResource())
+		if (RoughnessRT[ThisWriteIndex] && RoughnessRT[ThisWriteIndex]->GetRenderTargetResource() && 
+			NormalRT[ThisWriteIndex] && NormalRT[ThisWriteIndex]->GetRenderTargetResource())
 		{
-			FRDGTextureRef ExportRoughnessDest = GraphBuilder.RegisterExternalTexture(CreateRenderTarget(RoughnessRT->GetRenderTargetResource()->GetTexture2DRHI(), TEXT("SWE_RoughnessExport")));
-			FRDGTextureRef CurrentNormal_RDG = GraphBuilder.RegisterExternalTexture(CreateRenderTarget(NormalRT->GetRenderTargetResource()->GetTexture2DRHI(), TEXT("SWE_NormalForRoughness")));
+			FRDGTextureRef ExportRoughnessDest = GraphBuilder.RegisterExternalTexture(
+				CreateRenderTarget(RoughnessRT[ThisWriteIndex]->GetRenderTargetResource()->GetTexture2DRHI(), 
+				TEXT("SWE_RoughnessExport")));
+			FRDGTextureRef CurrentNormal_RDG = GraphBuilder.RegisterExternalTexture(
+				CreateRenderTarget(NormalRT[ThisWriteIndex]->GetRenderTargetResource()->GetTexture2DRHI(), 
+				TEXT("SWE_NormalForRoughness")));
 
 			TShaderMapRef<FCalcRoughnessLUTCS> RoughnessCS(GetGlobalShaderMap(GMaxRHIFeatureLevel));
 			FCalcRoughnessLUTCS::FParameters* PassParams = GraphBuilder.AllocParameters<FCalcRoughnessLUTCS::FParameters>();
@@ -1169,7 +1180,7 @@ bool UDispersiveSWESimulator::SaveParametersToJson(const FString& FilePath)
 	// Remove runtime properties or input/output targets that shouldn't be serialized in a parameters config
 	JsonObject->RemoveField(TEXT("terrainHeightInputRT"));
 	JsonObject->RemoveField(TEXT("displacementRT"));
-	JsonObject->RemoveField(TEXT("displacementPastRT"));
+	// JsonObject->RemoveField(TEXT("displacementPastRT"));
 	JsonObject->RemoveField(TEXT("normalRT"));
 	JsonObject->RemoveField(TEXT("foamRT"));
 	JsonObject->RemoveField(TEXT("jacobianDetRT"));

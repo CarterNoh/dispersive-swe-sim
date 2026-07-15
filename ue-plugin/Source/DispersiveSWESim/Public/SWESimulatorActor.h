@@ -82,34 +82,11 @@ public:
     UMaterialInterface* BaseWaterMaterial;
 
 private:
-    // --- Runtime Render Targets ---
-    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="SWE | Debug", meta=(AllowPrivateAccess="true"))
-    UTextureRenderTarget2D* TerrainCaptureRT;
-
-    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="SWE | Debug", meta=(AllowPrivateAccess="true"))
-    UTextureRenderTarget2D* TerrainRT;
-
-    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="SWE | Debug", meta=(AllowPrivateAccess="true"))
-    UTextureRenderTarget2D* DisplacementRT;
-
-    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="SWE | Debug", meta=(AllowPrivateAccess="true"))
-    UTextureRenderTarget2D* DisplacementPastRT;
-
-    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="SWE | Debug", meta=(AllowPrivateAccess="true"))
-    UTextureRenderTarget2D* NormalRT;
-
-    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="SWE | Debug", meta=(AllowPrivateAccess="true"))
-    UTextureRenderTarget2D* FoamRT;
-
-    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="SWE | Debug", meta=(AllowPrivateAccess="true"))
-    UTextureRenderTarget2D* JacobianDetRT;
-
-    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="SWE | Debug", meta=(AllowPrivateAccess="true"))
-    UTextureRenderTarget2D* RoughnessRT;
-
     // --- Material ---
     UPROPERTY()
     UMaterialInstanceDynamic* DynamicWaterMaterial;
 
     void FitToTerrain();
+    void BindWaterMaterial();
+    virtual void Tick(float DeltaTime) override;
 };
