@@ -263,6 +263,17 @@ float CalcDiffusion(Texture2D<float> f, Texture2D<float> a, uint2 curr, float in
     return dFdX;
 }
 
+float SmoothTexture3x3(Texture2D<float> tex, int2 curr) {
+    float sum = 0.0f;
+    for (int dy = -1; dy <= 1; ++dy) {
+        for (int dx = -1; dx <= 1; ++dx) {
+            int2 dxy = clamp(curr + int2(dx, dy), int2(0, 0), int2(gridSizeX - 1, gridSizeY - 1));
+            sum += tex[dxy];
+        }
+    }
+    return sum / 9.0f;
+}
+
 float SpongeDamping(uint2 id, bool isYDir = false) {
     // If the cell is in the interior (outside the sponge boundary), return 1.0 immediately
     if (id.x >= (uint)spongeThickness && id.x < (uint)(gridSizeX - spongeThickness) &&
@@ -299,6 +310,9 @@ void InitializeWater(uint3 id : SV_DispatchThreadID) {
     }
     float terrainHeight = (TerrainCaptureCameraZ - rawDepth) * 0.01f;
     float h_val = max(0.f, WaterLevel - terrainHeight);
+    if (id.y < 0.25f * gridSizeY) {
+        h_val += 2.f;
+    }
     hOut[id.xy] = h_val;
     H_elevOut[id.xy] = terrainHeight + h_val;
     terrainOut[id.xy] = terrainHeight;
@@ -340,10 +354,19 @@ void CalcDiffusionCoeffs(uint3 id : SV_DispatchThreadID) {
     float grad_x = (H_elevIn[right] - H_elevIn[curr]) * invCellSize;
     float grad_y = (H_elevIn[up] - H_elevIn[curr]) * invCellSize;
     float penalty = exp(- diffusionPenalty * (grad_x * grad_x + grad_y * grad_y));
-    float max_alpha = (cellSize * cellSize) * rcp(4.0f * deltaT); // Von Neumann Stability Condition
-    alpha_HOut[curr] = min(max_alpha, h * h   * invDenom) * penalty;
-    alpha_QOut_x[curr] = min(max_alpha, hr * hr * invDenom) * penalty;
-    alpha_QOut_y[curr] = min(max_alpha, hu * hu * invDenom) * penalty;
+    float max_alpha = 0.8 * (cellSize * cellSize) * rcp(4.0f * deltaT); // Von Neumann Stability Condition, with buffer
+    alpha_HOut[curr] = max(0.f, min(max_alpha, h * h   * invDenom) * penalty);
+    alpha_QOut_x[curr] = max(0.f, min(max_alpha, hr * hr * invDenom) * penalty);
+    alpha_QOut_y[curr] = max(0.f, min(max_alpha, hu * hu * invDenom) * penalty);
+}
+
+[numthreads(16, 16, 1)]
+void SmoothDiffusionCoeffs(uint3 id : SV_DispatchThreadID) {
+    if (id.x >= (uint)(gridSizeX) || id.y >= (uint)(gridSizeY)) return;
+    int2 curr = int2(id.xy);
+    alpha_HOut[curr] = SmoothTexture3x3(alpha_HIn, curr);
+    alpha_QOut_x[curr] = SmoothTexture3x3(alpha_QIn_x, curr);
+    alpha_QOut_y[curr] = SmoothTexture3x3(alpha_QIn_y, curr);
 }
 
 [numthreads(16, 16, 1)]
@@ -353,7 +376,47 @@ void DiffusionStep(uint3 id : SV_DispatchThreadID) {
     // Outputs: HOut, QOut_x, QOut_y
     if (id.x >= (uint)(gridSizeX) || id.y >= (uint)(gridSizeY)) return;
 
+    int2 curr = int2(id.xy);
+    int2 maxGrid = int2(gridSizeX - 1, gridSizeY - 1);
+    int2 right = clamp(curr + int2(1, 0), int2(0, 0), maxGrid);
+    int2 left  = clamp(curr + int2(-1, 0), int2(0, 0), maxGrid);
+    int2 up    = clamp(curr + int2(0, 1), int2(0, 0), maxGrid);
+    int2 down  = clamp(curr + int2(0, -1), int2(0, 0), maxGrid);
+    int2 ru    = clamp(curr + int2(1, 1), int2(0, 0), maxGrid);
+    int2 rd    = clamp(curr + int2(1, -1), int2(0, 0), maxGrid);
+    int2 lu    = clamp(curr + int2(-1, 1), int2(0, 0), maxGrid);
+
+    float H_curr = H_elevPast[curr];
+    float Qx_curr = Q_bulkPast_x[curr];
+    float Qy_curr = Q_bulkPast_y[curr];
+    float aH_curr = alpha_HIn[curr];
+    float aH_right = alpha_HIn[right];
+    float aH_up    = alpha_HIn[up];
+    float a_topright = 0.25f * (aH_curr + aH_up + aH_right + alpha_HIn[ru]);
+    float a_botright = 0.25f * (aH_curr + alpha_HIn[down] + aH_right + alpha_HIn[rd]);
+    float a_topleft  = 0.25f * (aH_curr + aH_up + alpha_HIn[left] + alpha_HIn[lu]);
+
     float invCellSizeSq = 1.0f / (cellSize * cellSize);
+
+    // Calculate Lagrangians
+    float dH_x = alpha_QIn_x[curr] * (H_elevPast[right] - H_curr) - alpha_QIn_x[left] * (H_curr - H_elevPast[left]);
+    float dH_y = alpha_QIn_y[curr] * (H_elevPast[up] - H_curr) - alpha_QIn_y[down] * (H_curr - H_elevPast[down]);
+    float dHdX = (dH_x + dH_y) * invCellSizeSq;
+    
+    float dQx_x = aH_right * (Q_bulkPast_x[right] - Qx_curr) - aH_curr * (Qx_curr - Q_bulkPast_x[left]);
+    float dQx_y = a_topright * (Q_bulkPast_x[up] - Qx_curr) - a_botright * (Qx_curr - Q_bulkPast_x[down]);
+    float dQxdX = (dQx_x + dQx_y) * invCellSizeSq;
+    
+    float dQy_x = a_topright * (Q_bulkPast_y[right] - Qy_curr) - a_topleft * (Qy_curr - Q_bulkPast_y[left]);
+    float dQy_y = aH_up * (Q_bulkPast_y[up] - Qy_curr) - aH_curr * (Qy_curr - Q_bulkPast_y[down]);
+    float dQydX = (dQy_x + dQy_y) * invCellSizeSq;
+
+    // Calculate Diffusion
+    // float newH = H_elevPast[curr] + deltaT * dHdX;
+    // H_elevOut[curr] = max(terrain[curr], newH);
+    // Q_bulkOut_x[curr] = Q_bulkPast_x[curr] + deltaT * dQxdX;
+    // Q_bulkOut_y[curr] = Q_bulkPast_y[curr] + deltaT * dQydX;
+
     float newH = H_elevPast[id.xy] + deltaT * CalcDiffusion(H_elevPast, alpha_HIn, id.xy, invCellSizeSq);
     H_elevOut[id.xy] = max(terrain[id.xy], newH);
     Q_bulkOut_x[id.xy] = Q_bulkPast_x[id.xy] + deltaT * CalcDiffusion(Q_bulkPast_x, alpha_QIn_x, id.xy, invCellSizeSq);
@@ -639,8 +702,8 @@ void CalcSWE(uint3 id : SV_DispatchThreadID) {
     // Calculate FFT wave forcing
     float invDepthCutoff = 1.0f / depthCutoff;
     float depth_weight = SafeTanh(hbarIn[curr] * invDepthCutoff); // scaling term to reduce FFT waves in shallow water
-    dux_dt += depth_weight * GRAVITY * delH_x[curr]; // FFT wave pressure gradient 
-    duy_dt += depth_weight * GRAVITY * delH_y[curr];
+    // dux_dt += depth_weight * GRAVITY * delH_x[curr]; // FFT wave pressure gradient 
+    // duy_dt += depth_weight * GRAVITY * delH_y[curr];
 
     // Integrate u, calculate q
     float cflFactor = cflCondition * cellSize / timeStep;
@@ -941,5 +1004,3 @@ void CalcRoughnessLUT(uint3 id : SV_DispatchThreadID) {
     NewRoughness = PrevRoughness * PrevSampleW + NewRoughness * SampleW;
     outRoughness[int2(id.x, 0)] = NewRoughness;
 }
-
-

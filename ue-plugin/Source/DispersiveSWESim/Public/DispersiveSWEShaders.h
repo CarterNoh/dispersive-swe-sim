@@ -123,7 +123,22 @@ public:
 	END_SHADER_PARAMETER_STRUCT()
 };
 
+class FSmoothDiffusionCoeffsCS : public FDispersiveSWEComputeShader
+{
+public:
+	DECLARE_GLOBAL_SHADER(FSmoothDiffusionCoeffsCS);
+	SHADER_USE_PARAMETER_STRUCT(FSmoothDiffusionCoeffsCS, FDispersiveSWEComputeShader);
 
+	BEGIN_SHADER_PARAMETER_STRUCT(FParameters, )
+		SHADER_PARAMETER_STRUCT_REF(FSimConstants, SimConstants)
+		SHADER_PARAMETER_RDG_TEXTURE_SRV(Texture2D<float>, alpha_HIn)
+		SHADER_PARAMETER_RDG_TEXTURE_SRV(Texture2D<float>, alpha_QIn_x)
+		SHADER_PARAMETER_RDG_TEXTURE_SRV(Texture2D<float>, alpha_QIn_y)
+		SHADER_PARAMETER_RDG_TEXTURE_UAV(RWTexture2D<float>, alpha_HOut)
+		SHADER_PARAMETER_RDG_TEXTURE_UAV(RWTexture2D<float>, alpha_QOut_x)
+		SHADER_PARAMETER_RDG_TEXTURE_UAV(RWTexture2D<float>, alpha_QOut_y)
+	END_SHADER_PARAMETER_STRUCT()
+};
 
 class FDiffusionStepCS : public FDispersiveSWEComputeShader
 {
