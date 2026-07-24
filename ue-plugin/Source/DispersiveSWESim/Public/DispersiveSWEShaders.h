@@ -289,6 +289,7 @@ public:
 		SHADER_PARAMETER_RDG_TEXTURE_SRV(Texture2D<float>, qtildePast_y)
 		SHADER_PARAMETER_RDG_TEXTURE_SRV(Texture2D<float>, hIn)
 		SHADER_PARAMETER_RDG_TEXTURE_SRV(Texture2D<float>, htildeCopy)
+		SHADER_PARAMETER_RDG_TEXTURE_SRV(Texture2D<float>, terrain)
 		SHADER_PARAMETER_RDG_TEXTURE_UAV(RWTexture2D<float>, htildeOut)
 		SHADER_PARAMETER_RDG_TEXTURE_UAV(RWTexture2D<float>, qtildeOut_x)
 		SHADER_PARAMETER_RDG_TEXTURE_UAV(RWTexture2D<float>, qtildeOut_y)

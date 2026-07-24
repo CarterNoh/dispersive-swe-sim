@@ -51,7 +51,7 @@ Texture2D<float>   in4 : register(t4);
 Texture2D<float>   in5 : register(t5);
 Texture2D<float>   in6 : register(t6);
 Texture2D<float>   in7 : register(t7);
-StructuredBuffer<float> in8 : register(t8);
+StructuredBuffer<float> in9 : register(t8);
 RWTexture2D<float> out0: register(u0);
 RWTexture2D<float> out1: register(u1);
 RWTexture2D<float> out2: register(u2);
@@ -66,6 +66,13 @@ float LimitVelocity(float velocity_in, float cflFactor) {
 		return min(velocity_in, cflFactor);
 	else
 		return max(velocity_in, -cflFactor);
+}
+
+float LimitFlowRate(float flow_rate_in, float waterDepth_left, float waterDepth_right, float cflFactor) {
+	if (flow_rate_in >= 0.f)
+		return min(flow_rate_in, cflFactor * waterDepth_left);
+	else
+		return max(flow_rate_in, -cflFactor * waterDepth_right);
 }
 
 float LimitFlowRate(float flow_rate_in, float waterDepth_left, float terrain_left, float waterDepth_right, float terrain_right, float cflFactor) {
@@ -293,14 +300,14 @@ void DecomposeFields(uint3 id : SV_DispatchThreadID) {
     float t_right = in6[right];
 
     float cflFactor = cflCondition * cellSize / timeStep;
-    out1[curr] = LimitFlowRate(out1[curr], localHbar, t_curr, clamp(in0[right] - t_right, 0.f, maxSafeDepth), t_right, cflFactor);
+    out1[curr] = LimitFlowRate(out1[curr], h_curr, t_curr, clamp(in0[right] - t_right, 0.f, maxSafeDepth), t_right, cflFactor);
     out4[curr] = LimitFlowRate(out4[curr], h_curr, t_curr, h_right, t_right, cflFactor);
 
     int2 up = clamp(curr + int2(0, 1), int2(0, 0), maxGrid);
     float h_up = in3[up];
     float t_up = in6[up];
 
-    out2[curr] = LimitFlowRate(out2[curr], localHbar, t_curr, clamp(in0[up] - t_up, 0.f, maxSafeDepth), t_up, cflFactor);
+    out2[curr] = LimitFlowRate(out2[curr], h_curr, t_curr, clamp(in0[up] - t_up, 0.f, maxSafeDepth), t_up, cflFactor);
     out5[curr] = LimitFlowRate(out5[curr], h_curr, t_curr, h_up, t_up, cflFactor);
 }
 
@@ -381,8 +388,8 @@ void CalcSWE(uint3 id : SV_DispatchThreadID) {
     float gradh_x = (in3[right] - in3[curr]) * invCellSize;
     float gradh_y = (in3[up] - in3[curr]) * invCellSize;
     if (abs(gradh_x) > slopeLimit) gradh_x = sign(gradh_x) * slopeLimit; // When wave gets too steep, it "crashes"
-    if (abs(gradh_y) > slopeLimit) gradh_y = sign(gradh_y) * slopeLimit; 
-    
+    if (abs(gradh_y) > slopeLimit) gradh_y = sign(gradh_y) * slopeLimit;
+
     float bottomFriction = 0.05f; // subtle bottom drag to allow water to settle to rest
     dux_dt -= GRAVITY * gradh_x + bottomFriction * in0[curr];
     duy_dt -= GRAVITY * gradh_y + bottomFriction * in1[curr];
@@ -478,7 +485,12 @@ void UpdateTilde(uint3 id : SV_DispatchThreadID) {
     // Limit flow to prevent negative water heights and enforce terrain boundaries
     float cflFactor = cflCondition * cellSize / timeStep;
     out1[curr] = LimitFlowRate(out1[curr], in6[curr], in6[right], cflFactor); 
-    out2[curr] = LimitFlowRate(out2[curr], in6[curr], in6[up], cflFactor); 
+    out2[curr] = LimitFlowRate(out2[curr], in6[curr], in6[up], cflFactor);
+    // float t_curr = terrain[curr];
+    // float t_right = terrain[right];
+    // float t_up = terrain[up];
+    // qtildeOut_x[curr] = LimitFlowRate(qtildeOut_x[curr], hIn[curr], t_curr, hIn[right], t_right, cflFactor); 
+    // qtildeOut_y[curr] = LimitFlowRate(qtildeOut_y[curr], hIn[curr], t_curr, hIn[up], t_up, cflFactor); 
       
     // Update htilde using ubar divergence (not at middle of timestep)
     div_ubar  = (in0[curr] - in0[left] + in2[curr] - in2[down]) * invCellSize;
@@ -638,7 +650,7 @@ void CalcEWave(uint3 id : SV_DispatchThreadID) {
     float beta = sqrt((2.0 / (k * cellSize)) * sin(k * cellSize / 2.0)); // From their 1D code, but different from paper
     // float beta = sqrt((2.0 * k / cellSize) * sin(k * cellSize / 2.0)); // correct formula from paper, but not stable?
     // Angular frequency for dispersion relation
-    float omega = sqrt(GRAVITY * k * SafeTanh(k * min(in8[id.z], maxSafeDepth))) / beta;
+    float omega = sqrt(GRAVITY * k * SafeTanh(k * min(in9[id.z], maxSafeDepth))) / beta;
     float S = sin(omega * timeStep) * omega / (k * k);
     float C = cos(omega * timeStep);
     float Cx = 1 + (C-1) * kx2;
@@ -706,8 +718,8 @@ void InterpQ(uint3 id : SV_DispatchThreadID) {
     int d1_x = 0;
     int d1_y = 0;
     for (int d = 0; d < depthNum; d++) {
-        if (waterDepth_x >= in8[d]) d1_x = d;
-        if (waterDepth_y >= in8[d]) d1_y = d;
+        if (waterDepth_x >= in9[d]) d1_x = d;
+        if (waterDepth_y >= in9[d]) d1_y = d;
     }
     int d2_x = min(depthNum - 1, d1_x + 1);
     int d2_y = min(depthNum - 1, d1_y + 1);
@@ -715,20 +727,20 @@ void InterpQ(uint3 id : SV_DispatchThreadID) {
     float sy = 0.f;
 
     // Depth Interpolation (handle shallowest case separately)
-    if (waterDepth_x < in8[0]) {
-        sx = waterDepth_x / in8[0];
+    if (waterDepth_x < in9[0]) {
+        sx = waterDepth_x / in9[0];
         qtilde_x[id.xy] = sx * qHat_x_array[uint3(id.x, id.y, 0)].x;
     } else {
         if (d1_x != d2_x)
-            sx = (in8[d2_x] - waterDepth_x) / (in8[d2_x] - in8[d1_x]);
+            sx = (in9[d2_x] - waterDepth_x) / (in9[d2_x] - in9[d1_x]);
         qtilde_x[id.xy] = sx * qHat_x_array[uint3(id.x, id.y, d1_x)].x + (1.f - sx) * qHat_x_array[uint3(id.x, id.y, d2_x)].x;
     }
-    if (waterDepth_y < in8[0]) {
-        sy = waterDepth_y / in8[0];
+    if (waterDepth_y < in9[0]) {
+        sy = waterDepth_y / in9[0];
         qtilde_y[id.xy] = sy * qHat_y_array[uint3(id.x, id.y, 0)].x;
     } else {
         if (d1_y != d2_y)
-            sy = (in8[d2_y] - waterDepth_y) / (in8[d2_y] - in8[d1_y]);
+            sy = (in9[d2_y] - waterDepth_y) / (in9[d2_y] - in9[d1_y]);
         qtilde_y[id.xy] = sy * qHat_y_array[uint3(id.x, id.y, d1_y)].x + (1.f - sy) * qHat_y_array[uint3(id.x, id.y, d2_y)].x;
     }
 }

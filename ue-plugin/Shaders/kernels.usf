@@ -432,8 +432,13 @@ void DecomposeFields(uint3 id : SV_DispatchThreadID) {
     int2 curr = int2(id.xy);
     int2 maxGrid = int2(gridSizeX - 1, gridSizeY - 1);
     
+    float h_curr = hIn[curr];
+    int2 right = clamp(curr + int2(1, 0), int2(0, 0), maxGrid);
+    float h_right = hIn[right];
+    float t_right = terrain[right];
     float t_curr = terrain[curr];
     float localHbar = clamp(H_elevIn[curr] - t_curr, 0.f, maxSafeDepth);
+    float localHbar_right = clamp(H_elevIn[right] - t_right, 0.f, maxSafeDepth);
     hbarOut[curr] = localHbar;
     qbarOut_x[curr] = Q_bulkIn_x[curr];
     qbarOut_y[curr] = Q_bulkIn_y[curr];
@@ -441,13 +446,8 @@ void DecomposeFields(uint3 id : SV_DispatchThreadID) {
     qtildeOut_x[curr] = qIn_x[curr] - Q_bulkIn_x[curr];
     qtildeOut_y[curr] = qIn_y[curr] - Q_bulkIn_y[curr];
 
-    float h_curr = hIn[curr];
-    int2 right = clamp(curr + int2(1, 0), int2(0, 0), maxGrid);
-    float h_right = hIn[right];
-    float t_right = terrain[right];
-
     float cflFactor = cflCondition * cellSize / timeStep;
-    qbarOut_x[curr] = LimitFlowRate(qbarOut_x[curr], localHbar, t_curr, clamp(H_elevIn[right] - t_right, 0.f, maxSafeDepth), t_right, cflFactor);
+    qbarOut_x[curr] = LimitFlowRate(qbarOut_x[curr], localHbar, t_curr, localHbar_right, t_right, cflFactor);
     qtildeOut_x[curr] = LimitFlowRate(qtildeOut_x[curr], h_curr, t_curr, h_right, t_right, cflFactor);
 
     int2 up = clamp(curr + int2(0, 1), int2(0, 0), maxGrid);

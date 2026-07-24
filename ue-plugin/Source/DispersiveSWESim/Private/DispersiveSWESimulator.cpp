@@ -818,6 +818,7 @@ void UDispersiveSWESimulator::ExecuteSimulation_RenderThread(
 		Params->qtildePast_y = GraphBuilder.CreateSRV(qtildePastY);
 		Params->hIn = GraphBuilder.CreateSRV(h_RDG);
 		Params->htildeCopy = GraphBuilder.CreateSRV(htildeCopy);     // Read-only copy of previous htilde
+		Params->terrain = GraphBuilder.CreateSRV(Terrain_RDG);
 		Params->htildeOut = GraphBuilder.CreateUAV(htilde_RDG);    // Write the new htilde value
 		Params->qtildeOut_x = GraphBuilder.CreateUAV(qtildex_RDG);
 		Params->qtildeOut_y = GraphBuilder.CreateUAV(qtildey_RDG);
