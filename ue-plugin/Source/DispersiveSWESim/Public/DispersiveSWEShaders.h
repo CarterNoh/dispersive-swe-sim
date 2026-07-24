@@ -53,6 +53,14 @@ public:
 	FDispersiveSWEComputeShader(const ShaderMetaType::CompiledShaderInitializerType& Initializer)
 		: FGlobalShader(Initializer)
 	{}
+
+	// Compiler flags to disable optimizations: Idea was to improve stability, but didn't have much effect. 
+	// static void ModifyCompilationEnvironment(const FGlobalShaderPermutationParameters& Parameters, FShaderCompilerEnvironment& OutEnvironment)
+	// {
+	// 	FGlobalShader::ModifyCompilationEnvironment(Parameters, OutEnvironment);
+	// 	OutEnvironment.CompilerFlags.Add(CFLAG_NoFastMath); // Disables fast-math optimizations (/Gis)
+	// 	OutEnvironment.CompilerFlags.Add(CFLAG_Debug);      // Disables compiler optimizations (/Od)
+	// }
 };
 
 // --- Shaders from kernels.usf ---
