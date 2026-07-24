@@ -697,7 +697,9 @@ void CalcSWE(uint3 id : SV_DispatchThreadID) {
     float gradh_y = (H_elevIn[up] - H_elevIn[curr]) * invCellSize;
     if (abs(gradh_x) > slopeLimit) gradh_x = sign(gradh_x) * slopeLimit; // When wave gets too steep, it "crashes"
     if (abs(gradh_y) > slopeLimit) gradh_y = sign(gradh_y) * slopeLimit; 
-    float bottomFriction = 0.05f; // subtle bottom drag to allow water to settle to rest
+    float bottomFriction_x = 0.05f / max(minWaterHeight, h_x_p05); // subtle bottom drag to allow water to settle to rest
+    float bottomFriction_y = 0.05f / max(minWaterHeight, h_y_p05);
+    float bottomFriction = 0.05f;
     dux_dt -= GRAVITY * gradh_x + bottomFriction * ubarIn_x[curr];
     duy_dt -= GRAVITY * gradh_y + bottomFriction * ubarIn_y[curr];
 
@@ -766,10 +768,10 @@ void UpdateTilde(uint3 id : SV_DispatchThreadID) {
     float div_uy = 0.5f * (div_ubar + div_up); // at up boundary
 
     // Clamp divergence to prevent exponential growth during flow convergence over shallow bathymetry
-    float maxDivergence = 1.0f / max(1e-4f, timeStep);
-    div_ubar = clamp(div_ubar, -maxDivergence, maxDivergence);
-    div_ux   = clamp(div_ux,   -maxDivergence, maxDivergence);
-    div_uy   = clamp(div_uy,   -maxDivergence, maxDivergence);
+    float maxDiv = 1.0f / max(1e-4f, timeStep);
+    div_ubar = clamp(div_ubar, -maxDiv, maxDiv);
+    div_ux   = clamp(div_ux,   -maxDiv, maxDiv);
+    div_uy   = clamp(div_uy,   -maxDiv, maxDiv);
 
     // Dampen if converging to avoid breaking waves
     div_ubar *= (div_ubar < 0.f) ? gammaTransport : 1; 
@@ -777,8 +779,8 @@ void UpdateTilde(uint3 id : SV_DispatchThreadID) {
     div_uy   *= (div_uy   < 0.f) ? gammaTransport : 1;
 
     // Bound exponential amplification factor to prevent runaway growth
-    float exp_ux = exp(clamp(-div_ux * timeStep, -5.0f, 1.0f));
-    float exp_uy = exp(clamp(-div_uy * timeStep, -5.0f, 1.0f));
+    float exp_ux = exp(-div_ux * timeStep);
+    float exp_uy = exp(-div_uy * timeStep);
 
     // Update qtilde using bulk flow and ubar divergence: dq/dt = -q * div(ubar)
     float timeStepOverCellSize = timeStep * invCellSize;
@@ -798,7 +800,7 @@ void UpdateTilde(uint3 id : SV_DispatchThreadID) {
       
     // Update htildeOut using ubar divergence (not at middle of timestep)
     div_ubar  = (ubarNewIn_x[curr] - ubarNewIn_x[left] + ubarNewIn_y[curr] - ubarNewIn_y[down]) * invCellSize;
-    div_ubar  = clamp(div_ubar, -maxDivergence, maxDivergence);
+    div_ubar  = clamp(div_ubar, -maxDiv, maxDiv);
     div_ubar *= (div_ubar < 0.f) ? gammaTransport : 1; // dampen if converging to avoid breaking waves
     float exp_h = exp(clamp(-div_ubar * timeStep, -5.0f, 1.0f));
     htildeOut[curr] = htildeCopy[curr] * exp_h;
@@ -865,12 +867,21 @@ void IntegrateH(uint3 id : SV_DispatchThreadID) {
 
     float invCellSize = 1.0f / cellSize;
     float div_q = (q_x - q_xm + q_y - q_ym) * invCellSize;
-	hOut[curr] = clamp(h_curr - timeStep * div_q, 0.f, maxSafeDepth);
+	// hOut[curr] = clamp(h_curr - timeStep * div_q, 0.f, maxSafeDepth);
     
-    // // Selective 5-point Laplacian filter targeting 2dx-4dx grid-scale standing ripples
+    // // Selective 5-point Laplacian filter to reduce grid-scale ripples getting really large
     // float laplacian_h = (h_right + h_left + h_up + h_down - 4.0f * h_curr);
-    // float gridFilter = 0.05f * laplacian_h;
+    // float gridFilter = 0.005f * laplacian_h;
 	// hOut[curr] = clamp(h_curr - timeStep * div_q + gridFilter, 0.f, maxSafeDepth);
+    // Wetting-Aware Laplacian: Only filter high-frequency ripples in fully wet cells
+    bool isFullyWet = (h_curr > minWaterHeight && h_left > minWaterHeight && 
+                    h_right > minWaterHeight && h_up > minWaterHeight && h_down > minWaterHeight);
+    if (isFullyWet) {
+        float laplacian_h = (h_right + h_left + h_up + h_down - 4.0f * h_curr);
+        hOut[curr] = clamp(h_curr - timeStep * div_q + 0.01f * laplacian_h, 0.f, maxSafeDepth);
+    } else {
+        hOut[curr] = clamp(h_curr - timeStep * div_q, 0.f, maxSafeDepth);
+    }
 
     qOut_x[curr] = q_x - qAdvectIn_x[curr]; // qbar + qtilde, removing qAdvect
     qOut_y[curr] = q_y - qAdvectIn_y[curr];
