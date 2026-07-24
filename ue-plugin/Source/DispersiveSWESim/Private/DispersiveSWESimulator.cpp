@@ -325,7 +325,7 @@ void UDispersiveSWESimulator::SetupInitialStates(FRHICommandListImmediate& RHICm
 		FComputeShaderUtils::AddPass(
 			GraphBuilder,
 			RDG_EVENT_NAME("SWE_InitializeWater_GPU"),
-			ERDGPassFlags::AsyncCompute,
+			ERDGPassFlags::Compute,
 			InitWaterHeightCS,
 			InitParams,
 			FIntVector(FMath::DivideAndRoundUp(GridSizeX, 16), FMath::DivideAndRoundUp(GridSizeY, 16), 1)
@@ -415,7 +415,7 @@ void UDispersiveSWESimulator::SetupInitialStates(FRHICommandListImmediate& RHICm
 		FComputeShaderUtils::AddPass(
 			GraphBuilder,
 			RDG_EVENT_NAME("SWE_PopulateSpectrum"),
-			ERDGPassFlags::AsyncCompute,
+			ERDGPassFlags::Compute,
 			PopulateSpectrumCS,
 			PassParams,
 			FIntVector(FMath::DivideAndRoundUp(PaddedSizeX, 16), FMath::DivideAndRoundUp(PaddedSizeY, 16), DepthLevels.Num())
@@ -534,7 +534,7 @@ void UDispersiveSWESimulator::ExecuteSimulation_RenderThread(
 		Params->Q_bulkOut_x = GraphBuilder.CreateUAV(Qx_RDG);
 		Params->Q_bulkOut_y = GraphBuilder.CreateUAV(Qy_RDG);
 
-		FComputeShaderUtils::AddPass(GraphBuilder, RDG_EVENT_NAME("SWE_Decomp_Init"), ERDGPassFlags::AsyncCompute, Shader, Params, GridGroups);
+		FComputeShaderUtils::AddPass(GraphBuilder, RDG_EVENT_NAME("SWE_Decomp_Init"), ERDGPassFlags::Compute, Shader, Params, GridGroups);
 	}
 
 	// CalcDiffusionCoeffs
@@ -552,7 +552,7 @@ void UDispersiveSWESimulator::ExecuteSimulation_RenderThread(
 		Params->alpha_QOut_x = GraphBuilder.CreateUAV(alpha_Qx);
 		Params->alpha_QOut_y = GraphBuilder.CreateUAV(alpha_Qy);
 
-		FComputeShaderUtils::AddPass(GraphBuilder, RDG_EVENT_NAME("SWE_Decomp_Coeffs"), ERDGPassFlags::AsyncCompute, Shader, Params, GridGroups);
+		FComputeShaderUtils::AddPass(GraphBuilder, RDG_EVENT_NAME("SWE_Decomp_Coeffs"), ERDGPassFlags::Compute, Shader, Params, GridGroups);
 
 		// TShaderMapRef<FSmoothDiffusionCoeffsCS> SmoothShader(ShaderMap);
 		// FSmoothDiffusionCoeffsCS::FParameters* SmoothParams = GraphBuilder.AllocParameters<FSmoothDiffusionCoeffsCS::FParameters>();
@@ -564,7 +564,7 @@ void UDispersiveSWESimulator::ExecuteSimulation_RenderThread(
 		// SmoothParams->alpha_QOut_x = GraphBuilder.CreateUAV(alpha_Qx);
 		// SmoothParams->alpha_QOut_y = GraphBuilder.CreateUAV(alpha_Qy);
 
-		// FComputeShaderUtils::AddPass(GraphBuilder, RDG_EVENT_NAME("SWE_Decomp_SmoothCoeffs"), ERDGPassFlags::AsyncCompute, SmoothShader, SmoothParams, GridGroups);
+		// FComputeShaderUtils::AddPass(GraphBuilder, RDG_EVENT_NAME("SWE_Decomp_SmoothCoeffs"), ERDGPassFlags::Compute, SmoothShader, SmoothParams, GridGroups);
 	}
 
 	// Diffusion loop - low pass filter H and Q
@@ -592,7 +592,7 @@ void UDispersiveSWESimulator::ExecuteSimulation_RenderThread(
 			Params->Q_bulkOut_x = GraphBuilder.CreateUAV(Qx_Dst);
 			Params->Q_bulkOut_y = GraphBuilder.CreateUAV(Qy_Dst);
 
-			FComputeShaderUtils::AddPass(GraphBuilder, RDG_EVENT_NAME("SWE_Decomp_Diffusion"), ERDGPassFlags::AsyncCompute, Shader, Params, GridGroups);
+			FComputeShaderUtils::AddPass(GraphBuilder, RDG_EVENT_NAME("SWE_Decomp_Diffusion"), ERDGPassFlags::Compute, Shader, Params, GridGroups);
 
 			// Swap sources and destinations for next loop iteration
 			Swap(H_Src, H_Dst);
@@ -634,7 +634,7 @@ void UDispersiveSWESimulator::ExecuteSimulation_RenderThread(
 		Params->qtildeOut_x = GraphBuilder.CreateUAV(qtildex_RDG);
 		Params->qtildeOut_y = GraphBuilder.CreateUAV(qtildey_RDG);
 
-		FComputeShaderUtils::AddPass(GraphBuilder, RDG_EVENT_NAME("SWE_Decomp_Final"), ERDGPassFlags::AsyncCompute, Shader, Params, GridGroups);
+		FComputeShaderUtils::AddPass(GraphBuilder, RDG_EVENT_NAME("SWE_Decomp_Final"), ERDGPassFlags::Compute, Shader, Params, GridGroups);
 	}
 
 	// Recompute H
@@ -646,7 +646,7 @@ void UDispersiveSWESimulator::ExecuteSimulation_RenderThread(
 		Params->terrain = GraphBuilder.CreateSRV(Terrain_RDG);
 		Params->H_elevOut = GraphBuilder.CreateUAV(H_RDG);
 
-		FComputeShaderUtils::AddPass(GraphBuilder, RDG_EVENT_NAME("SWE_Decomp_ReH"), ERDGPassFlags::AsyncCompute, Shader, Params, GridGroups);
+		FComputeShaderUtils::AddPass(GraphBuilder, RDG_EVENT_NAME("SWE_Decomp_ReH"), ERDGPassFlags::Compute, Shader, Params, GridGroups);
 	}
 
 	// ----------------------------------------------------
@@ -665,7 +665,7 @@ void UDispersiveSWESimulator::ExecuteSimulation_RenderThread(
 		Params->DispXOut = GraphBuilder.CreateUAV(DispX);
 		Params->DispYOut = GraphBuilder.CreateUAV(DispY);
 
-		FComputeShaderUtils::AddPass(GraphBuilder, RDG_EVENT_NAME("SWE_FFTWaves_Propagate"), ERDGPassFlags::AsyncCompute, Shader, Params, ComplexArrayGroups);
+		FComputeShaderUtils::AddPass(GraphBuilder, RDG_EVENT_NAME("SWE_FFTWaves_Propagate"), ERDGPassFlags::Compute, Shader, Params, ComplexArrayGroups);
 	}
 
 	// Run Inverse FFTs
@@ -689,7 +689,7 @@ void UDispersiveSWESimulator::ExecuteSimulation_RenderThread(
 		Params->DxOut = GraphBuilder.CreateUAV(dispX);
 		Params->DyOut = GraphBuilder.CreateUAV(dispY);
 
-		FComputeShaderUtils::AddPass(GraphBuilder, RDG_EVENT_NAME("SWE_FFTWaves_Interp"), ERDGPassFlags::AsyncCompute, Shader, Params, GridGroups);
+		FComputeShaderUtils::AddPass(GraphBuilder, RDG_EVENT_NAME("SWE_FFTWaves_Interp"), ERDGPassFlags::Compute, Shader, Params, GridGroups);
 	}
 
 	// ----------------------------------------------------
@@ -714,7 +714,7 @@ void UDispersiveSWESimulator::ExecuteSimulation_RenderThread(
 		Params->qHat_x = GraphBuilder.CreateUAV(qHatX);
 		Params->qHat_y = GraphBuilder.CreateUAV(qHatY);
 
-		FComputeShaderUtils::AddPass(GraphBuilder, RDG_EVENT_NAME("SWE_eWave_Transfer"), ERDGPassFlags::AsyncCompute, Shader, Params, PaddedGroups);
+		FComputeShaderUtils::AddPass(GraphBuilder, RDG_EVENT_NAME("SWE_eWave_Transfer"), ERDGPassFlags::Compute, Shader, Params, PaddedGroups);
 	}
 
 	// Run Forward FFTs
@@ -733,7 +733,7 @@ void UDispersiveSWESimulator::ExecuteSimulation_RenderThread(
 		Params->qhat_x_array = GraphBuilder.CreateUAV(qHatXArray);
 		Params->qhat_y_array = GraphBuilder.CreateUAV(qHatYArray);
 
-		FComputeShaderUtils::AddPass(GraphBuilder, RDG_EVENT_NAME("SWE_eWave_Calc"), ERDGPassFlags::AsyncCompute, Shader, Params, ComplexArrayGroups);
+		FComputeShaderUtils::AddPass(GraphBuilder, RDG_EVENT_NAME("SWE_eWave_Calc"), ERDGPassFlags::Compute, Shader, Params, ComplexArrayGroups);
 	}
 
 	// Run Inverse FFTs
@@ -751,7 +751,7 @@ void UDispersiveSWESimulator::ExecuteSimulation_RenderThread(
 		Params->qtildeOut_x = GraphBuilder.CreateUAV(qtildex_RDG);
 		Params->qtildeOut_y = GraphBuilder.CreateUAV(qtildey_RDG);
 
-		FComputeShaderUtils::AddPass(GraphBuilder, RDG_EVENT_NAME("SWE_eWave_InterpQ"), ERDGPassFlags::AsyncCompute, Shader, Params, GridGroups);
+		FComputeShaderUtils::AddPass(GraphBuilder, RDG_EVENT_NAME("SWE_eWave_InterpQ"), ERDGPassFlags::Compute, Shader, Params, GridGroups);
 	}
 
 	// ----------------------------------------------------
@@ -769,7 +769,7 @@ void UDispersiveSWESimulator::ExecuteSimulation_RenderThread(
 		Params->ubarOut_x = GraphBuilder.CreateUAV(ubarx_RDG);
 		Params->ubarOut_y = GraphBuilder.CreateUAV(ubary_RDG);
 
-		FComputeShaderUtils::AddPass(GraphBuilder, RDG_EVENT_NAME("SWE_CalcUbar"), ERDGPassFlags::AsyncCompute, Shader, Params, GridGroups);
+		FComputeShaderUtils::AddPass(GraphBuilder, RDG_EVENT_NAME("SWE_CalcUbar"), ERDGPassFlags::Compute, Shader, Params, GridGroups);
 	}
 
 	// CalcSWE
@@ -788,7 +788,7 @@ void UDispersiveSWESimulator::ExecuteSimulation_RenderThread(
 		Params->qbarOut_x = GraphBuilder.CreateUAV(qbarx_RDG);
 		Params->qbarOut_y = GraphBuilder.CreateUAV(qbary_RDG);
 
-		FComputeShaderUtils::AddPass(GraphBuilder, RDG_EVENT_NAME("SWE_CalcSWE"), ERDGPassFlags::AsyncCompute, Shader, Params, GridGroups);
+		FComputeShaderUtils::AddPass(GraphBuilder, RDG_EVENT_NAME("SWE_CalcSWE"), ERDGPassFlags::Compute, Shader, Params, GridGroups);
 	}
 
 	// Swap hbar and hbarOld
@@ -823,7 +823,7 @@ void UDispersiveSWESimulator::ExecuteSimulation_RenderThread(
 		Params->qtildeOut_x = GraphBuilder.CreateUAV(qtildex_RDG);
 		Params->qtildeOut_y = GraphBuilder.CreateUAV(qtildey_RDG);
 
-		FComputeShaderUtils::AddPass(GraphBuilder, RDG_EVENT_NAME("SWE_UpdateTilde"), ERDGPassFlags::AsyncCompute, Shader, Params, GridGroups);
+		FComputeShaderUtils::AddPass(GraphBuilder, RDG_EVENT_NAME("SWE_UpdateTilde"), ERDGPassFlags::Compute, Shader, Params, GridGroups);
 	}
 
 	// CalcQAdvect
@@ -837,7 +837,7 @@ void UDispersiveSWESimulator::ExecuteSimulation_RenderThread(
 		Params->qAdvectOut_x = GraphBuilder.CreateUAV(qAdvectX);
 		Params->qAdvectOut_y = GraphBuilder.CreateUAV(qAdvectY);
 
-		FComputeShaderUtils::AddPass(GraphBuilder, RDG_EVENT_NAME("SWE_CalcQAdvect"), ERDGPassFlags::AsyncCompute, Shader, Params, GridGroups);
+		FComputeShaderUtils::AddPass(GraphBuilder, RDG_EVENT_NAME("SWE_CalcQAdvect"), ERDGPassFlags::Compute, Shader, Params, GridGroups);
 	}
 
 	// Save past height
@@ -860,7 +860,7 @@ void UDispersiveSWESimulator::ExecuteSimulation_RenderThread(
 		Params->qOut_x = GraphBuilder.CreateUAV(qx_RDG);
 		Params->qOut_y = GraphBuilder.CreateUAV(qy_RDG);
 
-		FComputeShaderUtils::AddPass(GraphBuilder, RDG_EVENT_NAME("SWE_IntegrateH"), ERDGPassFlags::AsyncCompute, Shader, Params, GridGroups);
+		FComputeShaderUtils::AddPass(GraphBuilder, RDG_EVENT_NAME("SWE_IntegrateH"), ERDGPassFlags::Compute, Shader, Params, GridGroups);
 	}
 
 	// ----------------------------------------------------
@@ -876,7 +876,7 @@ void UDispersiveSWESimulator::ExecuteSimulation_RenderThread(
 		Params->terrain = GraphBuilder.CreateSRV(Terrain_RDG);
 		Params->H_elevOut = GraphBuilder.CreateUAV(H_RDG);
 
-		FComputeShaderUtils::AddPass(GraphBuilder, RDG_EVENT_NAME("SWE_Final_ReH"), ERDGPassFlags::AsyncCompute, Shader, Params, GridGroups);
+		FComputeShaderUtils::AddPass(GraphBuilder, RDG_EVENT_NAME("SWE_Final_ReH"), ERDGPassFlags::Compute, Shader, Params, GridGroups);
 	}
 
 	// Copy current Displacement to DisplacementPast before updating
@@ -905,7 +905,7 @@ void UDispersiveSWESimulator::ExecuteSimulation_RenderThread(
 		FComputeShaderUtils::AddPass(
 			GraphBuilder,
 			RDG_EVENT_NAME("SWE_ExportDisp_Scale"),
-			ERDGPassFlags::AsyncCompute,
+			ERDGPassFlags::Compute,
 			ScaleCopyCS,
 			PassParams,
 			FIntVector(FMath::DivideAndRoundUp(GridSizeX, 16), FMath::DivideAndRoundUp(GridSizeY, 16), 1)
@@ -944,7 +944,7 @@ void UDispersiveSWESimulator::ExecuteSimulation_RenderThread(
 		FComputeShaderUtils::AddPass(
 			GraphBuilder,
 			RDG_EVENT_NAME("SWE_CalcSurfaceNormalAndFoam"),
-			ERDGPassFlags::AsyncCompute,
+			ERDGPassFlags::Compute,
 			NormalAndFoamCS,
 			PassParams,
 			FIntVector(FMath::DivideAndRoundUp(GridSizeX, 16), FMath::DivideAndRoundUp(GridSizeY, 16), 1)
@@ -986,7 +986,7 @@ void UDispersiveSWESimulator::ExecuteSimulation_RenderThread(
 			FComputeShaderUtils::AddPass(
 				GraphBuilder,
 				RDG_EVENT_NAME("SWE_CalcRoughnessLUT"),
-				ERDGPassFlags::AsyncCompute,
+				ERDGPassFlags::Compute,
 				RoughnessCS,
 				PassParams,
 				FIntVector(FMath::DivideAndRoundUp(GridSizeX, 16), 1, 1)
@@ -1092,7 +1092,7 @@ void UDispersiveSWESimulator::DispatchFFT_RenderThread(
 		FComputeShaderUtils::AddPass(
 			GraphBuilder,
 			RDG_EVENT_NAME("FFT_RowPass"),
-			ERDGPassFlags::AsyncCompute,
+			ERDGPassFlags::Compute,
 			FFTShader,
 			PassParams,
 			FIntVector(1, SizeY, NumLayers)
@@ -1119,7 +1119,7 @@ void UDispersiveSWESimulator::DispatchFFT_RenderThread(
 		FComputeShaderUtils::AddPass(
 			GraphBuilder,
 			RDG_EVENT_NAME("FFT_ColPass"),
-			ERDGPassFlags::AsyncCompute,
+			ERDGPassFlags::Compute,
 			FFTShader,
 			PassParams,
 			FIntVector(1, SizeX, NumLayers)

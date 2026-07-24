@@ -261,17 +261,6 @@ float CalcDiffusion(Texture2D<float> f, Texture2D<float> a, uint2 curr, float in
     return dFdX;
 }
 
-float SmoothTexture3x3(Texture2D<float> tex, int2 curr) {
-    float sum = 0.0f;
-    for (int dy = -1; dy <= 1; ++dy) {
-        for (int dx = -1; dx <= 1; ++dx) {
-            int2 dxy = clamp(curr + int2(dx, dy), int2(0, 0), int2(gridSizeX - 1, gridSizeY - 1));
-            sum += tex[dxy];
-        }
-    }
-    return sum / 9.0f;
-}
-
 float SpongeDamping(uint2 id, bool isYDir = false) {
     // If the cell is in the interior (outside the sponge boundary), return 1.0 immediately
     if (id.x >= (uint)spongeThickness && id.x < (uint)(gridSizeX - spongeThickness) &&
@@ -308,9 +297,9 @@ void InitializeWater(uint3 id : SV_DispatchThreadID) {
     }
     float terrainHeight = (TerrainCaptureCameraZ - rawDepth) * 0.01f;
     float h_val = max(0.f, WaterLevel - terrainHeight);
-    if (id.y < 0.25f * gridSizeY) {
-        h_val += 2.f;
-    }
+    // if (id.y < 0.25f * gridSizeY) { // for testing: step function
+    //     h_val += 2.f;
+    // }
     hOut[id.xy] = h_val;
     H_elevOut[id.xy] = terrainHeight + h_val;
     terrainOut[id.xy] = terrainHeight;
@@ -356,15 +345,6 @@ void CalcDiffusionCoeffs(uint3 id : SV_DispatchThreadID) {
     alpha_HOut[curr] = max(0.f, min(max_alpha, h * h   * invDenom) * penalty);
     alpha_QOut_x[curr] = max(0.f, min(max_alpha, hr * hr * invDenom) * penalty);
     alpha_QOut_y[curr] = max(0.f, min(max_alpha, hu * hu * invDenom) * penalty);
-}
-
-[numthreads(16, 16, 1)]
-void SmoothDiffusionCoeffs(uint3 id : SV_DispatchThreadID) {
-    if (id.x >= (uint)(gridSizeX) || id.y >= (uint)(gridSizeY)) return;
-    int2 curr = int2(id.xy);
-    alpha_HOut[curr] = SmoothTexture3x3(alpha_HIn, curr);
-    alpha_QOut_x[curr] = SmoothTexture3x3(alpha_QIn_x, curr);
-    alpha_QOut_y[curr] = SmoothTexture3x3(alpha_QIn_y, curr);
 }
 
 [numthreads(16, 16, 1)]
@@ -697,17 +677,15 @@ void CalcSWE(uint3 id : SV_DispatchThreadID) {
     float gradh_y = (H_elevIn[up] - H_elevIn[curr]) * invCellSize;
     if (abs(gradh_x) > slopeLimit) gradh_x = sign(gradh_x) * slopeLimit; // When wave gets too steep, it "crashes"
     if (abs(gradh_y) > slopeLimit) gradh_y = sign(gradh_y) * slopeLimit; 
-    float bottomFriction_x = 0.05f / max(minWaterHeight, h_x_p05); // subtle bottom drag to allow water to settle to rest
-    float bottomFriction_y = 0.05f / max(minWaterHeight, h_y_p05);
-    float bottomFriction = 0.05f;
+    float bottomFriction = 0.05f;// subtle bottom drag to allow water to settle to rest
     dux_dt -= GRAVITY * gradh_x + bottomFriction * ubarIn_x[curr];
     duy_dt -= GRAVITY * gradh_y + bottomFriction * ubarIn_y[curr];
 
     // Calculate FFT wave forcing
     float invDepthCutoff = 1.0f / depthCutoff;
     float depth_weight = SafeTanh(hbarIn[curr] * invDepthCutoff); // scaling term to reduce FFT waves in shallow water
-    // dux_dt += depth_weight * GRAVITY * delH_x[curr]; // FFT wave pressure gradient 
-    // duy_dt += depth_weight * GRAVITY * delH_y[curr];
+    dux_dt += depth_weight * GRAVITY * delH_x[curr]; // FFT wave pressure gradient 
+    duy_dt += depth_weight * GRAVITY * delH_y[curr];
 
     // Integrate u, calculate q
     float cflFactor = cflCondition * cellSize / timeStep;
