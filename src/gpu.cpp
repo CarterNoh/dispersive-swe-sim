@@ -231,6 +231,12 @@ bool GPU::CreateGridTexture(GPUField* field, int width, int height, bool isCompl
     return true;
 }
 
+void GPU::CopyField(GPUField* dest, GPUField* src) {
+    if (dest && src && dest->tex && src->tex) {
+        context->CopyResource(dest->tex, src->tex);
+    }
+}
+
 bool GPU::UploadToGPU(ID3D11Texture2D* tex, const std::vector<float>& data, int width, int height, bool isComplex, int arraySize) {
     int floatsPerPixel = isComplex ? 2 : 1; // If complex, there are 2 floats per pixel.
     int rowPitch = width * sizeof(float) * floatsPerPixel; // byte size of a single row

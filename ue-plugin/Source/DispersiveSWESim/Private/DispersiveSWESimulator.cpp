@@ -217,7 +217,7 @@ void UDispersiveSWESimulator::AssignConstants(FSimConstants& Constants) const
 	Constants.surfaceTension = SurfaceTension;
 	Constants.density = Density;
 	Constants.diffusionIterations = DiffusionIterations;
-	Constants.deltaT = DiffusionDeltaT;
+	Constants.diffusionTime = DiffusionTime;
 	Constants.diffusionPenalty = DiffusionPenalty;
 	Constants.slopeLimit = SlopeLimit;
 	Constants.cflCondition = CFLCondition;
@@ -539,10 +539,6 @@ void UDispersiveSWESimulator::ExecuteSimulation_RenderThread(
 
 	// CalcDiffusionCoeffs
 	{
-		// FRDGTextureRef alpha_H_Raw = GraphBuilder.CreateTexture(alpha_H->Desc, TEXT("SWE_alpha_H_Raw"));
-		// FRDGTextureRef alpha_Qx_Raw = GraphBuilder.CreateTexture(alpha_Qx->Desc, TEXT("SWE_alpha_Qx_Raw"));
-		// FRDGTextureRef alpha_Qy_Raw = GraphBuilder.CreateTexture(alpha_Qy->Desc, TEXT("SWE_alpha_Qy_Raw"));
-
 		TShaderMapRef<FCalcDiffusionCoeffsCS> Shader(ShaderMap);
 		FCalcDiffusionCoeffsCS::FParameters* Params = GraphBuilder.AllocParameters<FCalcDiffusionCoeffsCS::FParameters>();
 		Params->SimConstants = ConstantBuffer;
@@ -553,22 +549,17 @@ void UDispersiveSWESimulator::ExecuteSimulation_RenderThread(
 		Params->alpha_QOut_y = GraphBuilder.CreateUAV(alpha_Qy);
 
 		FComputeShaderUtils::AddPass(GraphBuilder, RDG_EVENT_NAME("SWE_Decomp_Coeffs"), ERDGPassFlags::Compute, Shader, Params, GridGroups);
-
-		// TShaderMapRef<FSmoothDiffusionCoeffsCS> SmoothShader(ShaderMap);
-		// FSmoothDiffusionCoeffsCS::FParameters* SmoothParams = GraphBuilder.AllocParameters<FSmoothDiffusionCoeffsCS::FParameters>();
-		// SmoothParams->SimConstants = ConstantBuffer;
-		// SmoothParams->alpha_HIn = GraphBuilder.CreateSRV(alpha_H_Raw);
-		// SmoothParams->alpha_QIn_x = GraphBuilder.CreateSRV(alpha_Qx_Raw);
-		// SmoothParams->alpha_QIn_y = GraphBuilder.CreateSRV(alpha_Qy_Raw);
-		// SmoothParams->alpha_HOut = GraphBuilder.CreateUAV(alpha_H);
-		// SmoothParams->alpha_QOut_x = GraphBuilder.CreateUAV(alpha_Qx);
-		// SmoothParams->alpha_QOut_y = GraphBuilder.CreateUAV(alpha_Qy);
-
-		// FComputeShaderUtils::AddPass(GraphBuilder, RDG_EVENT_NAME("SWE_Decomp_SmoothCoeffs"), ERDGPassFlags::Compute, SmoothShader, SmoothParams, GridGroups);
 	}
 
-	// Diffusion loop - low pass filter H and Q
+	// Diffusion loop - low pass filter H and Q using implicit Jacobi solver
 	{
+		FRDGTextureRef H_Orig = GraphBuilder.CreateTexture(H_RDG->Desc, TEXT("SWE_H_Orig"));
+		AddCopyTexturePass(GraphBuilder, H_RDG, H_Orig);
+		FRDGTextureRef Qx_Orig = GraphBuilder.CreateTexture(Qx_RDG->Desc, TEXT("SWE_Qx_Orig"));
+		AddCopyTexturePass(GraphBuilder, Qx_RDG, Qx_Orig);
+		FRDGTextureRef Qy_Orig = GraphBuilder.CreateTexture(Qy_RDG->Desc, TEXT("SWE_Qy_Orig"));
+		AddCopyTexturePass(GraphBuilder, Qy_RDG, Qy_Orig);
+
 		FRDGTextureRef H_Src = H_RDG;
 		FRDGTextureRef H_Dst = HNext;
 		FRDGTextureRef Qx_Src = Qx_RDG;
@@ -582,6 +573,9 @@ void UDispersiveSWESimulator::ExecuteSimulation_RenderThread(
 			FDiffusionStepCS::FParameters* Params = GraphBuilder.AllocParameters<FDiffusionStepCS::FParameters>();
 			Params->SimConstants = ConstantBuffer;
 			Params->terrain = GraphBuilder.CreateSRV(Terrain_RDG);
+			Params->H_elevOrig = GraphBuilder.CreateSRV(H_Orig);
+			Params->Q_bulkOrig_x = GraphBuilder.CreateSRV(Qx_Orig);
+			Params->Q_bulkOrig_y = GraphBuilder.CreateSRV(Qy_Orig);
 			Params->H_elevPast = GraphBuilder.CreateSRV(H_Src);
 			Params->Q_bulkPast_x = GraphBuilder.CreateSRV(Qx_Src);
 			Params->Q_bulkPast_y = GraphBuilder.CreateSRV(Qy_Src);

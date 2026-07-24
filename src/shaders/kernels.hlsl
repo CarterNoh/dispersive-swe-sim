@@ -13,7 +13,7 @@ cbuffer Constants : register(b0) {
     float density;
     // Decomposition Params
     int diffusionIterations;
-    float deltaT;
+    float diffusionTime;
     float diffusionPenalty;
     // SWE & Transport Params
     float slopeLimit;
@@ -51,7 +51,11 @@ Texture2D<float>   in4 : register(t4);
 Texture2D<float>   in5 : register(t5);
 Texture2D<float>   in6 : register(t6);
 Texture2D<float>   in7 : register(t7);
-StructuredBuffer<float> in9 : register(t8);
+Texture2D<float>   in8 : register(t8);
+Texture2D<float>   in9 : register(t9);
+Texture2D<float>   in10 : register(t10);
+Texture2D<float>   in11 : register(t11);
+StructuredBuffer<float> depth : register(t12);
 RWTexture2D<float> out0: register(u0);
 RWTexture2D<float> out1: register(u1);
 RWTexture2D<float> out2: register(u2);
@@ -169,14 +173,19 @@ float LoadClamped(Texture2D<float> tex, int2 coord) {
     return tex[uint2(x, y)];
 }
 
-float CalcDiffusion(Texture2D<float> f, Texture2D<float> a, uint2 curr, float invCellSizeSq) {
+float SolveJacobi(float u_orig, float u_E, float u_W, float u_N, float u_S, float C_E, float C_W, float C_N, float C_S) {
+    return (u_orig + C_E * u_E + C_W * u_W + C_N * u_N + C_S * u_S) / (1.0f + C_E + C_W + C_N + C_S);
+}
+
+float CalcJacobiDiffusion(Texture2D<float> f_orig, Texture2D<float> f_past, Texture2D<float> a, uint2 curr, float factor) {
     int2 id = int2(curr);
 
-    float f_curr = f[curr];
-    float f_right = LoadClamped(f, id + int2(1, 0));
-    float f_left  = LoadClamped(f, id + int2(-1, 0));
-    float f_up    = LoadClamped(f, id + int2(0, 1));
-    float f_down  = LoadClamped(f, id + int2(0, -1));
+    float f_orig_val = f_orig[curr];
+    float f_curr  = f_past[curr];
+    float f_right = LoadClamped(f_past, id + int2(1, 0));
+    float f_left  = LoadClamped(f_past, id + int2(-1, 0));
+    float f_up    = LoadClamped(f_past, id + int2(0, 1));
+    float f_down  = LoadClamped(f_past, id + int2(0, -1));
 
     float a_curr = a[curr];
     float a_right = LoadClamped(a, id + int2(1, 0));
@@ -184,18 +193,14 @@ float CalcDiffusion(Texture2D<float> f, Texture2D<float> a, uint2 curr, float in
     float a_up    = LoadClamped(a, id + int2(0, 1));
     float a_down  = LoadClamped(a, id + int2(0, -1));
     
-    // Harmonic mean for face diffusion coefficients (prevents deep water alpha from over-diffusing into shallow bathymetry)
+    // Harmonic mean for face diffusion coefficients
     float eps = 1e-6f;
     float a_east  = (2.0f * a_curr * a_right) / (a_curr + a_right + eps);
     float a_west  = (2.0f * a_curr * a_left)  / (a_curr + a_left  + eps);
     float a_north = (2.0f * a_curr * a_up)    / (a_curr + a_up    + eps);
     float a_south = (2.0f * a_curr * a_down)  / (a_curr + a_down  + eps);
 
-    float dF_x = a_east * (f_right - f_curr) - a_west * (f_curr - f_left);
-    float dF_y = a_north * (f_up - f_curr) - a_south * (f_curr - f_down);
-    float dFdX = (dF_x + dF_y) * invCellSizeSq;
-    
-    return dFdX;
+    return SolveJacobi(f_orig_val, f_right, f_left, f_up, f_down, factor * a_east, factor * a_west, factor * a_north, factor * a_south);
 }
 
 float SpongeDamping(uint2 id, bool isYDir = false) {
@@ -242,36 +247,35 @@ void CalcDiffusionCoeffs(uint3 id : SV_DispatchThreadID) {
     int2 right = clamp(curr + int2(1, 0), int2(0, 0), maxGrid);
     int2 up    = clamp(curr + int2(0, 1), int2(0, 0), maxGrid);
 
-    // float max_ground = max(in1[curr], in1[right], in1[up]);
-    // float min_water = min(in0[curr], in0[right], in0[up]); // or average of these 3
-    float h = clamp(in0[curr] - in1[curr], 0.f, maxSafeDepth); // min_water - max_ground;
+    float h = clamp(in0[curr] - in1[curr], 0.f, maxSafeDepth);
     float hr = clamp(in0[right] - in1[right], 0.f, maxSafeDepth);
     float hu = clamp(in0[up] - in1[up], 0.f, maxSafeDepth);
     hr = (h + hr) * 0.5f;
     hu = (h + hu) * 0.5f;
-    float invDenom = rcp(2.0f * deltaT * (float)diffusionIterations);
     float invCellSize = 1.0f / cellSize;
     float grad_x = (in0[right] - in0[curr]) * invCellSize;
     float grad_y = (in0[up] - in0[curr]) * invCellSize;
     float penalty = exp(- diffusionPenalty * (grad_x * grad_x + grad_y * grad_y));
-    float max_alpha = (cellSize * cellSize) * rcp(4.0f * deltaT); // Von Neumann Stability Condition
-    out0[curr] = min(max_alpha, h * h   * invDenom) * penalty;
-    out1[curr] = min(max_alpha, hr * hr * invDenom) * penalty;
-    out2[curr] = min(max_alpha, hu * hu * invDenom) * penalty;
+    out0[curr] = max(0.f, h * h * penalty / (2.f * diffusionTime));
+    out1[curr] = max(0.f, hr * hr * penalty / (2.f * diffusionTime));
+    out2[curr] = max(0.f, hu * hu * penalty / (2.f * diffusionTime));
 }
 
 [numthreads(16, 16, 1)]
 void DiffusionStep(uint3 id : SV_DispatchThreadID) {
-    // Inputs: in0 = terrain, in1 = HPast, in2 = QPast_x, in3 = QPast_y, 
-    //         in4 = alpha_H, in5 = alpha_Q_x, in6 = alpha_Q_y
-    // Outputs: out0 = H, out1 = Q_x, out3 = Q_y
+    // Inputs: in0 = terrain, in1 = HOrig, in2 = QOrig_x, in3 = QOrig_y,
+    //         in4 = HPast, in5 = QPast_x, in6 = QPast_y,
+    //         in7 = alpha_H, in8 = alpha_Q_x, in9 = alpha_Q_y,
+    // Outputs: out0 = H, out1 = Q_x, out2 = Q_y
     if (id.x >= (uint)(gridSizeX) || id.y >= (uint)(gridSizeY)) return;
 
     float invCellSizeSq = 1.0f / (cellSize * cellSize);
-    float newH = in1[id.xy] + deltaT * CalcDiffusion(in1, in4, id.xy, invCellSizeSq);
+    float factor = diffusionTime * invCellSizeSq;
+
+    float newH = CalcJacobiDiffusion(in1, in4, in7, id.xy, factor);
     out0[id.xy] = max(in0[id.xy], newH);
-    out1[id.xy] = in2[id.xy] + deltaT * CalcDiffusion(in2, in5, id.xy, invCellSizeSq);
-    out2[id.xy] = in3[id.xy] + deltaT * CalcDiffusion(in3, in6, id.xy, invCellSizeSq);
+    out1[id.xy] = CalcJacobiDiffusion(in2, in5, in8, id.xy, factor);
+    out2[id.xy] = CalcJacobiDiffusion(in3, in6, in9, id.xy, factor);
 }
 
 [numthreads(16, 16, 1)]
@@ -650,7 +654,7 @@ void CalcEWave(uint3 id : SV_DispatchThreadID) {
     float beta = sqrt((2.0 / (k * cellSize)) * sin(k * cellSize / 2.0)); // From their 1D code, but different from paper
     // float beta = sqrt((2.0 * k / cellSize) * sin(k * cellSize / 2.0)); // correct formula from paper, but not stable?
     // Angular frequency for dispersion relation
-    float omega = sqrt(GRAVITY * k * SafeTanh(k * min(in9[id.z], maxSafeDepth))) / beta;
+    float omega = sqrt(GRAVITY * k * SafeTanh(k * min(depth[id.z], maxSafeDepth))) / beta;
     float S = sin(omega * timeStep) * omega / (k * k);
     float C = cos(omega * timeStep);
     float Cx = 1 + (C-1) * kx2;
@@ -718,8 +722,8 @@ void InterpQ(uint3 id : SV_DispatchThreadID) {
     int d1_x = 0;
     int d1_y = 0;
     for (int d = 0; d < depthNum; d++) {
-        if (waterDepth_x >= in9[d]) d1_x = d;
-        if (waterDepth_y >= in9[d]) d1_y = d;
+        if (waterDepth_x >= depth[d]) d1_x = d;
+        if (waterDepth_y >= depth[d]) d1_y = d;
     }
     int d2_x = min(depthNum - 1, d1_x + 1);
     int d2_y = min(depthNum - 1, d1_y + 1);
@@ -727,20 +731,20 @@ void InterpQ(uint3 id : SV_DispatchThreadID) {
     float sy = 0.f;
 
     // Depth Interpolation (handle shallowest case separately)
-    if (waterDepth_x < in9[0]) {
-        sx = waterDepth_x / in9[0];
+    if (waterDepth_x < depth[0]) {
+        sx = waterDepth_x / depth[0];
         qtilde_x[id.xy] = sx * qHat_x_array[uint3(id.x, id.y, 0)].x;
     } else {
         if (d1_x != d2_x)
-            sx = (in9[d2_x] - waterDepth_x) / (in9[d2_x] - in9[d1_x]);
+            sx = (depth[d2_x] - waterDepth_x) / (depth[d2_x] - depth[d1_x]);
         qtilde_x[id.xy] = sx * qHat_x_array[uint3(id.x, id.y, d1_x)].x + (1.f - sx) * qHat_x_array[uint3(id.x, id.y, d2_x)].x;
     }
-    if (waterDepth_y < in9[0]) {
-        sy = waterDepth_y / in9[0];
+    if (waterDepth_y < depth[0]) {
+        sy = waterDepth_y / depth[0];
         qtilde_y[id.xy] = sy * qHat_y_array[uint3(id.x, id.y, 0)].x;
     } else {
         if (d1_y != d2_y)
-            sy = (in9[d2_y] - waterDepth_y) / (in9[d2_y] - in9[d1_y]);
+            sy = (depth[d2_y] - waterDepth_y) / (depth[d2_y] - depth[d1_y]);
         qtilde_y[id.xy] = sy * qHat_y_array[uint3(id.x, id.y, d1_y)].x + (1.f - sy) * qHat_y_array[uint3(id.x, id.y, d2_y)].x;
     }
 }

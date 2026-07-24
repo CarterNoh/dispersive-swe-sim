@@ -30,8 +30,8 @@ public:
 	static constexpr float WATER_SCALE = 2.f;     // scale of water height features
 	
 	// Decomposition Parameters
-	static constexpr int DIFFUSION_ITERATIONS = 128;  // number of iterations for diffusion step, more iterations means more stable but also more expensive
-	static constexpr float DELTA_T = 0.25f; 		  // difffusion timestep, "seconds" per subtick of the diffusion loop. Smaller is less diffusion, larger is more
+	static constexpr int DIFFUSION_ITERATIONS = 16;  // number of iterations for diffusion step, more iterations means more stable but also more expensive
+	static constexpr float DIFFUSION_TIME = 32.f; 		  // total virtual time of the diffusion step. Smaller is less diffusion, larger is more
 	static constexpr float DIFFUSION_PENALTY = 0.01f; // penalty factor for diffusion, higher means more diffusion and more stability but also more damping of waves
 	
 	// eWave Parameters
@@ -59,7 +59,8 @@ public:
 
 	// Simulation variables
 	GPUField terrain, H, Q_x, Q_y, h, q_x, q_y, 
-			 HPast, QPast_x, QPast_y, alpha_H, alpha_Q_x, alpha_Q_y, 
+			 HOrig, QOrig_x, QOrig_y, HPast, QPast_x, QPast_y, 
+			 alpha_H, alpha_Q_x, alpha_Q_y, 
 			 hbar, qbar_x, qbar_y, htilde, qtilde_x, qtilde_y,
 			 ubar_x, ubar_y, ubarNew_x, ubarNew_y,
 			 qtildePast_x, qtildePast_y, qAdvect_x, qAdvect_y, 
@@ -68,15 +69,16 @@ public:
     GPUField HPos, HNeg, HProp, DelH_x, DelH_y, Disp_x, Disp_y, // Outputs of PopulateSpectrum, PropagateWaves (complex arrays)
              hFFT, delH_x, delH_y, disp_x, disp_y; // iFFT'd variables after interpolation
              
-	GPUField* fields[35] = {
+	GPUField* fields[38] = {
 		&terrain, &H, &Q_x, &Q_y, &h, &q_x, &q_y,
-		&HPast, &QPast_x, &QPast_y, &alpha_H, &alpha_Q_x, &alpha_Q_y,
+		&HOrig, &QOrig_x, &QOrig_y, &HPast, &QPast_x, &QPast_y, 
+		&alpha_H, &alpha_Q_x, &alpha_Q_y,
 		&hbar, &qbar_x, &qbar_y, &htilde, &qtilde_x, &qtilde_y,
 		&ubar_x, &ubar_y, &ubarNew_x, &ubarNew_y,
 		&qtildePast_x, &qtildePast_y, &qAdvect_x, &qAdvect_y,
 		&hPast, &hbarOld, &htildeOld, 
-        &hFFT, &delH_x, &delH_y, &disp_x, &disp_y, 
-        };
+        &hFFT, &delH_x, &delH_y, &disp_x, &disp_y,
+	};
 	GPUField* fields_complex[3] = {&hHat, &qHat_x, &qHat_y};
 	GPUField* fields_arrays[9] = {&qHat_x_array, &qHat_y_array, 
         &HPos, &HNeg, &HProp, &DelH_x, &DelH_y, &Disp_x, &Disp_y};
@@ -125,7 +127,7 @@ private:
 	char* waveNames[3] = {"PopulateSpectrum", "PropagateWaves", "Interp"};
     // Constants
 	SimConstants constants = {time, GRIDSIZE_X, GRIDSIZE_Y, CELLSIZE, TIMESTEP, SPONGE_THICKNESS, MIN_WATER_HEIGHT, SURFACE_TENSION, DENSITY, // Sim Params
-							  DIFFUSION_ITERATIONS, DELTA_T, DIFFUSION_PENALTY, // Diffusion Params
+							  DIFFUSION_ITERATIONS, DIFFUSION_TIME, DIFFUSION_PENALTY, // Diffusion Params
 							  SLOPE_LIMIT, CFL_CONDITION, GAMMA_TRANSPORT, DEPTH_NUM, // SWE & eWave Params
 							  FETCH, WIND_SPEED, WIND_ANGLE, SWELL, SWELL_ANGLE, CHOPPINESS, // FFT Params
 							  FILTER_SMALL, FILTER_BIG, FILTER_WIDTH, FILTER_MIN, DEPTH_CUTOFF,

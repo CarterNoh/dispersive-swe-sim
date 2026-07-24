@@ -18,7 +18,7 @@ BEGIN_GLOBAL_SHADER_PARAMETER_STRUCT(FSimConstants, )
 	SHADER_PARAMETER(float, surfaceTension)
 	SHADER_PARAMETER(float, density)
 	SHADER_PARAMETER(int32, diffusionIterations)
-	SHADER_PARAMETER(float, deltaT)
+	SHADER_PARAMETER(float, diffusionTime)
 	SHADER_PARAMETER(float, diffusionPenalty)
 	SHADER_PARAMETER(float, slopeLimit)
 	SHADER_PARAMETER(float, cflCondition)
@@ -131,23 +131,6 @@ public:
 	END_SHADER_PARAMETER_STRUCT()
 };
 
-class FSmoothDiffusionCoeffsCS : public FDispersiveSWEComputeShader
-{
-public:
-	DECLARE_GLOBAL_SHADER(FSmoothDiffusionCoeffsCS);
-	SHADER_USE_PARAMETER_STRUCT(FSmoothDiffusionCoeffsCS, FDispersiveSWEComputeShader);
-
-	BEGIN_SHADER_PARAMETER_STRUCT(FParameters, )
-		SHADER_PARAMETER_STRUCT_REF(FSimConstants, SimConstants)
-		SHADER_PARAMETER_RDG_TEXTURE_SRV(Texture2D<float>, alpha_HIn)
-		SHADER_PARAMETER_RDG_TEXTURE_SRV(Texture2D<float>, alpha_QIn_x)
-		SHADER_PARAMETER_RDG_TEXTURE_SRV(Texture2D<float>, alpha_QIn_y)
-		SHADER_PARAMETER_RDG_TEXTURE_UAV(RWTexture2D<float>, alpha_HOut)
-		SHADER_PARAMETER_RDG_TEXTURE_UAV(RWTexture2D<float>, alpha_QOut_x)
-		SHADER_PARAMETER_RDG_TEXTURE_UAV(RWTexture2D<float>, alpha_QOut_y)
-	END_SHADER_PARAMETER_STRUCT()
-};
-
 class FDiffusionStepCS : public FDispersiveSWEComputeShader
 {
 public:
@@ -157,6 +140,9 @@ public:
 	BEGIN_SHADER_PARAMETER_STRUCT(FParameters, )
 		SHADER_PARAMETER_STRUCT_REF(FSimConstants, SimConstants)
 		SHADER_PARAMETER_RDG_TEXTURE_SRV(Texture2D<float>, terrain)
+		SHADER_PARAMETER_RDG_TEXTURE_SRV(Texture2D<float>, H_elevOrig)
+		SHADER_PARAMETER_RDG_TEXTURE_SRV(Texture2D<float>, Q_bulkOrig_x)
+		SHADER_PARAMETER_RDG_TEXTURE_SRV(Texture2D<float>, Q_bulkOrig_y)
 		SHADER_PARAMETER_RDG_TEXTURE_SRV(Texture2D<float>, H_elevPast)
 		SHADER_PARAMETER_RDG_TEXTURE_SRV(Texture2D<float>, Q_bulkPast_x)
 		SHADER_PARAMETER_RDG_TEXTURE_SRV(Texture2D<float>, Q_bulkPast_y)

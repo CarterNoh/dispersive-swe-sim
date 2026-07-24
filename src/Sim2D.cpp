@@ -134,7 +134,7 @@ void Sim::Init(GPU* gpu) {
 		gpu->UploadToGPU(fields_arrays[i]->tex, temp, paddedSizeX, paddedSizeY, true, DEPTH_NUM);
 	}
 	gpu->CreateBuffer(&depth, depths.data(), DEPTH_NUM);
-	gpu->BindSRV(8, depth.srv);
+	gpu->BindSRV(12, depth.srv);
 	std::vector<float> terrain_temp = SetTerrain();
 	std::vector<float> h_temp = SetWater(terrain_temp);
 	std::vector<float> H_temp(GRIDSIZE_X * GRIDSIZE_Y, 0.0f);
@@ -205,7 +205,12 @@ void Sim::DecompositionStep() {
 		{H.srv, terrain.srv}, 
 		{alpha_H.uav, alpha_Q_x.uav, alpha_Q_y.uav});
 	
-	// Run diffusion to low-pass filter H and Q
+	// Copy initial fields to Orig fields before starting Jacobi loop
+	gpu->CopyField(&HOrig, &H);
+	gpu->CopyField(&QOrig_x, &Q_x);
+	gpu->CopyField(&QOrig_y, &Q_y);
+
+	// Run diffusion to low-pass filter H and Q using Jacobi solver
 	for (int j = 0; (j < DIFFUSION_ITERATIONS); j++) {
 		// Swap H and HPast pointers for ping-ponging
         std::swap(H, HPast); 
@@ -214,7 +219,7 @@ void Sim::DecompositionStep() {
 
 		// Diffusion step for H and Q
 		gpu->Dispatch(DiffusionStep, 
-			{terrain.srv, HPast.srv, QPast_x.srv, QPast_y.srv, alpha_H.srv, alpha_Q_x.srv, alpha_Q_y.srv}, 
+			{terrain.srv, HOrig.srv, QOrig_x.srv, QOrig_y.srv, HPast.srv, QPast_x.srv, QPast_y.srv, alpha_H.srv, alpha_Q_x.srv, alpha_Q_y.srv}, 
 			{H.uav, Q_x.uav, Q_y.uav});
 	}
 

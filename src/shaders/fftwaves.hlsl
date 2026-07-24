@@ -16,7 +16,7 @@ cbuffer Constants : register(b0) {
     float density;
     // Decomposition Params
     int diffusionIterations;
-    float deltaT;
+    float diffusionTime;
     float diffusionPenalty;
     // SWE & Transport Params
     float slopeLimit;
@@ -301,7 +301,7 @@ float AmpFilter(float k, int filterInvert) {
 
 
 ///////////////// Shaders /////////////////
-StructuredBuffer<float> depth : register(t8);
+StructuredBuffer<float> depth : register(t12);
 
 RWTexture2DArray<float2> HPosOut: register(u0);
 RWTexture2DArray<float2> HNegOut: register(u1);

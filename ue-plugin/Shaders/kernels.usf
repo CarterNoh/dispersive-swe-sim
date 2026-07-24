@@ -14,7 +14,7 @@
 #define surfaceTension SimConstants.surfaceTension
 #define density SimConstants.density
 #define diffusionIterations SimConstants.diffusionIterations
-#define deltaT SimConstants.deltaT
+#define diffusionTime SimConstants.diffusionTime
 #define diffusionPenalty SimConstants.diffusionPenalty
 #define slopeLimit SimConstants.slopeLimit
 #define cflCondition SimConstants.cflCondition
@@ -54,6 +54,9 @@ Texture2D<float>   H_elevIn;
 Texture2D<float>   H_elevPast;
 Texture2D<float>   Q_bulkPast_x;
 Texture2D<float>   Q_bulkPast_y;
+Texture2D<float>   H_elevOrig;
+Texture2D<float>   Q_bulkOrig_x;
+Texture2D<float>   Q_bulkOrig_y;
 Texture2D<float>   alpha_QIn_x;
 Texture2D<float>   alpha_QIn_y;
 Texture2D<float>   terrainBulk;
@@ -232,33 +235,10 @@ float LoadClamped(Texture2D<float> tex, int2 coord) {
     return tex[uint2(x, y)];
 }
 
-float CalcDiffusion(Texture2D<float> f, Texture2D<float> a, uint2 curr, float invCellSizeSq) {
-    int2 id = int2(curr);
-
-    float f_curr = f[curr];
-    float f_right = LoadClamped(f, id + int2(1, 0));
-    float f_left  = LoadClamped(f, id + int2(-1, 0));
-    float f_up    = LoadClamped(f, id + int2(0, 1));
-    float f_down  = LoadClamped(f, id + int2(0, -1));
-
-    float a_curr = a[curr];
-    float a_right = LoadClamped(a, id + int2(1, 0));
-    float a_left  = LoadClamped(a, id + int2(-1, 0));
-    float a_up    = LoadClamped(a, id + int2(0, 1));
-    float a_down  = LoadClamped(a, id + int2(0, -1));
-    
-    // Harmonic mean for face diffusion coefficients (prevents deep water alpha from over-diffusing into shallow bathymetry)
-    float eps = 1e-6f;
-    float a_east  = (2.0f * a_curr * a_right) / (a_curr + a_right + eps);
-    float a_west  = (2.0f * a_curr * a_left)  / (a_curr + a_left  + eps);
-    float a_north = (2.0f * a_curr * a_up)    / (a_curr + a_up    + eps);
-    float a_south = (2.0f * a_curr * a_down)  / (a_curr + a_down  + eps);
-
-    float dF_x = a_east * (f_right - f_curr) - a_west * (f_curr - f_left);
-    float dF_y = a_north * (f_up - f_curr) - a_south * (f_curr - f_down);
-    float dFdX = (dF_x + dF_y) * invCellSizeSq;
-    
-    return dFdX;
+float SolveJacobi(float u_orig, float u_E, float u_W, float u_N, float u_S, float C_E, float C_W, float C_N, float C_S) {
+    // u is the quantity being diffused, C is the diffusion coefficient
+    // E, W, N, S are cardinal directions - neighbor cells
+    return (u_orig + C_E * u_E + C_W * u_W + C_N * u_N + C_S * u_S) / (1.0f + C_E + C_W + C_N + C_S);
 }
 
 float SpongeDamping(uint2 id, bool isYDir = false) {
@@ -336,22 +316,21 @@ void CalcDiffusionCoeffs(uint3 id : SV_DispatchThreadID) {
     float hu = clamp(H_elevIn[up] - terrain[up], 0.f, maxSafeDepth);
     hr = (h + hr) * 0.5f;
     hu = (h + hu) * 0.5f;
-    float invDenom = rcp(2.0f * deltaT * (float)diffusionIterations);
     float invCellSize = 1.0f / cellSize;
     float grad_x = (H_elevIn[right] - H_elevIn[curr]) * invCellSize;
     float grad_y = (H_elevIn[up] - H_elevIn[curr]) * invCellSize;
     float penalty = exp(- diffusionPenalty * (grad_x * grad_x + grad_y * grad_y));
-    float max_alpha = 0.8 * (cellSize * cellSize) * rcp(4.0f * deltaT); // Von Neumann Stability Condition, with buffer
-    alpha_HOut[curr] = max(0.f, min(max_alpha, h * h   * invDenom) * penalty);
-    alpha_QOut_x[curr] = max(0.f, min(max_alpha, hr * hr * invDenom) * penalty);
-    alpha_QOut_y[curr] = max(0.f, min(max_alpha, hu * hu * invDenom) * penalty);
+    alpha_HOut[curr] = max(0.f, (h * h / diffusionTime) * penalty);
+    alpha_QOut_x[curr] = max(0.f, (hr * hr / diffusionTime) * penalty);
+    alpha_QOut_y[curr] = max(0.f, (hu * hu / diffusionTime) * penalty);
 }
 
 [numthreads(16, 16, 1)]
 void DiffusionStep(uint3 id : SV_DispatchThreadID) {
-    // Inputs: terrain, HPast, QPast_x, QPast_y, 
+    // Inputs: terrain, H_elevOrig, Q_bulkOrig_x, Q_bulkOrig_y, 
+    //         H_elevPast, Q_bulkPast_x, Q_bulkPast_y,
     //         alpha_HIn, alpha_QIn_x, alpha_QIn_y
-    // Outputs: HOut, QOut_x, QOut_y
+    // Outputs: H_elevOut, Q_bulkOut_x, Q_bulkOut_y
     if (id.x >= (uint)(gridSizeX) || id.y >= (uint)(gridSizeY)) return;
 
     int2 curr = int2(id.xy);
@@ -364,9 +343,6 @@ void DiffusionStep(uint3 id : SV_DispatchThreadID) {
     int2 rd    = clamp(curr + int2(1, -1), int2(0, 0), maxGrid);
     int2 lu    = clamp(curr + int2(-1, 1), int2(0, 0), maxGrid);
 
-    float H_curr = H_elevPast[curr];
-    float Qx_curr = Q_bulkPast_x[curr];
-    float Qy_curr = Q_bulkPast_y[curr];
     float aH_curr = alpha_HIn[curr];
     float aH_right = alpha_HIn[right];
     float aH_up    = alpha_HIn[up];
@@ -375,30 +351,32 @@ void DiffusionStep(uint3 id : SV_DispatchThreadID) {
     float a_topleft  = 0.25f * (aH_curr + aH_up + alpha_HIn[left] + alpha_HIn[lu]);
 
     float invCellSizeSq = 1.0f / (cellSize * cellSize);
+    float factor = diffusionTime * invCellSizeSq;
 
-    // Calculate Lagrangians
-    float dH_x = alpha_QIn_x[curr] * (H_elevPast[right] - H_curr) - alpha_QIn_x[left] * (H_curr - H_elevPast[left]);
-    float dH_y = alpha_QIn_y[curr] * (H_elevPast[up] - H_curr) - alpha_QIn_y[down] * (H_curr - H_elevPast[down]);
-    float dHdX = (dH_x + dH_y) * invCellSizeSq;
-    
-    float dQx_x = aH_right * (Q_bulkPast_x[right] - Qx_curr) - aH_curr * (Qx_curr - Q_bulkPast_x[left]);
-    float dQx_y = a_topright * (Q_bulkPast_x[up] - Qx_curr) - a_botright * (Qx_curr - Q_bulkPast_x[down]);
-    float dQxdX = (dQx_x + dQx_y) * invCellSizeSq;
-    
-    float dQy_x = a_topright * (Q_bulkPast_y[right] - Qy_curr) - a_topleft * (Qy_curr - Q_bulkPast_y[left]);
-    float dQy_y = aH_up * (Q_bulkPast_y[up] - Qy_curr) - aH_curr * (Qy_curr - Q_bulkPast_y[down]);
-    float dQydX = (dQy_x + dQy_y) * invCellSizeSq;
+    // --- Jacobi update for H_elev ---
+    float C_H_E = factor * alpha_QIn_x[curr];
+    float C_H_W = factor * alpha_QIn_x[left];
+    float C_H_N = factor * alpha_QIn_y[curr];
+    float C_H_S = factor * alpha_QIn_y[down];
 
-    // Calculate Diffusion
-    float newH = H_elevPast[curr] + deltaT * dHdX;
+    float newH = SolveJacobi(H_elevOrig[curr], H_elevPast[right], H_elevPast[left], H_elevPast[up], H_elevPast[down], C_H_E, C_H_W, C_H_N, C_H_S);
     H_elevOut[curr] = max(terrain[curr], newH);
-    Q_bulkOut_x[curr] = Q_bulkPast_x[curr] + deltaT * dQxdX;
-    Q_bulkOut_y[curr] = Q_bulkPast_y[curr] + deltaT * dQydX;
 
-    // float newH = H_elevPast[id.xy] + deltaT * CalcDiffusion(H_elevPast, alpha_HIn, id.xy, invCellSizeSq);
-    // H_elevOut[id.xy] = max(terrain[id.xy], newH);
-    // Q_bulkOut_x[id.xy] = Q_bulkPast_x[id.xy] + deltaT * CalcDiffusion(Q_bulkPast_x, alpha_QIn_x, id.xy, invCellSizeSq);
-    // Q_bulkOut_y[id.xy] = Q_bulkPast_y[id.xy] + deltaT * CalcDiffusion(Q_bulkPast_y, alpha_QIn_y, id.xy, invCellSizeSq);
+    // --- Jacobi update for Q_bulk_x ---
+    float C_Qx_E = factor * aH_right;
+    float C_Qx_W = factor * aH_curr;
+    float C_Qx_N = factor * a_topright;
+    float C_Qx_S = factor * a_botright;
+
+    Q_bulkOut_x[curr] = SolveJacobi(Q_bulkOrig_x[curr], Q_bulkPast_x[right], Q_bulkPast_x[left], Q_bulkPast_x[up], Q_bulkPast_x[down], C_Qx_E, C_Qx_W, C_Qx_N, C_Qx_S);
+
+    // --- Jacobi update for Q_bulk_y ---
+    float C_Qy_E = factor * a_topright;
+    float C_Qy_W = factor * a_topleft;
+    float C_Qy_N = factor * aH_up;
+    float C_Qy_S = factor * aH_curr;
+
+    Q_bulkOut_y[curr] = SolveJacobi(Q_bulkOrig_y[curr], Q_bulkPast_y[right], Q_bulkPast_y[left], Q_bulkPast_y[up], Q_bulkPast_y[down], C_Qy_E, C_Qy_W, C_Qy_N, C_Qy_S);
 }
 
 [numthreads(16, 16, 1)]
