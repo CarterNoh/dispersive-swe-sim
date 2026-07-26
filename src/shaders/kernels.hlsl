@@ -256,9 +256,10 @@ void CalcDiffusionCoeffs(uint3 id : SV_DispatchThreadID) {
     float grad_x = (in0[right] - in0[curr]) * invCellSize;
     float grad_y = (in0[up] - in0[curr]) * invCellSize;
     float penalty = exp(- diffusionPenalty * (grad_x * grad_x + grad_y * grad_y));
-    out0[curr] = max(0.f, h * h * penalty / (2.f * diffusionTime));
-    out1[curr] = max(0.f, hr * hr * penalty / (2.f * diffusionTime));
-    out2[curr] = max(0.f, hu * hu * penalty / (2.f * diffusionTime));
+    float denom = penalty / (2.f * diffusionTime);
+    out0[curr] = max(0.f, h * h * denom);
+    out1[curr] = max(0.f, hr * hr * denom);
+    out2[curr] = max(0.f, hu * hu * denom);
 }
 
 [numthreads(16, 16, 1)]
@@ -270,7 +271,8 @@ void DiffusionStep(uint3 id : SV_DispatchThreadID) {
     if (id.x >= (uint)(gridSizeX) || id.y >= (uint)(gridSizeY)) return;
 
     float invCellSizeSq = 1.0f / (cellSize * cellSize);
-    float factor = diffusionTime * invCellSizeSq;
+    // float factor = diffusionTime * invCellSizeSq;
+    float factor = 0.25 * inCellSizeSq; // required for stability in Unreal, won't work otherwise, not sure why
 
     float newH = CalcJacobiDiffusion(in1, in4, in7, id.xy, factor);
     out0[id.xy] = max(in0[id.xy], newH);
