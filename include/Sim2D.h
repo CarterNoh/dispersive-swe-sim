@@ -31,7 +31,7 @@ public:
 	
 	// Decomposition Parameters
 	static constexpr int DIFFUSION_ITERATIONS = 16;  // number of iterations for diffusion step, more iterations means more stable but also more expensive
-	static constexpr float DIFFUSION_TIME = 32.f; 		  // total virtual time of the diffusion step. Smaller is less diffusion, larger is more
+	static constexpr float DIFFUSION_TIME = 32.f; 	  // total virtual time of the diffusion step. Smaller is less diffusion, larger is more
 	static constexpr float DIFFUSION_PENALTY = 0.01f; // penalty factor for diffusion, higher means more diffusion and more stability but also more damping of waves
 	
 	// eWave Parameters

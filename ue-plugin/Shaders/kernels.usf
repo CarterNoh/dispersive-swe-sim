@@ -309,9 +309,7 @@ void CalcDiffusionCoeffs(uint3 id : SV_DispatchThreadID) {
     int2 right = clamp(curr + int2(1, 0), int2(0, 0), maxGrid);
     int2 up    = clamp(curr + int2(0, 1), int2(0, 0), maxGrid);
 
-    // float max_ground = max(terrain[curr], terrain[right], terrain[up]);
-    // float min_water = min(H_elevIn[curr], H_elevIn[right], H_elevIn[up]); // or average of these 3
-    float h = clamp(H_elevIn[curr] - terrain[curr], 0.f, maxSafeDepth); // min_water - max_ground;
+    float h = clamp(H_elevIn[curr] - terrain[curr], 0.f, maxSafeDepth);
     float hr = clamp(H_elevIn[right] - terrain[right], 0.f, maxSafeDepth);
     float hu = clamp(H_elevIn[up] - terrain[up], 0.f, maxSafeDepth);
     hr = (h + hr) * 0.5f;
@@ -320,9 +318,10 @@ void CalcDiffusionCoeffs(uint3 id : SV_DispatchThreadID) {
     float grad_x = (H_elevIn[right] - H_elevIn[curr]) * invCellSize;
     float grad_y = (H_elevIn[up] - H_elevIn[curr]) * invCellSize;
     float penalty = exp(- diffusionPenalty * (grad_x * grad_x + grad_y * grad_y));
-    alpha_HOut[curr] = max(0.f, (h * h / diffusionTime) * penalty);
-    alpha_QOut_x[curr] = max(0.f, (hr * hr / diffusionTime) * penalty);
-    alpha_QOut_y[curr] = max(0.f, (hu * hu / diffusionTime) * penalty);
+    float denom = penalty / (2.f * diffusionTime);
+    alpha_HOut[curr] = max(0.f, h * h * denom);
+    alpha_QOut_x[curr] = max(0.f, hr * hr * denom);
+    alpha_QOut_y[curr] = max(0.f, hu * hu * denom);
 }
 
 [numthreads(16, 16, 1)]
@@ -351,7 +350,7 @@ void DiffusionStep(uint3 id : SV_DispatchThreadID) {
     float a_topleft  = 0.25f * (aH_curr + aH_up + alpha_HIn[left] + alpha_HIn[lu]);
 
     float invCellSizeSq = 1.0f / (cellSize * cellSize);
-    float factor = diffusionTime * invCellSizeSq;
+    float factor = 0.25 * invCellSizeSq; // should be diffusionTime, but it only seems stable with this, idk
 
     // --- Jacobi update for H_elev ---
     float C_H_E = factor * alpha_QIn_x[curr];
@@ -823,13 +822,7 @@ void IntegrateH(uint3 id : SV_DispatchThreadID) {
 
     float invCellSize = 1.0f / cellSize;
     float div_q = (q_x - q_xm + q_y - q_ym) * invCellSize;
-	// hOut[curr] = clamp(h_curr - timeStep * div_q, 0.f, maxSafeDepth);
-    
-    // // Selective 5-point Laplacian filter to reduce grid-scale ripples getting really large
-    // float laplacian_h = (h_right + h_left + h_up + h_down - 4.0f * h_curr);
-    // float gridFilter = 0.005f * laplacian_h;
-	// hOut[curr] = clamp(h_curr - timeStep * div_q + gridFilter, 0.f, maxSafeDepth);
-    // Wetting-Aware Laplacian: Only filter high-frequency ripples in fully wet cells
+    // Wetting-Aware Laplacian to reduce unstable grid-scale ripples
     bool isFullyWet = (h_curr > minWaterHeight && h_left > minWaterHeight && 
                     h_right > minWaterHeight && h_up > minWaterHeight && h_down > minWaterHeight);
     if (isFullyWet) {

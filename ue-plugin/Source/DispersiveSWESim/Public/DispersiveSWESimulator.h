@@ -72,7 +72,7 @@ public:
 
 	// Iterations of the diffusion step per frame
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SWE Simulation|Decomposition")
-	int32 DiffusionIterations = 16;
+	int32 DiffusionIterations = 32;
 
 	// Total virtual time of the diffusion step
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SWE Simulation|Decomposition")
