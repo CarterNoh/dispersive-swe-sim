@@ -108,6 +108,13 @@ void Sim::Init(GPU* gpu) {
 	constants.paddedGridSizeX = paddedSizeX;
 	constants.paddedGridSizeY = paddedSizeY;
 
+	// calculate max depth
+	float a = 182.80027907467993f;
+	float b = 0.045464332332812774f;
+	float c = -0.14717654147795045f;
+	constants.maxSafeDepth = (a * CELLSIZE * CELLSIZE + b * CELLSIZE + c) * 0.8f;
+	if (constants.maxSafeDepth < 0.0f) constants.maxSafeDepth = 0.0f;
+
 	gpu->UpdateConstants(constants);
 
 	// Create GPU Textures and Upload Initial Data
@@ -127,7 +134,7 @@ void Sim::Init(GPU* gpu) {
 		gpu->UploadToGPU(fields_arrays[i]->tex, temp, paddedSizeX, paddedSizeY, true, DEPTH_NUM);
 	}
 	gpu->CreateBuffer(&depth, depths.data(), DEPTH_NUM);
-	gpu->BindSRV(8, depth.srv);
+	gpu->BindSRV(12, depth.srv);
 	std::vector<float> terrain_temp = SetTerrain();
 	std::vector<float> h_temp = SetWater(terrain_temp);
 	std::vector<float> H_temp(GRIDSIZE_X * GRIDSIZE_Y, 0.0f);
@@ -198,7 +205,12 @@ void Sim::DecompositionStep() {
 		{H.srv, terrain.srv}, 
 		{alpha_H.uav, alpha_Q_x.uav, alpha_Q_y.uav});
 	
-	// Run diffusion to low-pass filter H and Q
+	// Copy initial fields to Orig fields before starting Jacobi loop
+	gpu->CopyField(&HOrig, &H);
+	gpu->CopyField(&QOrig_x, &Q_x);
+	gpu->CopyField(&QOrig_y, &Q_y);
+
+	// Run diffusion to low-pass filter H and Q using Jacobi solver
 	for (int j = 0; (j < DIFFUSION_ITERATIONS); j++) {
 		// Swap H and HPast pointers for ping-ponging
         std::swap(H, HPast); 
@@ -207,7 +219,7 @@ void Sim::DecompositionStep() {
 
 		// Diffusion step for H and Q
 		gpu->Dispatch(DiffusionStep, 
-			{terrain.srv, HPast.srv, QPast_x.srv, QPast_y.srv, alpha_H.srv, alpha_Q_x.srv, alpha_Q_y.srv}, 
+			{terrain.srv, HOrig.srv, QOrig_x.srv, QOrig_y.srv, HPast.srv, QPast_x.srv, QPast_y.srv, alpha_H.srv, alpha_Q_x.srv, alpha_Q_y.srv}, 
 			{H.uav, Q_x.uav, Q_y.uav});
 	}
 
@@ -226,8 +238,7 @@ void Sim::FFTStep() {
     // Propagate waves
 	gpu->DispatchPadded(PropagateWaves, 
 		{HPos.srv, HNeg.srv},
-		{HProp.uav, DelH_x.uav, DelH_y.uav, Disp_x.uav, Disp_y.uav}, DEPTH_NUM);
-	gpu->ExecuteFFT(HProp.uav,   paddedSizeX, paddedSizeY, true, DEPTH_NUM);
+		{DelH_x.uav, DelH_y.uav, Disp_x.uav, Disp_y.uav}, DEPTH_NUM);
 	gpu->ExecuteFFT(DelH_x.uav,  paddedSizeX, paddedSizeY, true, DEPTH_NUM);
 	gpu->ExecuteFFT(DelH_y.uav,  paddedSizeX, paddedSizeY, true, DEPTH_NUM);
 	gpu->ExecuteFFT(Disp_x.uav,  paddedSizeX, paddedSizeY, true, DEPTH_NUM);
@@ -235,8 +246,8 @@ void Sim::FFTStep() {
 
 	// Interpolate outputs between depths
 	gpu->Dispatch(Interp, 
-		{HProp.srv, DelH_x.srv, DelH_y.srv, Disp_x.srv, Disp_y.srv, hbar.srv}, 
-		{hFFT.uav, delH_x.uav, delH_y.uav, disp_x.uav, disp_y.uav});
+		{DelH_x.srv, DelH_y.srv, Disp_x.srv, Disp_y.srv, hbar.srv}, 
+		{delH_x.uav, delH_y.uav, disp_x.uav, disp_y.uav});
 }
 
 void Sim::eWaveStep() {

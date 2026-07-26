@@ -231,6 +231,12 @@ bool GPU::CreateGridTexture(GPUField* field, int width, int height, bool isCompl
     return true;
 }
 
+void GPU::CopyField(GPUField* dest, GPUField* src) {
+    if (dest && src && dest->tex && src->tex) {
+        context->CopyResource(dest->tex, src->tex);
+    }
+}
+
 bool GPU::UploadToGPU(ID3D11Texture2D* tex, const std::vector<float>& data, int width, int height, bool isComplex, int arraySize) {
     int floatsPerPixel = isComplex ? 2 : 1; // If complex, there are 2 floats per pixel.
     int rowPitch = width * sizeof(float) * floatsPerPixel; // byte size of a single row
@@ -466,8 +472,10 @@ void GPU::UpdateFFTConstants(const FFTConstants& constants) {
 }
 
 bool GPU::CompileFFTShaders(int sizeX, int sizeY) {
-    // if (!CompileComputeShader(L"shaders/fft.hlsl", "FFTKernel_1D", &fftShader))
-    //     return false;
+    if (sizeX > 2048 || sizeY > 2048) {
+        std::cerr << "ERROR: FFT size exceeds the maximum supported N/2 size limit (2048)." << std::endl;
+        return false;
+    }
 
     ID3DBlob* shaderBlob = nullptr;
     ID3DBlob* errorBlob = nullptr;
