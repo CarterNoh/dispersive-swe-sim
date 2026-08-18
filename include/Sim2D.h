@@ -42,6 +42,7 @@ public:
 	static constexpr float SLOPE_LIMIT = 1.f; 		// 
 	static constexpr float CFL_CONDITION = 0.25f;  // max allowed CFL condition for stability of SWE step, can be higher than overall CFL condition since diffusion and transport steps handle stability as well
 	static constexpr float GAMMA_TRANSPORT = 0.25f; // blending factor for transport step, lower means more damping of waves
+	static constexpr float LAPLACIAN_DAMPING = 0.075f; // damping factor for Laplacian smoothing to reduce spikes and unstable grid-scale ripples
 
     // FFT Parameters
     float time = 0.f;
@@ -126,11 +127,11 @@ private:
 	ID3D11ComputeShader** waveShaders[3] = {&PopulateSpectrum, &PropagateWaves, &Interp};
 	char* waveNames[3] = {"PopulateSpectrum", "PropagateWaves", "Interp"};
     // Constants
-	SimConstants constants = {time, GRIDSIZE_X, GRIDSIZE_Y, CELLSIZE, TIMESTEP, SPONGE_THICKNESS, MIN_WATER_HEIGHT, SURFACE_TENSION, DENSITY, // Sim Params
+	SimConstants constants = {time, GRIDSIZE_X, GRIDSIZE_Y, CELLSIZE, TIMESTEP, MIN_WATER_HEIGHT, SURFACE_TENSION, DENSITY, // Sim Params
 							  DIFFUSION_ITERATIONS, DIFFUSION_TIME, DIFFUSION_PENALTY, // Diffusion Params
-							  SLOPE_LIMIT, CFL_CONDITION, GAMMA_TRANSPORT, DEPTH_NUM, // SWE & eWave Params
+							  SLOPE_LIMIT, CFL_CONDITION, GAMMA_TRANSPORT, SPONGE_THICKNESS, LAPLACIAN_DAMPING, DEPTH_NUM, // SWE & eWave Params
 							  FETCH, WIND_SPEED, WIND_ANGLE, SWELL, SWELL_ANGLE, CHOPPINESS, // FFT Params
 							  FILTER_SMALL, FILTER_BIG, FILTER_WIDTH, FILTER_MIN, DEPTH_CUTOFF,
-							  0, 0, 0.0f, {0.0f, 0.0f}};    
+							  0, 0, 0.0f, {0.0f}};    
 	RenderConstants render_constants = {DirectX::XMMatrixIdentity(), (float)GRIDSIZE_X, (float)GRIDSIZE_Y, CELLSIZE};
 };

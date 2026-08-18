@@ -12,7 +12,6 @@ and the paper "Empirical Directional Wave Spectra for Computer Graphics".
 #define gridSizeY SimConstants.gridSizeY
 #define cellSize SimConstants.cellSize
 #define timeStep SimConstants.timeStep
-#define spongeThickness SimConstants.spongeThickness
 #define minWaterHeight SimConstants.minWaterHeight
 #define surfaceTension SimConstants.surfaceTension
 #define density SimConstants.density
@@ -22,6 +21,8 @@ and the paper "Empirical Directional Wave Spectra for Computer Graphics".
 #define slopeLimit SimConstants.slopeLimit
 #define cflCondition SimConstants.cflCondition
 #define gammaTransport SimConstants.gammaTransport
+#define spongeThickness SimConstants.spongeThickness
+#define laplacianDamping SimConstants.laplacianDamping
 #define depthNum SimConstants.depthNum
 #define fetch SimConstants.fetch
 #define windSpeed SimConstants.windSpeed

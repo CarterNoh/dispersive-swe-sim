@@ -7,7 +7,6 @@ cbuffer Constants : register(b0) {
     int gridSizeY; 
     float cellSize;
     float timeStep;
-    int spongeThickness;
     float minWaterHeight;
     float surfaceTension;
     float density;
@@ -19,6 +18,8 @@ cbuffer Constants : register(b0) {
     float slopeLimit;
     float cflCondition;
     float gammaTransport;
+    int spongeThickness;
+    float laplacianDamping;
     // eWave Params
     int depthNum;
     // FFT Wave Params
@@ -36,7 +37,7 @@ cbuffer Constants : register(b0) {
     int paddedGridSizeX;
     int paddedGridSizeY;
     float maxSafeDepth;
-    float simConstantPadding[2];
+    float simConstantPadding[1];
 };
 
 #define GRAVITY 9.80665
@@ -572,13 +573,12 @@ void IntegrateH(uint3 id : SV_DispatchThreadID) {
     float invCellSize = 1.0f / cellSize;
     float div_q = (q_x - q_xm + q_y - q_ym) * invCellSize;
 
-    // out0[curr] = clamp(h_curr - timeStep * div_q, 0.f, maxSafeDepth);
-    // Wetting-Aware Laplacian to reduce unstable grid-scale ripples
+    // Wetting-Aware Laplacian to reduce spikes and unstable grid-scale ripples
     bool isFullyWet = (h_curr > minWaterHeight && h_left > minWaterHeight && 
                     h_right > minWaterHeight && h_up > minWaterHeight && h_down > minWaterHeight);
     if (isFullyWet) {
         float laplacian_h = (h_right + h_left + h_up + h_down - 4.0f * h_curr);
-        out0[curr] = clamp(h_curr - timeStep * div_q + 0.01f * laplacian_h, 0.f, maxSafeDepth);
+        out0[curr] = clamp(h_curr - timeStep * div_q + laplacianDamping * laplacian_h, 0.f, maxSafeDepth);
     } else {
         out0[curr] = clamp(h_curr - timeStep * div_q, 0.f, maxSafeDepth);
     }

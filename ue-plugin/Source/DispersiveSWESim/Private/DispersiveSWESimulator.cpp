@@ -211,7 +211,6 @@ void UDispersiveSWESimulator::AssignConstants(FSimConstants& Constants) const
 	Constants.gridSizeY = GridSizeY;
 	Constants.cellSize = CellSize * 0.01f; // Convert cm to meters
 	Constants.timeStep = TimeStep;
-	Constants.spongeThickness = SpongeThickness;
 	Constants.minWaterHeight = MinWaterHeight * 0.01f; // Convert cm to meters
 	Constants.maxSafeDepth = CalculatedMaxSafeDepth;
 	Constants.surfaceTension = SurfaceTension;
@@ -222,6 +221,8 @@ void UDispersiveSWESimulator::AssignConstants(FSimConstants& Constants) const
 	Constants.slopeLimit = SlopeLimit;
 	Constants.cflCondition = CFLCondition;
 	Constants.gammaTransport = GammaTransport;
+	Constants.spongeThickness = SpongeThickness;
+	Constants.laplacianDamping = LaplacianDamping;
 	Constants.depthNum = DepthLevels.Num();
 	Constants.fetch = Fetch;
 	Constants.windSpeed = WindSpeed;

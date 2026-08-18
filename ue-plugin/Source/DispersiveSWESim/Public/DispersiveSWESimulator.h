@@ -41,10 +41,6 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SWE Simulation")
 	float CFLCondition = 0.25f;
 
-	// Sponge Layer Thickness (for wave absorption at edges)
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SWE Simulation")
-	int32 SpongeThickness = 8;
-
 	// Minimum water height in centimeters for terrain boundary
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SWE Simulation")
 	float MinWaterHeight = 0.1f;
@@ -89,6 +85,14 @@ public:
 	// Advection damping coefficient
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SWE Simulation|SWE")
 	float GammaTransport = 0.25f;
+
+	// Sponge Layer Thickness (for wave absorption at edges)
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SWE Simulation")
+	int32 SpongeThickness = 8;
+
+	// Damping factor for Laplacian smoothing to reduce spikes and unstable grid-scale ripples
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SWE Simulation|SWE")
+	float LaplacianDamping = 0.075f;
 
 	// Fetch in kilometers for JONSWAP wave spectrum
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SWE Simulation|Wind Wave")
