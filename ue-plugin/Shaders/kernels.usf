@@ -656,9 +656,9 @@ void CalcSWE(uint3 id : SV_DispatchThreadID) {
 
     // Calculate FFT wave forcing
     float invDepthCutoff = 1.0f / depthCutoff;
-    float depth_weight = SafeTanh(hbarIn[curr] * invDepthCutoff); // scaling term to reduce FFT waves in shallow water
-    gradh_x += depth_weight * delH_x[curr]; // FFT wave pressure gradient 
-    gradh_y += depth_weight * delH_y[curr];
+    float depthWeight = SafeTanh(hbarIn[curr] * invDepthCutoff); // scaling term to reduce FFT waves in shallow water
+    gradh_x += depthWeight * delH_x[curr]; // FFT wave pressure gradient 
+    gradh_y += depthWeight * delH_y[curr];
  
     // Limit steep waves: when wave gets too steep, it "crashes"
     gradh_x = clamp(gradh_x, -slopeLimit, slopeLimit);

@@ -52,16 +52,7 @@ class FDispersiveSWEComputeShader : public FGlobalShader
 public:
 	FDispersiveSWEComputeShader() {}
 	FDispersiveSWEComputeShader(const ShaderMetaType::CompiledShaderInitializerType& Initializer)
-		: FGlobalShader(Initializer)
-	{}
-
-	// Compiler flags to disable optimizations: Idea was to improve stability, but didn't have much effect. 
-	// static void ModifyCompilationEnvironment(const FGlobalShaderPermutationParameters& Parameters, FShaderCompilerEnvironment& OutEnvironment)
-	// {
-	// 	FGlobalShader::ModifyCompilationEnvironment(Parameters, OutEnvironment);
-	// 	OutEnvironment.CompilerFlags.Add(CFLAG_NoFastMath); // Disables fast-math optimizations (/Gis)
-	// 	OutEnvironment.CompilerFlags.Add(CFLAG_Debug);      // Disables compiler optimizations (/Od)
-	// }
+		: FGlobalShader(Initializer) {}
 };
 
 // --- Shaders from kernels.usf ---
@@ -191,7 +182,7 @@ public:
 		SHADER_PARAMETER_RDG_TEXTURE_SRV(Texture2D<float>, htildeIn)
 		SHADER_PARAMETER_RDG_TEXTURE_SRV(Texture2D<float>, qtildeIn_x)
 		SHADER_PARAMETER_RDG_TEXTURE_SRV(Texture2D<float>, qtildeIn_y)
-		SHADER_PARAMETER_RDG_TEXTURE_SRV(Texture2D<float>, htildeOldCopy)   // htildeOld read-only copy (previous frame)
+		SHADER_PARAMETER_RDG_TEXTURE_SRV(Texture2D<float>, htildeOldCopy)
 		SHADER_PARAMETER_RDG_TEXTURE_UAV(RWTexture2D<float>, htildeOldOut)
 		SHADER_PARAMETER_RDG_TEXTURE_UAV(RWTexture2D<float2>, hHat)
 		SHADER_PARAMETER_RDG_TEXTURE_UAV(RWTexture2D<float2>, qHat_x)
@@ -470,9 +461,6 @@ public:
 		FPermutationDomain PermutationVector(Parameters.PermutationId);
 		OutEnvironment.SetDefine(TEXT("FFT_SIZE"), PermutationVector.Get<FFFTSizeDim>());
 		OutEnvironment.SetDefine(TEXT("IS_ARRAY"), PermutationVector.Get<FIsArrayDim>() ? 1 : 0);
-#if WITH_EDITOR
-		OutEnvironment.CompilerFlags.Add(CFLAG_AllowTypedUAVLoads);
-#endif
 	}
 };
 

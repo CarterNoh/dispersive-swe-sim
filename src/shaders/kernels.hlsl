@@ -386,7 +386,7 @@ void CalcSWE(uint3 id : SV_DispatchThreadID) {
 
     // Compute dux_dt and duy_dt 
     float invCellSize = 1.0f / cellSize;
-    float invH_x = h_x_p05 / (h_x_p05 * h_x_p05 + minWaterHeight);
+    float invH_x = h_x_p05 / (h_x_p05 * h_x_p05 + minWaterHeight); // adding minWaterHeight to avoid division by zero
     float invH_y = h_y_p05 / (h_y_p05 * h_y_p05 + minWaterHeight);
     float dux_dt = (h_x_p05 <= minWaterHeight) ? 0.f : (- (invCellSize * invH_x) * ((q_x_1 * u_x_1 - q_x_0 * u_x_0) - in0[curr] * (q_x_1 - q_x_0)));
     float duy_dt = (h_y_p05 <= minWaterHeight) ? 0.f : (- (invCellSize * invH_y) * ((q_y_1 * u_y_1 - q_y_0 * u_y_0) - in1[curr] * (q_y_1 - q_y_0)));
@@ -397,9 +397,9 @@ void CalcSWE(uint3 id : SV_DispatchThreadID) {
 
     // Calculate FFT wave forcing
     float invDepthCutoff = 1.0f / depthCutoff;
-    float depth_weight = SafeTanh(in2[curr] * invDepthCutoff); // scaling term to reduce FFT waves in shallow water
-    gradh_x += depth_weight * in4[curr]; // FFT wave pressure gradient 
-    gradh_y += depth_weight * in5[curr];
+    float depthWeight = SafeTanh(in2[curr] * invDepthCutoff); // scaling term to reduce FFT waves in shallow water
+    gradh_x += depthWeight * in4[curr]; // FFT wave pressure gradient 
+    gradh_y += depthWeight * in5[curr];
 
     // Limit steep waves: When wave gets too steep, it "crashes"
     gradh_x = clamp(gradh_x, -slopeLimit, slopeLimit);
