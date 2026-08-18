@@ -174,34 +174,8 @@ float LoadClamped(Texture2D<float> tex, int2 coord) {
     return tex[uint2(x, y)];
 }
 
-float SolveJacobi(float u_orig, float u_E, float u_W, float u_N, float u_S, float C_E, float C_W, float C_N, float C_S) {
-    return (u_orig + C_E * u_E + C_W * u_W + C_N * u_N + C_S * u_S) / (1.0f + C_E + C_W + C_N + C_S);
-}
-
-float CalcJacobiDiffusion(Texture2D<float> f_orig, Texture2D<float> f_past, Texture2D<float> a, uint2 curr, float factor) {
-    int2 id = int2(curr);
-
-    float f_orig_val = f_orig[curr];
-    float f_curr  = f_past[curr];
-    float f_right = LoadClamped(f_past, id + int2(1, 0));
-    float f_left  = LoadClamped(f_past, id + int2(-1, 0));
-    float f_up    = LoadClamped(f_past, id + int2(0, 1));
-    float f_down  = LoadClamped(f_past, id + int2(0, -1));
-
-    float a_curr = a[curr];
-    float a_right = LoadClamped(a, id + int2(1, 0));
-    float a_left  = LoadClamped(a, id + int2(-1, 0));
-    float a_up    = LoadClamped(a, id + int2(0, 1));
-    float a_down  = LoadClamped(a, id + int2(0, -1));
-    
-    // Harmonic mean for face diffusion coefficients
-    float eps = 1e-6f;
-    float a_east  = (2.0f * a_curr * a_right) / (a_curr + a_right + eps);
-    float a_west  = (2.0f * a_curr * a_left)  / (a_curr + a_left  + eps);
-    float a_north = (2.0f * a_curr * a_up)    / (a_curr + a_up    + eps);
-    float a_south = (2.0f * a_curr * a_down)  / (a_curr + a_down  + eps);
-
-    return SolveJacobi(f_orig_val, f_right, f_left, f_up, f_down, factor * a_east, factor * a_west, factor * a_north, factor * a_south);
+float SolveJacobi(float u_orig, float sigma, float u_E, float u_W, float u_N, float u_S, float C_E, float C_W, float C_N, float C_S) {
+    return (u_orig + sigma * (C_E * u_E + C_W * u_W + C_N * u_N + C_S * u_S)) / (1.0f + sigma * (C_E + C_W + C_N + C_S));
 }
 
 float SpongeDamping(uint2 id, bool isYDir = false) {
@@ -271,14 +245,32 @@ void DiffusionStep(uint3 id : SV_DispatchThreadID) {
     // Outputs: out0 = H, out1 = Q_x, out2 = Q_y
     if (id.x >= (uint)(gridSizeX) || id.y >= (uint)(gridSizeY)) return;
 
-    float invCellSizeSq = 1.0f / (cellSize * cellSize);
-    // float factor = diffusionTime * invCellSizeSq;
-    float factor = 0.25 * invCellSizeSq; // required for stability in Unreal, won't work otherwise, not sure why
+    int2 curr = int2(id.xy);
+    int2 maxGrid = int2(gridSizeX - 1, gridSizeY - 1);
+    int2 right = clamp(curr + int2(1, 0), int2(0, 0), maxGrid);
+    int2 left  = clamp(curr + int2(-1, 0), int2(0, 0), maxGrid);
+    int2 up    = clamp(curr + int2(0, 1), int2(0, 0), maxGrid);
+    int2 down  = clamp(curr + int2(0, -1), int2(0, 0), maxGrid);
+    int2 ru    = clamp(curr + int2(1, 1), int2(0, 0), maxGrid);
+    int2 rd    = clamp(curr + int2(1, -1), int2(0, 0), maxGrid);
+    int2 lu    = clamp(curr + int2(-1, 1), int2(0, 0), maxGrid);
 
-    float newH = CalcJacobiDiffusion(in1, in4, in7, id.xy, factor);
-    out0[id.xy] = max(in0[id.xy], newH);
-    out1[id.xy] = CalcJacobiDiffusion(in2, in5, in8, id.xy, factor);
-    out2[id.xy] = CalcJacobiDiffusion(in3, in6, in9, id.xy, factor);
+    float aH_curr  = in7[curr];
+    float aH_right = in7[right];
+    float aH_left  = in7[left];
+    float aH_up    = in7[up];
+    float aH_down  = in7[down];
+    float a_topright = 0.25f * (aH_curr + aH_up   + aH_right + in7[ru]);
+    float a_botright = 0.25f * (aH_curr + aH_down + aH_right + in7[rd]);
+    float a_topleft  = 0.25f * (aH_curr + aH_up   + aH_left  + in7[lu]);
+
+    float invCellSizeSq = 1.0f / (cellSize * cellSize);
+    float factor = 0.25 * invCellSizeSq; // should be diffusionTime, but it only seems stable with this, idk
+    
+    float newH = SolveJacobi(in1[curr], factor, in4[right], in4[left], in4[up], in4[down], in8[curr], in8[left], in9[curr], in9[down]);
+    out0[curr] = max(in0[curr], newH);
+    out1[curr] = SolveJacobi(in2[curr], factor, in5[right], in5[left], in5[up], in5[down], aH_right,   aH_curr,   a_topright, a_botright);
+    out2[curr] = SolveJacobi(in3[curr], factor, in6[right], in6[left], in6[up], in6[down], a_topright, a_topleft, aH_up,      aH_curr);
 }
 
 [numthreads(16, 16, 1)]

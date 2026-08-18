@@ -236,10 +236,10 @@ float LoadClamped(Texture2D<float> tex, int2 coord) {
     return tex[uint2(x, y)];
 }
 
-float SolveJacobi(float u_orig, float u_E, float u_W, float u_N, float u_S, float C_E, float C_W, float C_N, float C_S) {
+float SolveJacobi(float u_orig, float sigma, float u_E, float u_W, float u_N, float u_S, float C_E, float C_W, float C_N, float C_S) {
     // u is the quantity being diffused, C is the diffusion coefficient
     // E, W, N, S are cardinal directions - neighbor cells
-    return (u_orig + C_E * u_E + C_W * u_W + C_N * u_N + C_S * u_S) / (1.0f + C_E + C_W + C_N + C_S);
+    return (u_orig + sigma * (C_E * u_E + C_W * u_W + C_N * u_N + C_S * u_S)) / (1.0f + sigma * (C_E + C_W + C_N + C_S));
 }
 
 float SpongeDamping(uint2 id, bool isYDir = false) {
@@ -343,40 +343,22 @@ void DiffusionStep(uint3 id : SV_DispatchThreadID) {
     int2 rd    = clamp(curr + int2(1, -1), int2(0, 0), maxGrid);
     int2 lu    = clamp(curr + int2(-1, 1), int2(0, 0), maxGrid);
 
-    float aH_curr = alpha_HIn[curr];
+    float aH_curr  = alpha_HIn[curr];
     float aH_right = alpha_HIn[right];
+    float aH_left  = alpha_HIn[left];
     float aH_up    = alpha_HIn[up];
-    float a_topright = 0.25f * (aH_curr + aH_up + aH_right + alpha_HIn[ru]);
-    float a_botright = 0.25f * (aH_curr + alpha_HIn[down] + aH_right + alpha_HIn[rd]);
-    float a_topleft  = 0.25f * (aH_curr + aH_up + alpha_HIn[left] + alpha_HIn[lu]);
+    float aH_down  = alpha_HIn[down];
+    float a_topright = 0.25f * (aH_curr + aH_up   + aH_right + alpha_HIn[ru]);
+    float a_botright = 0.25f * (aH_curr + aH_down + aH_right + alpha_HIn[rd]);
+    float a_topleft  = 0.25f * (aH_curr + aH_up   + aH_left  + alpha_HIn[lu]);
 
     float invCellSizeSq = 1.0f / (cellSize * cellSize);
     float factor = 0.25 * invCellSizeSq; // should be diffusionTime, but it only seems stable with this, idk
 
-    // --- Jacobi update for H_elev ---
-    float C_H_E = factor * alpha_QIn_x[curr];
-    float C_H_W = factor * alpha_QIn_x[left];
-    float C_H_N = factor * alpha_QIn_y[curr];
-    float C_H_S = factor * alpha_QIn_y[down];
-
-    float newH = SolveJacobi(H_elevOrig[curr], H_elevPast[right], H_elevPast[left], H_elevPast[up], H_elevPast[down], C_H_E, C_H_W, C_H_N, C_H_S);
-    H_elevOut[curr] = max(terrain[curr], newH);
-
-    // --- Jacobi update for Q_bulk_x ---
-    float C_Qx_E = factor * aH_right;
-    float C_Qx_W = factor * aH_curr;
-    float C_Qx_N = factor * a_topright;
-    float C_Qx_S = factor * a_botright;
-
-    Q_bulkOut_x[curr] = SolveJacobi(Q_bulkOrig_x[curr], Q_bulkPast_x[right], Q_bulkPast_x[left], Q_bulkPast_x[up], Q_bulkPast_x[down], C_Qx_E, C_Qx_W, C_Qx_N, C_Qx_S);
-
-    // --- Jacobi update for Q_bulk_y ---
-    float C_Qy_E = factor * a_topright;
-    float C_Qy_W = factor * a_topleft;
-    float C_Qy_N = factor * aH_up;
-    float C_Qy_S = factor * aH_curr;
-
-    Q_bulkOut_y[curr] = SolveJacobi(Q_bulkOrig_y[curr], Q_bulkPast_y[right], Q_bulkPast_y[left], Q_bulkPast_y[up], Q_bulkPast_y[down], C_Qy_E, C_Qy_W, C_Qy_N, C_Qy_S);
+    float newH        = SolveJacobi(H_elevOrig[curr],   factor, H_elevPast[right],   H_elevPast[left],   H_elevPast[up],   H_elevPast[down],   alpha_QIn_x[curr], alpha_QIn_x[left], alpha_QIn_y[curr], alpha_QIn_y[down]);
+    H_elevOut[curr]   = max(terrain[curr], newH);
+    Q_bulkOut_x[curr] = SolveJacobi(Q_bulkOrig_x[curr], factor, Q_bulkPast_x[right], Q_bulkPast_x[left], Q_bulkPast_x[up], Q_bulkPast_x[down], aH_right,   aH_curr,   a_topright, a_botright);
+    Q_bulkOut_y[curr] = SolveJacobi(Q_bulkOrig_y[curr], factor, Q_bulkPast_y[right], Q_bulkPast_y[left], Q_bulkPast_y[up], Q_bulkPast_y[down], a_topright, a_topleft, aH_up,      aH_curr);
 }
 
 [numthreads(16, 16, 1)]
