@@ -92,7 +92,7 @@ public:
 
 	// Damping factor for Laplacian smoothing to reduce spikes and unstable grid-scale ripples
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SWE Simulation|SWE")
-	float LaplacianDamping = 0.075f;
+	float LaplacianDamping = 0.08f;
 
 	// Fetch in kilometers for JONSWAP wave spectrum
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SWE Simulation|Wind Wave")

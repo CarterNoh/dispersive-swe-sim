@@ -17,7 +17,7 @@
 	"SlopeLimit": 1.0,
 	"GammaTransport": 0.25,
 	"SpongeThickness": 8,
-	"LaplacianDamping": 0.075,
+	"LaplacianDamping": 0.08,
 	"Fetch": 200.0,
 	"WindSpeed": 14.0,
 	"WindAngle": 135.0,

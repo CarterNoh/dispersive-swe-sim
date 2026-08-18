@@ -42,7 +42,7 @@ public:
 	static constexpr float SLOPE_LIMIT = 1.f; 		// 
 	static constexpr float CFL_CONDITION = 0.25f;  // max allowed CFL condition for stability of SWE step, can be higher than overall CFL condition since diffusion and transport steps handle stability as well
 	static constexpr float GAMMA_TRANSPORT = 0.25f; // blending factor for transport step, lower means more damping of waves
-	static constexpr float LAPLACIAN_DAMPING = 0.075f; // damping factor for Laplacian smoothing to reduce spikes and unstable grid-scale ripples
+	static constexpr float LAPLACIAN_DAMPING = 0.08f; // damping factor for Laplacian smoothing to reduce spikes and unstable grid-scale ripples
 
     // FFT Parameters
     float time = 0.f;
