@@ -272,7 +272,7 @@ void DiffusionStep(uint3 id : SV_DispatchThreadID) {
 
     float invCellSizeSq = 1.0f / (cellSize * cellSize);
     // float factor = diffusionTime * invCellSizeSq;
-    float factor = 0.25 * inCellSizeSq; // required for stability in Unreal, won't work otherwise, not sure why
+    float factor = 0.25 * invCellSizeSq; // required for stability in Unreal, won't work otherwise, not sure why
 
     float newH = CalcJacobiDiffusion(in1, in4, in7, id.xy, factor);
     out0[id.xy] = max(in0[id.xy], newH);
@@ -390,21 +390,24 @@ void CalcSWE(uint3 id : SV_DispatchThreadID) {
     float dux_dt = (h_x_p05 <= minWaterHeight) ? 0.f : (- (invCellSize * invH_x) * ((q_x_1 * u_x_1 - q_x_0 * u_x_0) - in0[curr] * (q_x_1 - q_x_0)));
     float duy_dt = (h_y_p05 <= minWaterHeight) ? 0.f : (- (invCellSize * invH_y) * ((q_y_1 * u_y_1 - q_y_0 * u_y_0) - in1[curr] * (q_y_1 - q_y_0)));
     
-    // Incorporate gravity force and bottom friction and limit steep waves
+    // Calculate wave gradient
     float gradh_x = (in3[right] - in3[curr]) * invCellSize;
     float gradh_y = (in3[up] - in3[curr]) * invCellSize;
-    if (abs(gradh_x) > slopeLimit) gradh_x = sign(gradh_x) * slopeLimit; // When wave gets too steep, it "crashes"
-    if (abs(gradh_y) > slopeLimit) gradh_y = sign(gradh_y) * slopeLimit;
-
-    float bottomFriction = 0.05f; // subtle bottom drag to allow water to settle to rest
-    dux_dt -= GRAVITY * gradh_x + bottomFriction * in0[curr];
-    duy_dt -= GRAVITY * gradh_y + bottomFriction * in1[curr];
 
     // Calculate FFT wave forcing
     float invDepthCutoff = 1.0f / depthCutoff;
     float depth_weight = SafeTanh(in2[curr] * invDepthCutoff); // scaling term to reduce FFT waves in shallow water
-    dux_dt += depth_weight * GRAVITY * in4[curr]; // FFT wave pressure gradient 
-    duy_dt += depth_weight * GRAVITY * in5[curr];
+    gradh_x += depth_weight * in4[curr]; // FFT wave pressure gradient 
+    gradh_y += depth_weight * in5[curr];
+
+    // Limit steep waves: When wave gets too steep, it "crashes"
+    gradh_x = clamp(gradh_x, -slopeLimit, slopeLimit);
+    gradh_y = clamp(gradh_y, -slopeLimit, slopeLimit);
+
+    // Incorporate gravity force and bottom friction
+    float bottomFriction = 0.05f; // subtle bottom drag to allow water to settle to rest
+    dux_dt -= GRAVITY * gradh_x + bottomFriction * in0[curr];
+    duy_dt -= GRAVITY * gradh_y + bottomFriction * in1[curr];
 
     // Integrate u, calculate q
     float cflFactor = cflCondition * cellSize / timeStep;
@@ -568,7 +571,18 @@ void IntegrateH(uint3 id : SV_DispatchThreadID) {
 
     float invCellSize = 1.0f / cellSize;
     float div_q = (q_x - q_xm + q_y - q_ym) * invCellSize;
-	out0[curr] = clamp(h_curr - timeStep * div_q, 0.f, maxSafeDepth);
+
+    // out0[curr] = clamp(h_curr - timeStep * div_q, 0.f, maxSafeDepth);
+    // Wetting-Aware Laplacian to reduce unstable grid-scale ripples
+    bool isFullyWet = (h_curr > minWaterHeight && h_left > minWaterHeight && 
+                    h_right > minWaterHeight && h_up > minWaterHeight && h_down > minWaterHeight);
+    if (isFullyWet) {
+        float laplacian_h = (h_right + h_left + h_up + h_down - 4.0f * h_curr);
+        out0[curr] = clamp(h_curr - timeStep * div_q + 0.01f * laplacian_h, 0.f, maxSafeDepth);
+    } else {
+        out0[curr] = clamp(h_curr - timeStep * div_q, 0.f, maxSafeDepth);
+    }
+
     out1[curr] = q_x - in2[curr]; // qbar + qtilde, removing qAdvect
     out2[curr] = q_y - in5[curr];
     out1[curr] = LimitFlowRate(out1[curr], h_curr, t_curr, h_right, t_right, cflFactor);
