@@ -383,22 +383,25 @@ void CalcSWE(uint3 id : SV_DispatchThreadID) {
     float invH_y = h_y_p05 / (h_y_p05 * h_y_p05 + minWaterHeight);
     float dux_dt = (h_x_p05 <= minWaterHeight) ? 0.f : (- (invCellSize * invH_x) * ((q_x_1 * u_x_1 - q_x_0 * u_x_0) - in0[curr] * (q_x_1 - q_x_0)));
     float duy_dt = (h_y_p05 <= minWaterHeight) ? 0.f : (- (invCellSize * invH_y) * ((q_y_1 * u_y_1 - q_y_0 * u_y_0) - in1[curr] * (q_y_1 - q_y_0)));
-    
-    // Incorporate gravity force and bottom friction and limit steep waves
+
+    // Calculate wave gradient
     float gradh_x = (in3[right] - in3[curr]) * invCellSize;
     float gradh_y = (in3[up] - in3[curr]) * invCellSize;
-    if (abs(gradh_x) > slopeLimit) gradh_x = sign(gradh_x) * slopeLimit; // When wave gets too steep, it "crashes"
-    if (abs(gradh_y) > slopeLimit) gradh_y = sign(gradh_y) * slopeLimit;
-
-    float bottomFriction = 0.05f; // subtle bottom drag to allow water to settle to rest
-    dux_dt -= GRAVITY * gradh_x + bottomFriction * in0[curr];
-    duy_dt -= GRAVITY * gradh_y + bottomFriction * in1[curr];
 
     // Calculate FFT wave forcing
     float invDepthCutoff = 1.0f / depthCutoff;
     float depth_weight = SafeTanh(in2[curr] * invDepthCutoff); // scaling term to reduce FFT waves in shallow water
-    dux_dt += depth_weight * GRAVITY * in4[curr]; // FFT wave pressure gradient 
-    duy_dt += depth_weight * GRAVITY * in5[curr];
+    gradh_x += depth_weight * in4[curr]; // FFT wave pressure gradient 
+    gradh_y += depth_weight * in5[curr];
+ 
+    // Limit steep waves: when wave gets too steep, it "crashes"
+    gradh_x = clamp(gradh_x, -slopeLimit, slopeLimit);
+    gradh_y = clamp(gradh_y, -slopeLimit, slopeLimit);
+
+    // Incorporate gravity force and bottom friction 
+    float bottomFriction = 0.05f; // subtle bottom drag to allow water to settle to rest
+    dux_dt -= GRAVITY * gradh_x + bottomFriction * in0[curr]; // When wave gets too steep, it "crashes"
+    duy_dt -= GRAVITY * gradh_y + bottomFriction * in1[curr];
 
     // Integrate u, calculate q
     float cflFactor = cflCondition * cellSize / timeStep;
