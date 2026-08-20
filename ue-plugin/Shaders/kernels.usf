@@ -226,35 +226,6 @@ float SafeTanh(float x) {
     else                return tanh(x);
 }
 
-float CalcDiffusion(Texture2D<float> f, Texture2D<float> a, uint2 curr, float invCellSizeSq) {
-    int2 id = int2(curr);
-
-    float f_curr = f[curr];
-    float f_right = LoadClamped(f, id + int2(1, 0));
-    float f_left  = LoadClamped(f, id + int2(-1, 0));
-    float f_up    = LoadClamped(f, id + int2(0, 1));
-    float f_down  = LoadClamped(f, id + int2(0, -1));
-
-    float a_curr = a[curr];
-    float a_right = LoadClamped(a, id + int2(1, 0));
-    float a_left  = LoadClamped(a, id + int2(-1, 0));
-    float a_up    = LoadClamped(a, id + int2(0, 1));
-    float a_down  = LoadClamped(a, id + int2(0, -1));
-    
-    // Harmonic mean for face diffusion coefficients (prevents deep water alpha from over-diffusing into shallow bathymetry)
-    float eps = 1e-6f;
-    float a_east  = (2.0f * a_curr * a_right) / (a_curr + a_right + eps);
-    float a_west  = (2.0f * a_curr * a_left)  / (a_curr + a_left  + eps);
-    float a_north = (2.0f * a_curr * a_up)    / (a_curr + a_up    + eps);
-    float a_south = (2.0f * a_curr * a_down)  / (a_curr + a_down  + eps);
-
-    float dF_x = a_east * (f_right - f_curr) - a_west * (f_curr - f_left);
-    float dF_y = a_north * (f_up - f_curr) - a_south * (f_curr - f_down);
-    float dFdX = (dF_x + dF_y) * invCellSizeSq;
-    
-    return dFdX;
-}
-
 float SpongeDamping(uint2 id, bool isYDir = false) {
     // If the cell is in the interior (outside the sponge boundary), return 1.0 immediately
     if (id.x >= (uint)spongeThickness && id.x < (uint)(gridSizeX - spongeThickness) &&
@@ -388,14 +359,9 @@ void DiffusionStep(uint3 id : SV_DispatchThreadID) {
 
     // Calculate Diffusion
     float newH = H_curr + deltaT * dHdX;
-    H_Out[curr] = max(terrain[curr], newH);
+    H_Out[curr] = clamp(terrain[curr], 0.0f, newH);
     Q_Out_x[curr] = Q_Past_x[curr] + deltaT * dQxdX;
     Q_Out_y[curr] = Q_Past_y[curr] + deltaT * dQydX;
-
-    // float newH = H_Past[id.xy] + deltaT * CalcDiffusion(H_Past, alpha_HIn, id.xy, invCellSizeSq);
-    // H_Out[id.xy] = max(terrain[id.xy], newH);
-    // Q_Out_x[id.xy] = Q_Past_x[id.xy] + deltaT * CalcDiffusion(Q_Past_x, alpha_QIn_x, id.xy, invCellSizeSq);
-    // Q_Out_y[id.xy] = Q_Past_y[id.xy] + deltaT * CalcDiffusion(Q_Past_y, alpha_QIn_y, id.xy, invCellSizeSq);
 }
 
 [numthreads(16, 16, 1)]
@@ -436,8 +402,6 @@ void DecomposeFields(uint3 id : SV_DispatchThreadID) {
 }
 
 /////////// eWave ///////////
-// These all have slight variants on the names so HLSL doesn't get mad for redefining a name used before
-
 [numthreads(16, 16, 1)]
 void TransferToFFT(uint3 id : SV_DispatchThreadID) {
     // Inputs: htildeIn, qtildeIn_x, qtildeIn_y, htildeOldCopy (read-only copy)
