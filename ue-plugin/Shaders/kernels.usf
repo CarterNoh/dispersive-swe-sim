@@ -56,7 +56,6 @@ Texture2D<float>   Q_Past_x;
 Texture2D<float>   Q_Past_y;
 Texture2D<float>   alpha_QIn_x;
 Texture2D<float>   alpha_QIn_y;
-Texture2D<float>   terrainBulk;
 Texture2D<float>   htildeIn;
 Texture2D<float>   qtildeIn_x;
 Texture2D<float>   qtildeIn_y;

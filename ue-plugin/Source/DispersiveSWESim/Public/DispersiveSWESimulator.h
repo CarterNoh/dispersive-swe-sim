@@ -228,7 +228,6 @@ private:
 
 	// Persistent graphics buffers for simulation states
 	TRefCountPtr<IPooledRenderTarget> TexTerrain;
-	TRefCountPtr<IPooledRenderTarget> TexTerrainBulk;
 	TRefCountPtr<IPooledRenderTarget> TexH;
 	TRefCountPtr<IPooledRenderTarget> TexQ_x;
 	TRefCountPtr<IPooledRenderTarget> TexQ_y;
