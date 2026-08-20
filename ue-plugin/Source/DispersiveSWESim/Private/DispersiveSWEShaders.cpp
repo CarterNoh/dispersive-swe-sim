@@ -7,7 +7,6 @@ IMPLEMENT_GLOBAL_SHADER(FInitializeWaterCS,     "/Plugin/DispersiveSWESim/kernel
 IMPLEMENT_GLOBAL_SHADER(FInitDecompCS,          "/Plugin/DispersiveSWESim/kernels.usf",  "InitDecomp",             SF_Compute);
 IMPLEMENT_GLOBAL_SHADER(FRecomputeHCS,          "/Plugin/DispersiveSWESim/kernels.usf",  "RecomputeH",             SF_Compute);
 IMPLEMENT_GLOBAL_SHADER(FCalcDiffusionCoeffsCS, "/Plugin/DispersiveSWESim/kernels.usf",  "CalcDiffusionCoeffs",    SF_Compute);
-IMPLEMENT_GLOBAL_SHADER(FSmoothDiffusionCoeffsCS, "/Plugin/DispersiveSWESim/kernels.usf", "SmoothDiffusionCoeffs", SF_Compute);
 IMPLEMENT_GLOBAL_SHADER(FDiffusionStepCS,       "/Plugin/DispersiveSWESim/kernels.usf",  "DiffusionStep",          SF_Compute);
 IMPLEMENT_GLOBAL_SHADER(FDecomposeFieldsCS,     "/Plugin/DispersiveSWESim/kernels.usf",  "DecomposeFields",        SF_Compute);
 IMPLEMENT_GLOBAL_SHADER(FCalcUbarCS,            "/Plugin/DispersiveSWESim/kernels.usf",  "CalcUbar",               SF_Compute);

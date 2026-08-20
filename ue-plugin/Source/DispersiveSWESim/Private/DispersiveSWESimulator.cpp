@@ -553,18 +553,6 @@ void UDispersiveSWESimulator::ExecuteSimulation_RenderThread(
 		Params->alpha_QOut_y = GraphBuilder.CreateUAV(alpha_Qy);
 
 		FComputeShaderUtils::AddPass(GraphBuilder, RDG_EVENT_NAME("SWE_Decomp_Coeffs"), ERDGPassFlags::Compute, Shader, Params, GridGroups);
-
-		// TShaderMapRef<FSmoothDiffusionCoeffsCS> SmoothShader(ShaderMap);
-		// FSmoothDiffusionCoeffsCS::FParameters* SmoothParams = GraphBuilder.AllocParameters<FSmoothDiffusionCoeffsCS::FParameters>();
-		// SmoothParams->SimConstants = ConstantBuffer;
-		// SmoothParams->alpha_HIn = GraphBuilder.CreateSRV(alpha_H_Raw);
-		// SmoothParams->alpha_QIn_x = GraphBuilder.CreateSRV(alpha_Qx_Raw);
-		// SmoothParams->alpha_QIn_y = GraphBuilder.CreateSRV(alpha_Qy_Raw);
-		// SmoothParams->alpha_HOut = GraphBuilder.CreateUAV(alpha_H);
-		// SmoothParams->alpha_QOut_x = GraphBuilder.CreateUAV(alpha_Qx);
-		// SmoothParams->alpha_QOut_y = GraphBuilder.CreateUAV(alpha_Qy);
-
-		// FComputeShaderUtils::AddPass(GraphBuilder, RDG_EVENT_NAME("SWE_Decomp_SmoothCoeffs"), ERDGPassFlags::Compute, SmoothShader, SmoothParams, GridGroups);
 	}
 
 	// Diffusion loop - low pass filter H and Q

@@ -387,7 +387,7 @@ void DiffusionStep(uint3 id : SV_DispatchThreadID) {
     float dQydX = (dQy_x + dQy_y) * invCellSizeSq;
 
     // Calculate Diffusion
-    float newH = H_Past[curr] + deltaT * dHdX;
+    float newH = H_curr + deltaT * dHdX;
     H_Out[curr] = max(terrain[curr], newH);
     Q_Out_x[curr] = Q_Past_x[curr] + deltaT * dQxdX;
     Q_Out_y[curr] = Q_Past_y[curr] + deltaT * dQydX;
@@ -396,18 +396,6 @@ void DiffusionStep(uint3 id : SV_DispatchThreadID) {
     // H_Out[id.xy] = max(terrain[id.xy], newH);
     // Q_Out_x[id.xy] = Q_Past_x[id.xy] + deltaT * CalcDiffusion(Q_Past_x, alpha_QIn_x, id.xy, invCellSizeSq);
     // Q_Out_y[id.xy] = Q_Past_y[id.xy] + deltaT * CalcDiffusion(Q_Past_y, alpha_QIn_y, id.xy, invCellSizeSq);
-}
-
-[numthreads(16, 16, 1)]
-void DiffusionStep(uint3 id : SV_DispatchThreadID) {
-
-    float invCellSizeSq = 1.0f / (cellSize * cellSize);
-    float factor = 0.25 * invCellSizeSq; // should be diffusionTime, but it only seems stable with this, idk
-
-    float newH        = SolveJacobi(H_Orig[curr],   factor, H_Past[right],   H_Past[left],   H_Past[up],   H_Past[down],   alpha_QIn_x[curr], alpha_QIn_x[left], alpha_QIn_y[curr], alpha_QIn_y[down]);
-    H_Out[curr]   = max(terrain[curr], newH);
-    Q_Out_x[curr] = SolveJacobi(Q_bulkOrig_x[curr], factor, Q_Past_x[right], Q_Past_x[left], Q_Past_x[up], Q_Past_x[down], aH_right,   aH_curr,   a_topright, a_botright);
-    Q_Out_y[curr] = SolveJacobi(Q_bulkOrig_y[curr], factor, Q_Past_y[right], Q_Past_y[left], Q_Past_y[up], Q_Past_y[down], a_topright, a_topleft, aH_up,      aH_curr);
 }
 
 [numthreads(16, 16, 1)]
@@ -860,16 +848,12 @@ void IntegrateH(uint3 id : SV_DispatchThreadID) {
     float div_q = (q_x - q_xm + q_y - q_ym) * invCellSize;
 	// hOut[curr] = clamp(h_curr - timeStep * div_q, 0.f, maxSafeDepth);
     
-    // // Selective 5-point Laplacian filter to reduce grid-scale ripples getting really large
-    // float laplacian_h = (h_right + h_left + h_up + h_down - 4.0f * h_curr);
-    // float gridFilter = 0.005f * laplacian_h;
-	// hOut[curr] = clamp(h_curr - timeStep * div_q + gridFilter, 0.f, maxSafeDepth);
-    // Wetting-Aware Laplacian: Only filter high-frequency ripples in fully wet cells
+    // Selective wetting-aware 5-point Laplacian filter to reduce grid-scale ripples getting really large
     bool isFullyWet = (h_curr > minWaterHeight && h_left > minWaterHeight && 
                     h_right > minWaterHeight && h_up > minWaterHeight && h_down > minWaterHeight);
     if (isFullyWet) {
         float laplacian_h = (h_right + h_left + h_up + h_down - 4.0f * h_curr);
-        hOut[curr] = clamp(h_curr - timeStep * div_q + 0.01f * laplacian_h, 0.f, maxSafeDepth);
+        hOut[curr] = clamp(h_curr - timeStep * div_q + 0.0f * laplacian_h, 0.f, maxSafeDepth);
     } else {
         hOut[curr] = clamp(h_curr - timeStep * div_q, 0.f, maxSafeDepth);
     }
