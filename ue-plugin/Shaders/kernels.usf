@@ -50,10 +50,10 @@ Texture2D<float>   alpha_HIn;
 Texture2D<float>   hIn;
 Texture2D<float>   qIn_x;
 Texture2D<float>   qIn_y;
-Texture2D<float>   H_elevIn;
-Texture2D<float>   H_elevPast;
-Texture2D<float>   Q_bulkPast_x;
-Texture2D<float>   Q_bulkPast_y;
+Texture2D<float>   H_In;
+Texture2D<float>   H_Past;
+Texture2D<float>   Q_Past_x;
+Texture2D<float>   Q_Past_y;
 Texture2D<float>   alpha_QIn_x;
 Texture2D<float>   alpha_QIn_y;
 Texture2D<float>   terrainBulk;
@@ -81,8 +81,8 @@ Texture2D<float2>  qhat_x;
 Texture2D<float2>  qhat_y;
 Texture2DArray<float2> qHat_x_array;
 Texture2DArray<float2> qHat_y_array;
-Texture2D<float>   Q_bulkIn_x;
-Texture2D<float>   Q_bulkIn_y;
+Texture2D<float>   Q_In_x;
+Texture2D<float>   Q_In_y;
 
 Texture2D<float>   inDispX;
 Texture2D<float>   inDispY;
@@ -93,12 +93,12 @@ Texture2D<float>   inPreviousRoughness;
 SamplerState BilinearWrapSampler;
 
 RWTexture2D<float> hOut;
-RWTexture2D<float> H_elevOut;
+RWTexture2D<float> H_Out;
 RWTexture2D<float> terrainOut;
 RWTexture2D<float> terrainOutCM;
 RWTexture2D<float> terrainNew;
-RWTexture2D<float> Q_bulkOut_x;
-RWTexture2D<float> Q_bulkOut_y;
+RWTexture2D<float> Q_Out_x;
+RWTexture2D<float> Q_Out_y;
 RWTexture2D<float> alpha_HOut;
 RWTexture2D<float> alpha_QOut_x;
 RWTexture2D<float> alpha_QOut_y;
@@ -295,7 +295,7 @@ void InitializeWater(uint3 id : SV_DispatchThreadID) {
     //     h_val += 2.f;
     // }
     hOut[id.xy] = h_val;
-    H_elevOut[id.xy] = terrainHeight + h_val;
+    H_Out[id.xy] = terrainHeight + h_val;
     terrainOut[id.xy] = terrainHeight;
     terrainOutCM[id.xy] = terrainHeight * 100.0f; // Converted terrain height in centimeters
 }
@@ -307,9 +307,9 @@ void InitDecomp(uint3 id : SV_DispatchThreadID) {
     // Inputs: hIn, qIn_x, qIn_y, terrain
     // Outputs: HOut, QOut_x, QOut_y
     if (id.x >= (uint)(gridSizeX) || id.y >= (uint)(gridSizeY)) return;
-    H_elevOut[id.xy] = hIn[id.xy] + terrain[id.xy];
-    Q_bulkOut_x[id.xy] = qIn_x[id.xy];
-    Q_bulkOut_y[id.xy] = qIn_y[id.xy];
+    H_Out[id.xy] = hIn[id.xy] + terrain[id.xy];
+    Q_Out_x[id.xy] = qIn_x[id.xy];
+    Q_Out_y[id.xy] = qIn_y[id.xy];
 }
 
 [numthreads(16, 16, 1)]
@@ -324,16 +324,16 @@ void CalcDiffusionCoeffs(uint3 id : SV_DispatchThreadID) {
     int2 up    = clamp(curr + int2(0, 1), int2(0, 0), maxGrid);
 
     // float max_ground = max(terrain[curr], terrain[right], terrain[up]);
-    // float min_water = min(H_elevIn[curr], H_elevIn[right], H_elevIn[up]); // or average of these 3
-    float h = clamp(H_elevIn[curr] - terrain[curr], 0.f, maxSafeDepth); // min_water - max_ground;
-    float hr = clamp(H_elevIn[right] - terrain[right], 0.f, maxSafeDepth);
-    float hu = clamp(H_elevIn[up] - terrain[up], 0.f, maxSafeDepth);
+    // float min_water = min(H_In[curr], H_In[right], H_In[up]); // or average of these 3
+    float h = clamp(H_In[curr] - terrain[curr], 0.f, maxSafeDepth); // min_water - max_ground;
+    float hr = clamp(H_In[right] - terrain[right], 0.f, maxSafeDepth);
+    float hu = clamp(H_In[up] - terrain[up], 0.f, maxSafeDepth);
     hr = (h + hr) * 0.5f;
     hu = (h + hu) * 0.5f;
     float invDenom = rcp(2.0f * deltaT * (float)diffusionIterations);
     float invCellSize = 1.0f / cellSize;
-    float grad_x = (H_elevIn[right] - H_elevIn[curr]) * invCellSize;
-    float grad_y = (H_elevIn[up] - H_elevIn[curr]) * invCellSize;
+    float grad_x = (H_In[right] - H_In[curr]) * invCellSize;
+    float grad_y = (H_In[up] - H_In[curr]) * invCellSize;
     float penalty = exp(- diffusionPenalty * (grad_x * grad_x + grad_y * grad_y));
     float max_alpha = 0.8 * (cellSize * cellSize) * rcp(4.0f * deltaT); // Von Neumann Stability Condition, with buffer
     alpha_HOut[curr] = max(0.f, min(max_alpha, h * h   * invDenom) * penalty);
@@ -358,41 +358,56 @@ void DiffusionStep(uint3 id : SV_DispatchThreadID) {
     int2 rd    = clamp(curr + int2(1, -1), int2(0, 0), maxGrid);
     int2 lu    = clamp(curr + int2(-1, 1), int2(0, 0), maxGrid);
 
-    float H_curr = H_elevPast[curr];
-    float Qx_curr = Q_bulkPast_x[curr];
-    float Qy_curr = Q_bulkPast_y[curr];
-    float aH_curr = alpha_HIn[curr];
+    float aH_curr  = alpha_HIn[curr];
     float aH_right = alpha_HIn[right];
+    float aH_left  = alpha_HIn[left];
     float aH_up    = alpha_HIn[up];
-    float a_topright = 0.25f * (aH_curr + aH_up + aH_right + alpha_HIn[ru]);
-    float a_botright = 0.25f * (aH_curr + alpha_HIn[down] + aH_right + alpha_HIn[rd]);
-    float a_topleft  = 0.25f * (aH_curr + aH_up + alpha_HIn[left] + alpha_HIn[lu]);
+    float aH_down  = alpha_HIn[down];
+    float a_topright = 0.25f * (aH_curr + aH_up   + aH_right + alpha_HIn[ru]);
+    float a_botright = 0.25f * (aH_curr + aH_down + aH_right + alpha_HIn[rd]);
+    float a_topleft  = 0.25f * (aH_curr + aH_up   + aH_left  + alpha_HIn[lu]);
+
+    float H_curr = H_Past[curr];
+    float Qx_curr = Q_Past_x[curr];
+    float Qy_curr = Q_Past_y[curr];
 
     float invCellSizeSq = 1.0f / (cellSize * cellSize);
 
-    // Calculate Lagrangians
-    float dH_x = alpha_QIn_x[curr] * (H_elevPast[right] - H_curr) - alpha_QIn_x[left] * (H_curr - H_elevPast[left]);
-    float dH_y = alpha_QIn_y[curr] * (H_elevPast[up] - H_curr) - alpha_QIn_y[down] * (H_curr - H_elevPast[down]);
+    // Calculate Laplacians
+    float dH_x = alpha_QIn_x[curr] * (H_Past[right] - H_curr) - alpha_QIn_x[left] * (H_curr - H_Past[left]);
+    float dH_y = alpha_QIn_y[curr] * (H_Past[up] - H_curr) - alpha_QIn_y[down] * (H_curr - H_Past[down]);
     float dHdX = (dH_x + dH_y) * invCellSizeSq;
     
-    float dQx_x = aH_right * (Q_bulkPast_x[right] - Qx_curr) - aH_curr * (Qx_curr - Q_bulkPast_x[left]);
-    float dQx_y = a_topright * (Q_bulkPast_x[up] - Qx_curr) - a_botright * (Qx_curr - Q_bulkPast_x[down]);
+    float dQx_x = aH_right * (Q_Past_x[right] - Qx_curr) - aH_curr * (Qx_curr - Q_Past_x[left]);
+    float dQx_y = a_topright * (Q_Past_x[up] - Qx_curr) - a_botright * (Qx_curr - Q_Past_x[down]);
     float dQxdX = (dQx_x + dQx_y) * invCellSizeSq;
     
-    float dQy_x = a_topright * (Q_bulkPast_y[right] - Qy_curr) - a_topleft * (Qy_curr - Q_bulkPast_y[left]);
-    float dQy_y = aH_up * (Q_bulkPast_y[up] - Qy_curr) - aH_curr * (Qy_curr - Q_bulkPast_y[down]);
+    float dQy_x = a_topright * (Q_Past_y[right] - Qy_curr) - a_topleft * (Qy_curr - Q_Past_y[left]);
+    float dQy_y = aH_up * (Q_Past_y[up] - Qy_curr) - aH_curr * (Qy_curr - Q_Past_y[down]);
     float dQydX = (dQy_x + dQy_y) * invCellSizeSq;
 
     // Calculate Diffusion
-    float newH = H_elevPast[curr] + deltaT * dHdX;
-    H_elevOut[curr] = max(terrain[curr], newH);
-    Q_bulkOut_x[curr] = Q_bulkPast_x[curr] + deltaT * dQxdX;
-    Q_bulkOut_y[curr] = Q_bulkPast_y[curr] + deltaT * dQydX;
+    float newH = H_Past[curr] + deltaT * dHdX;
+    H_Out[curr] = max(terrain[curr], newH);
+    Q_Out_x[curr] = Q_Past_x[curr] + deltaT * dQxdX;
+    Q_Out_y[curr] = Q_Past_y[curr] + deltaT * dQydX;
 
-    // float newH = H_elevPast[id.xy] + deltaT * CalcDiffusion(H_elevPast, alpha_HIn, id.xy, invCellSizeSq);
-    // H_elevOut[id.xy] = max(terrain[id.xy], newH);
-    // Q_bulkOut_x[id.xy] = Q_bulkPast_x[id.xy] + deltaT * CalcDiffusion(Q_bulkPast_x, alpha_QIn_x, id.xy, invCellSizeSq);
-    // Q_bulkOut_y[id.xy] = Q_bulkPast_y[id.xy] + deltaT * CalcDiffusion(Q_bulkPast_y, alpha_QIn_y, id.xy, invCellSizeSq);
+    // float newH = H_Past[id.xy] + deltaT * CalcDiffusion(H_Past, alpha_HIn, id.xy, invCellSizeSq);
+    // H_Out[id.xy] = max(terrain[id.xy], newH);
+    // Q_Out_x[id.xy] = Q_Past_x[id.xy] + deltaT * CalcDiffusion(Q_Past_x, alpha_QIn_x, id.xy, invCellSizeSq);
+    // Q_Out_y[id.xy] = Q_Past_y[id.xy] + deltaT * CalcDiffusion(Q_Past_y, alpha_QIn_y, id.xy, invCellSizeSq);
+}
+
+[numthreads(16, 16, 1)]
+void DiffusionStep(uint3 id : SV_DispatchThreadID) {
+
+    float invCellSizeSq = 1.0f / (cellSize * cellSize);
+    float factor = 0.25 * invCellSizeSq; // should be diffusionTime, but it only seems stable with this, idk
+
+    float newH        = SolveJacobi(H_Orig[curr],   factor, H_Past[right],   H_Past[left],   H_Past[up],   H_Past[down],   alpha_QIn_x[curr], alpha_QIn_x[left], alpha_QIn_y[curr], alpha_QIn_y[down]);
+    H_Out[curr]   = max(terrain[curr], newH);
+    Q_Out_x[curr] = SolveJacobi(Q_bulkOrig_x[curr], factor, Q_Past_x[right], Q_Past_x[left], Q_Past_x[up], Q_Past_x[down], aH_right,   aH_curr,   a_topright, a_botright);
+    Q_Out_y[curr] = SolveJacobi(Q_bulkOrig_y[curr], factor, Q_Past_y[right], Q_Past_y[left], Q_Past_y[up], Q_Past_y[down], a_topright, a_topleft, aH_up,      aH_curr);
 }
 
 [numthreads(16, 16, 1)]
@@ -411,14 +426,14 @@ void DecomposeFields(uint3 id : SV_DispatchThreadID) {
     float h_right = hIn[right];
     float t_right = terrain[right];
     float t_curr = terrain[curr];
-    float localHbar = clamp(H_elevIn[curr] - t_curr, 0.f, maxSafeDepth);
-    float localHbar_right = clamp(H_elevIn[right] - t_right, 0.f, maxSafeDepth);
+    float localHbar = clamp(H_In[curr] - t_curr, 0.f, maxSafeDepth);
+    float localHbar_right = clamp(H_In[right] - t_right, 0.f, maxSafeDepth);
     hbarOut[curr] = localHbar;
-    qbarOut_x[curr] = Q_bulkIn_x[curr];
-    qbarOut_y[curr] = Q_bulkIn_y[curr];
+    qbarOut_x[curr] = Q_In_x[curr];
+    qbarOut_y[curr] = Q_In_y[curr];
     htildeOut[curr] = hIn[curr] - localHbar;
-    qtildeOut_x[curr] = qIn_x[curr] - Q_bulkIn_x[curr];
-    qtildeOut_y[curr] = qIn_y[curr] - Q_bulkIn_y[curr];
+    qtildeOut_x[curr] = qIn_x[curr] - Q_In_x[curr];
+    qtildeOut_y[curr] = qIn_y[curr] - Q_In_y[curr];
 
     float cflFactor = cflCondition * cellSize / timeStep;
     qbarOut_x[curr] = LimitFlowRate(qbarOut_x[curr], localHbar, t_curr, localHbar_right, t_right, cflFactor);
@@ -428,7 +443,7 @@ void DecomposeFields(uint3 id : SV_DispatchThreadID) {
     float h_up = hIn[up];
     float t_up = terrain[up];
 
-    qbarOut_y[curr] = LimitFlowRate(qbarOut_y[curr], localHbar, t_curr, clamp(H_elevIn[up] - t_up, 0.f, maxSafeDepth), t_up, cflFactor);
+    qbarOut_y[curr] = LimitFlowRate(qbarOut_y[curr], localHbar, t_curr, clamp(H_In[up] - t_up, 0.f, maxSafeDepth), t_up, cflFactor);
     qtildeOut_y[curr] = LimitFlowRate(qtildeOut_y[curr], h_curr, t_curr, h_up, t_up, cflFactor);
 }
 
@@ -667,8 +682,8 @@ void CalcSWE(uint3 id : SV_DispatchThreadID) {
     float duy_dt = (h_y_p05 <= minWaterHeight) ? 0.f : (- (invCellSize * invH_y) * ((q_y_1 * u_y_1 - q_y_0 * u_y_0) - ubarIn_y[curr] * (q_y_1 - q_y_0)));
     
     // Calculate wave gradient
-    float gradh_x = (H_elevIn[right] - H_elevIn[curr]) * invCellSize;
-    float gradh_y = (H_elevIn[up] - H_elevIn[curr]) * invCellSize;
+    float gradh_x = (H_In[right] - H_In[curr]) * invCellSize;
+    float gradh_y = (H_In[up] - H_In[curr]) * invCellSize;
 
     // Calculate FFT wave forcing
     float invDepthCutoff = 1.0f / depthCutoff;
@@ -697,9 +712,9 @@ void CalcSWE(uint3 id : SV_DispatchThreadID) {
     ubarNewOut_x[curr] = localUbarNew_x;
     ubarNewOut_y[curr] = localUbarNew_y;
 
-    float t_curr = H_elevIn[curr] - hbarIn[curr];
-    float t_right = H_elevIn[right] - hbarIn[right];
-    float t_up = H_elevIn[up] - hbarIn[up];
+    float t_curr = H_In[curr] - hbarIn[curr];
+    float t_right = H_In[right] - hbarIn[right];
+    float t_up = H_In[up] - hbarIn[up];
     qbarOut_x[curr] = LimitFlowRate(localUbarNew_x * h_x_face, hbarIn[curr], t_curr, hbarIn[right], t_right, cflFactor);
     qbarOut_y[curr] = LimitFlowRate(localUbarNew_y * h_y_face, hbarIn[curr], t_curr, hbarIn[up], t_up, cflFactor);
 }
@@ -871,9 +886,9 @@ void IntegrateH(uint3 id : SV_DispatchThreadID) {
 [numthreads(16, 16, 1)]
 void RecomputeH(uint3 id : SV_DispatchThreadID) {
     // Inputs: hIn, terrain
-    // Outputs H_elevOut
+    // Outputs H_Out
     if (id.x >= (uint)(gridSizeX) || id.y >= (uint)(gridSizeY)) return;
-    H_elevOut[id.xy] = hIn[id.xy] + terrain[id.xy];
+    H_Out[id.xy] = hIn[id.xy] + terrain[id.xy];
 }
 float ScaleFactor;
 [numthreads(16, 16, 1)]
