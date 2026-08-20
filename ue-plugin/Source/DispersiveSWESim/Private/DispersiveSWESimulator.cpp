@@ -301,7 +301,7 @@ void UDispersiveSWESimulator::SetupInitialStates(FRHICommandListImmediate& RHICm
 		InitParams->TerrainCaptureCameraZ = TerrainCaptureCameraZ;
 		InitParams->terrain = GraphBuilder.CreateSRV(TerrainInput_RDG);
 		InitParams->hOut = GraphBuilder.CreateUAV(h_RDG);
-		InitParams->H_elevOut = GraphBuilder.CreateUAV(H_RDG);
+		InitParams->H_Out = GraphBuilder.CreateUAV(H_RDG);
 		InitParams->terrainOut = GraphBuilder.CreateUAV(Terrain_RDG);
 
 		FRDGTextureRef TerrainExportRDG;
@@ -531,9 +531,9 @@ void UDispersiveSWESimulator::ExecuteSimulation_RenderThread(
 		Params->qIn_x = GraphBuilder.CreateSRV(qx_RDG);
 		Params->qIn_y = GraphBuilder.CreateSRV(qy_RDG);
 		Params->terrain = GraphBuilder.CreateSRV(Terrain_RDG);
-		Params->H_elevOut = GraphBuilder.CreateUAV(H_RDG);
-		Params->Q_bulkOut_x = GraphBuilder.CreateUAV(Qx_RDG);
-		Params->Q_bulkOut_y = GraphBuilder.CreateUAV(Qy_RDG);
+		Params->H_Out = GraphBuilder.CreateUAV(H_RDG);
+		Params->Q_Out_x = GraphBuilder.CreateUAV(Qx_RDG);
+		Params->Q_Out_y = GraphBuilder.CreateUAV(Qy_RDG);
 
 		FComputeShaderUtils::AddPass(GraphBuilder, RDG_EVENT_NAME("SWE_Decomp_Init"), ERDGPassFlags::Compute, Shader, Params, GridGroups);
 	}
@@ -543,7 +543,7 @@ void UDispersiveSWESimulator::ExecuteSimulation_RenderThread(
 		TShaderMapRef<FCalcDiffusionCoeffsCS> Shader(ShaderMap);
 		FCalcDiffusionCoeffsCS::FParameters* Params = GraphBuilder.AllocParameters<FCalcDiffusionCoeffsCS::FParameters>();
 		Params->SimConstants = ConstantBuffer;
-		Params->H_elevIn = GraphBuilder.CreateSRV(H_RDG);
+		Params->H_In = GraphBuilder.CreateSRV(H_RDG);
 		Params->terrain = GraphBuilder.CreateSRV(Terrain_RDG);
 		Params->alpha_HOut = GraphBuilder.CreateUAV(alpha_H);
 		Params->alpha_QOut_x = GraphBuilder.CreateUAV(alpha_Qx);
@@ -574,18 +574,18 @@ void UDispersiveSWESimulator::ExecuteSimulation_RenderThread(
 			FDiffusionStepCS::FParameters* Params = GraphBuilder.AllocParameters<FDiffusionStepCS::FParameters>();
 			Params->SimConstants = ConstantBuffer;
 			Params->terrain = GraphBuilder.CreateSRV(Terrain_RDG);
-			Params->H_elevOrig = GraphBuilder.CreateSRV(H_Orig);
-			Params->Q_bulkOrig_x = GraphBuilder.CreateSRV(Qx_Orig);
-			Params->Q_bulkOrig_y = GraphBuilder.CreateSRV(Qy_Orig);
-			Params->H_elevPast = GraphBuilder.CreateSRV(H_Src);
-			Params->Q_bulkPast_x = GraphBuilder.CreateSRV(Qx_Src);
-			Params->Q_bulkPast_y = GraphBuilder.CreateSRV(Qy_Src);
+			Params->H_Orig = GraphBuilder.CreateSRV(H_Orig);
+			Params->Q_Orig_x = GraphBuilder.CreateSRV(Qx_Orig);
+			Params->Q_Orig_y = GraphBuilder.CreateSRV(Qy_Orig);
+			Params->H_Past = GraphBuilder.CreateSRV(H_Src);
+			Params->Q_Past_x = GraphBuilder.CreateSRV(Qx_Src);
+			Params->Q_Past_y = GraphBuilder.CreateSRV(Qy_Src);
 			Params->alpha_HIn = GraphBuilder.CreateSRV(alpha_H);
 			Params->alpha_QIn_x = GraphBuilder.CreateSRV(alpha_Qx);
 			Params->alpha_QIn_y = GraphBuilder.CreateSRV(alpha_Qy);
-			Params->H_elevOut = GraphBuilder.CreateUAV(H_Dst);
-			Params->Q_bulkOut_x = GraphBuilder.CreateUAV(Qx_Dst);
-			Params->Q_bulkOut_y = GraphBuilder.CreateUAV(Qy_Dst);
+			Params->H_Out = GraphBuilder.CreateUAV(H_Dst);
+			Params->Q_Out_x = GraphBuilder.CreateUAV(Qx_Dst);
+			Params->Q_Out_y = GraphBuilder.CreateUAV(Qy_Dst);
 
 			FComputeShaderUtils::AddPass(GraphBuilder, RDG_EVENT_NAME("SWE_Decomp_Diffusion"), ERDGPassFlags::Compute, Shader, Params, GridGroups);
 
@@ -615,9 +615,9 @@ void UDispersiveSWESimulator::ExecuteSimulation_RenderThread(
 		TShaderMapRef<FDecomposeFieldsCS> Shader(ShaderMap);
 		FDecomposeFieldsCS::FParameters* Params = GraphBuilder.AllocParameters<FDecomposeFieldsCS::FParameters>();
 		Params->SimConstants = ConstantBuffer;
-		Params->H_elevIn = GraphBuilder.CreateSRV(H_RDG);
-		Params->Q_bulkIn_x = GraphBuilder.CreateSRV(Qx_RDG);
-		Params->Q_bulkIn_y = GraphBuilder.CreateSRV(Qy_RDG);
+		Params->H_In = GraphBuilder.CreateSRV(H_RDG);
+		Params->Q_In_x = GraphBuilder.CreateSRV(Qx_RDG);
+		Params->Q_In_y = GraphBuilder.CreateSRV(Qy_RDG);
 		Params->hIn = GraphBuilder.CreateSRV(h_RDG);
 		Params->qIn_x = GraphBuilder.CreateSRV(qx_RDG);
 		Params->qIn_y = GraphBuilder.CreateSRV(qy_RDG);
@@ -639,7 +639,7 @@ void UDispersiveSWESimulator::ExecuteSimulation_RenderThread(
 		Params->SimConstants = ConstantBuffer;
 		Params->hIn = GraphBuilder.CreateSRV(h_RDG);
 		Params->terrain = GraphBuilder.CreateSRV(Terrain_RDG);
-		Params->H_elevOut = GraphBuilder.CreateUAV(H_RDG);
+		Params->H_Out = GraphBuilder.CreateUAV(H_RDG);
 
 		FComputeShaderUtils::AddPass(GraphBuilder, RDG_EVENT_NAME("SWE_Decomp_ReH"), ERDGPassFlags::Compute, Shader, Params, GridGroups);
 	}
@@ -775,7 +775,7 @@ void UDispersiveSWESimulator::ExecuteSimulation_RenderThread(
 		Params->ubarIn_x = GraphBuilder.CreateSRV(ubarx_RDG);
 		Params->ubarIn_y = GraphBuilder.CreateSRV(ubary_RDG);
 		Params->hbarIn = GraphBuilder.CreateSRV(hbar_RDG);
-		Params->H_elevIn = GraphBuilder.CreateSRV(H_RDG);
+		Params->H_In = GraphBuilder.CreateSRV(H_RDG);
 		Params->delH_x = GraphBuilder.CreateSRV(delHx);
 		Params->delH_y = GraphBuilder.CreateSRV(delHy);
 		Params->ubarNewOut_x = GraphBuilder.CreateUAV(ubarNewX);
@@ -869,7 +869,7 @@ void UDispersiveSWESimulator::ExecuteSimulation_RenderThread(
 		Params->SimConstants = ConstantBuffer;
 		Params->hIn = GraphBuilder.CreateSRV(h_RDG);
 		Params->terrain = GraphBuilder.CreateSRV(Terrain_RDG);
-		Params->H_elevOut = GraphBuilder.CreateUAV(H_RDG);
+		Params->H_Out = GraphBuilder.CreateUAV(H_RDG);
 
 		FComputeShaderUtils::AddPass(GraphBuilder, RDG_EVENT_NAME("SWE_Final_ReH"), ERDGPassFlags::Compute, Shader, Params, GridGroups);
 	}
