@@ -168,12 +168,6 @@ float SafeTanh(float x) {
     else                return tanh(x);
 }
 
-float LoadClamped(Texture2D<float> tex, int2 coord) {
-    int x = clamp(coord.x, 0, gridSizeX - 1);
-    int y = clamp(coord.y, 0, gridSizeY - 1);
-    return tex[uint2(x, y)];
-}
-
 float SolveJacobi(float u_orig, float sigma, float u_E, float u_W, float u_N, float u_S, float C_E, float C_W, float C_N, float C_S) {
     return (u_orig + sigma * (C_E * u_E + C_W * u_W + C_N * u_N + C_S * u_S)) / (1.0f + sigma * (C_E + C_W + C_N + C_S));
 }
