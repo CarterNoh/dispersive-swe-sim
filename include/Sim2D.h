@@ -31,7 +31,7 @@ public:
 	
 	// Decomposition Parameters
 	static constexpr int DIFFUSION_ITERATIONS = 16;  // number of iterations for diffusion step, more iterations means more stable but also more expensive
-	static constexpr float DIFFUSION_TIME = 32.f; 	  // total virtual time of the diffusion step. Smaller is less diffusion, larger is more
+	static constexpr int MAX_DIFFUSION_CELLS = 8; 	  // total virtual time of the diffusion step. Smaller is less diffusion, larger is more
 	static constexpr float DIFFUSION_PENALTY = 0.01f; // penalty factor for diffusion, higher means more diffusion and more stability but also more damping of waves
 	
 	// eWave Parameters
@@ -128,7 +128,7 @@ private:
 	char* waveNames[3] = {"PopulateSpectrum", "PropagateWaves", "Interp"};
     // Constants
 	SimConstants constants = {time, GRIDSIZE_X, GRIDSIZE_Y, CELLSIZE, TIMESTEP, MIN_WATER_HEIGHT, SURFACE_TENSION, DENSITY, // Sim Params
-							  DIFFUSION_ITERATIONS, DIFFUSION_TIME, DIFFUSION_PENALTY, // Diffusion Params
+							  DIFFUSION_ITERATIONS, MAX_DIFFUSION_CELLS, DIFFUSION_PENALTY, // Diffusion Params
 							  SLOPE_LIMIT, CFL_CONDITION, GAMMA_TRANSPORT, SPONGE_THICKNESS, LAPLACIAN_DAMPING, DEPTH_NUM, // SWE & eWave Params
 							  FETCH, WIND_SPEED, WIND_ANGLE, SWELL, SWELL_ANGLE, CHOPPINESS, // FFT Params
 							  FILTER_SMALL, FILTER_BIG, FILTER_WIDTH, FILTER_MIN, DEPTH_CUTOFF,

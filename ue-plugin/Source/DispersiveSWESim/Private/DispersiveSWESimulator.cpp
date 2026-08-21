@@ -216,7 +216,7 @@ void UDispersiveSWESimulator::AssignConstants(FSimConstants& Constants) const
 	Constants.surfaceTension = SurfaceTension;
 	Constants.density = Density;
 	Constants.diffusionIterations = DiffusionIterations;
-	Constants.diffusionTime = DiffusionTime;
+	Constants.maxDiffusionCells = MaxDiffusionCells;
 	Constants.diffusionPenalty = DiffusionPenalty;
 	Constants.slopeLimit = SlopeLimit;
 	Constants.cflCondition = CFLCondition;

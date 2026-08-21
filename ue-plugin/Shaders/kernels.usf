@@ -13,7 +13,7 @@
 #define surfaceTension SimConstants.surfaceTension
 #define density SimConstants.density
 #define diffusionIterations SimConstants.diffusionIterations
-#define diffusionTime SimConstants.diffusionTime
+#define maxDiffusionCells SimConstants.maxDiffusionCells
 #define diffusionPenalty SimConstants.diffusionPenalty
 #define slopeLimit SimConstants.slopeLimit
 #define cflCondition SimConstants.cflCondition
@@ -312,10 +312,11 @@ void CalcDiffusionCoeffs(uint3 id : SV_DispatchThreadID) {
     float grad_x = (H_In[right] - H_In[curr]) * invCellSize;
     float grad_y = (H_In[up] - H_In[curr]) * invCellSize;
     float penalty = exp(- diffusionPenalty * (grad_x * grad_x + grad_y * grad_y));
-    float denom = penalty / (2.f * diffusionTime);
-    alpha_HOut[curr] = max(0.f, h * h * denom);
-    alpha_QOut_x[curr] = max(0.f, hr * hr * denom);
-    alpha_QOut_y[curr] = max(0.f, hu * hu * denom);
+
+    float max_alpha = 0.5 * (maxDiffusionCells * cellSize) * (maxDiffusionCells * cellSize);
+    alpha_HOut[curr]   = clamp(0.5 * h  * h * penalty,  0.0f, max_alpha);
+    alpha_QOut_x[curr] = clamp(0.5 * hr * hr * penalty, 0.0f, max_alpha);
+    alpha_QOut_y[curr] = clamp(0.5 * hu * hu * penalty, 0.0f, max_alpha);
 }
 
 [numthreads(16, 16, 1)]
@@ -346,12 +347,10 @@ void DiffusionStep(uint3 id : SV_DispatchThreadID) {
     float a_topleft  = 0.25f * (aH_curr + aH_up   + aH_left  + alpha_HIn[lu]);
 
     float invCellSizeSq = 1.0f / (cellSize * cellSize);
-    float factor = 0.25 * invCellSizeSq; // should be diffusionTime, but it only seems stable with this, idk
-
-    float newH        = SolveJacobi(H_Orig[curr],   factor, H_Past[right],   H_Past[left],   H_Past[up],   H_Past[down],   alpha_QIn_x[curr], alpha_QIn_x[left], alpha_QIn_y[curr], alpha_QIn_y[down]);
+    float newH    = SolveJacobi(H_Orig[curr],   invCellSizeSq, H_Past[right],   H_Past[left],   H_Past[up],   H_Past[down],   alpha_QIn_x[curr], alpha_QIn_x[left], alpha_QIn_y[curr], alpha_QIn_y[down]);
     H_Out[curr]   = max(terrain[curr], newH);
-    Q_Out_x[curr] = SolveJacobi(Q_Orig_x[curr], factor, Q_Past_x[right], Q_Past_x[left], Q_Past_x[up], Q_Past_x[down], aH_right,   aH_curr,   a_topright, a_botright);
-    Q_Out_y[curr] = SolveJacobi(Q_Orig_y[curr], factor, Q_Past_y[right], Q_Past_y[left], Q_Past_y[up], Q_Past_y[down], a_topright, a_topleft, aH_up,      aH_curr);
+    Q_Out_x[curr] = SolveJacobi(Q_Orig_x[curr], invCellSizeSq, Q_Past_x[right], Q_Past_x[left], Q_Past_x[up], Q_Past_x[down], aH_right,   aH_curr,   a_topright, a_botright);
+    Q_Out_y[curr] = SolveJacobi(Q_Orig_y[curr], invCellSizeSq, Q_Past_y[right], Q_Past_y[left], Q_Past_y[up], Q_Past_y[down], a_topright, a_topleft, aH_up,      aH_curr);
 }
 
 [numthreads(16, 16, 1)]
@@ -364,30 +363,30 @@ void DecomposeFields(uint3 id : SV_DispatchThreadID) {
     
     int2 curr = int2(id.xy);
     int2 maxGrid = int2(gridSizeX - 1, gridSizeY - 1);
-    
-    float h_curr = hIn[curr];
     int2 right = clamp(curr + int2(1, 0), int2(0, 0), maxGrid);
+    int2 up = clamp(curr + int2(0, 1), int2(0, 0), maxGrid);
+
+    float h_curr = hIn[curr];
     float h_right = hIn[right];
-    float t_right = terrain[right];
+    float h_up = hIn[up];
     float t_curr = terrain[curr];
-    float localHbar = clamp(H_In[curr] - t_curr, 0.f, maxSafeDepth);
-    float localHbar_right = clamp(H_In[right] - t_right, 0.f, maxSafeDepth);
-    hbarOut[curr] = localHbar;
+    float t_right = terrain[right];
+    float t_up = terrain[up];
+    float hbar = clamp(H_In[curr] - t_curr, 0.f, maxSafeDepth);
+    float hbar_right = clamp(H_In[right] - t_right, 0.f, maxSafeDepth);
+    float hbar_up = clamp(H_In[up] - t_up, 0.f, maxSafeDepth);
+    
+    hbarOut[curr] = hbar;
     qbarOut_x[curr] = Q_In_x[curr];
     qbarOut_y[curr] = Q_In_y[curr];
-    htildeOut[curr] = hIn[curr] - localHbar;
+    htildeOut[curr] = hIn[curr] - hbar;
     qtildeOut_x[curr] = qIn_x[curr] - Q_In_x[curr];
     qtildeOut_y[curr] = qIn_y[curr] - Q_In_y[curr];
 
     float cflFactor = cflCondition * cellSize / timeStep;
-    qbarOut_x[curr] = LimitFlowRate(qbarOut_x[curr], localHbar, t_curr, localHbar_right, t_right, cflFactor);
+    qbarOut_x[curr] = LimitFlowRate(qbarOut_x[curr], hbar, t_curr, hbar_right, t_right, cflFactor);
+    qbarOut_y[curr] = LimitFlowRate(qbarOut_y[curr], hbar, t_curr, hbar_up, t_up, cflFactor);
     qtildeOut_x[curr] = LimitFlowRate(qtildeOut_x[curr], h_curr, t_curr, h_right, t_right, cflFactor);
-
-    int2 up = clamp(curr + int2(0, 1), int2(0, 0), maxGrid);
-    float h_up = hIn[up];
-    float t_up = terrain[up];
-
-    qbarOut_y[curr] = LimitFlowRate(qbarOut_y[curr], localHbar, t_curr, clamp(H_In[up] - t_up, 0.f, maxSafeDepth), t_up, cflFactor);
     qtildeOut_y[curr] = LimitFlowRate(qtildeOut_y[curr], h_curr, t_curr, h_up, t_up, cflFactor);
 }
 

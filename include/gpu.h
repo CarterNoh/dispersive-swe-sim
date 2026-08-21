@@ -21,7 +21,7 @@ struct alignas(16) SimConstants {
     float density;
     // Decomposition Params
     int diffusionIterations;
-    float diffusionTime;
+    int maxDiffusionCells;
     float diffusionPenalty;
     // SWE & Transport Params
     float slopeLimit;

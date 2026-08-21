@@ -12,7 +12,7 @@
 	"SurfaceTension": 0.001,
 	"Density": 999.0,
 	"DiffusionIterations": 16,
-	"DiffusionTime": 32,
+	"MaxDiffusionCells": 8,
 	"DiffusionPenalty": 0.01,
 	"SlopeLimit": 1.0,
 	"GammaTransport": 0.25,

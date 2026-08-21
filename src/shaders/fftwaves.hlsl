@@ -15,7 +15,7 @@ cbuffer Constants : register(b0) {
     float density;
     // Decomposition Params
     int diffusionIterations;
-    float diffusionTime;
+    int maxDiffusionCells;
     float diffusionPenalty;
     // SWE & Transport Params
     float slopeLimit;

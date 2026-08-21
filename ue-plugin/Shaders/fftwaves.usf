@@ -16,7 +16,7 @@ and the paper "Empirical Directional Wave Spectra for Computer Graphics".
 #define surfaceTension SimConstants.surfaceTension
 #define density SimConstants.density
 #define diffusionIterations SimConstants.diffusionIterations
-#define diffusionTime SimConstants.diffusionTime
+#define maxDiffusionCells SimConstants.maxDiffusionCells
 #define diffusionPenalty SimConstants.diffusionPenalty
 #define slopeLimit SimConstants.slopeLimit
 #define cflCondition SimConstants.cflCondition

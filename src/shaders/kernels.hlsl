@@ -12,7 +12,7 @@ cbuffer Constants : register(b0) {
     float density;
     // Decomposition Params
     int diffusionIterations;
-    float diffusionTime;
+    int maxDiffusionCells;
     float diffusionPenalty;
     // SWE & Transport Params
     float slopeLimit;
@@ -225,10 +225,11 @@ void CalcDiffusionCoeffs(uint3 id : SV_DispatchThreadID) {
     float grad_x = (in0[right] - in0[curr]) * invCellSize;
     float grad_y = (in0[up] - in0[curr]) * invCellSize;
     float penalty = exp(- diffusionPenalty * (grad_x * grad_x + grad_y * grad_y));
-    float denom = penalty / (2.f * diffusionTime);
-    out0[curr] = max(0.f, h * h * denom);
-    out1[curr] = max(0.f, hr * hr * denom);
-    out2[curr] = max(0.f, hu * hu * denom);
+    
+    float max_alpha = 0.5 * (maxDiffusionCells * cellSize) * (maxDiffusionCells * cellSize);
+    out0[curr]   = clamp(0.5 * h  * h * penalty,  0.0f, max_alpha);
+    out1[curr] = clamp(0.5 * hr * hr * penalty, 0.0f, max_alpha);
+    out2[curr] = clamp(0.5 * hu * hu * penalty, 0.0f, max_alpha);
 }
 
 [numthreads(16, 16, 1)]
@@ -258,13 +259,11 @@ void DiffusionStep(uint3 id : SV_DispatchThreadID) {
     float a_botright = 0.25f * (aH_curr + aH_down + aH_right + in7[rd]);
     float a_topleft  = 0.25f * (aH_curr + aH_up   + aH_left  + in7[lu]);
 
-    float invCellSizeSq = 1.0f / (cellSize * cellSize);
-    float factor = 0.25 * invCellSizeSq; // should be diffusionTime, but it only seems stable with this, idk
-    
-    float newH = SolveJacobi(in1[curr], factor, in4[right], in4[left], in4[up], in4[down], in8[curr], in8[left], in9[curr], in9[down]);
+    float invCellSizeSq = 1.0f / (cellSize * cellSize);   
+    float newH = SolveJacobi(in1[curr], invCellSizeSq, in4[right], in4[left], in4[up], in4[down], in8[curr], in8[left], in9[curr], in9[down]);
     out0[curr] = max(in0[curr], newH);
-    out1[curr] = SolveJacobi(in2[curr], factor, in5[right], in5[left], in5[up], in5[down], aH_right,   aH_curr,   a_topright, a_botright);
-    out2[curr] = SolveJacobi(in3[curr], factor, in6[right], in6[left], in6[up], in6[down], a_topright, a_topleft, aH_up,      aH_curr);
+    out1[curr] = SolveJacobi(in2[curr], invCellSizeSq, in5[right], in5[left], in5[up], in5[down], aH_right,   aH_curr,   a_topright, a_botright);
+    out2[curr] = SolveJacobi(in3[curr], invCellSizeSq, in6[right], in6[left], in6[up], in6[down], a_topright, a_topleft, aH_up,      aH_curr);
 }
 
 [numthreads(16, 16, 1)]

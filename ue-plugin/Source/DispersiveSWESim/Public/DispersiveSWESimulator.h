@@ -72,7 +72,7 @@ public:
 
 	// Total virtual time of the diffusion step
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SWE Simulation|Decomposition")
-	float DiffusionTime = 32.f;
+	int32 MaxDiffusionCells = 8;
 
 	// Penalty parameter damping gradients
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SWE Simulation|Decomposition")
