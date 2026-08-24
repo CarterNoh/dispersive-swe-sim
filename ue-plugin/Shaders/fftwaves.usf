@@ -449,8 +449,8 @@ void PropagateWaves(uint3 id : SV_DispatchThreadID) {
     float2 dhdx = ComplexMul(HProp, float2(0, kx));
     float2 dhdy = ComplexMul(HProp, float2(0, ky));
     // Phase shift in X: shift by dx/2 by multiplying by e^(i * shiftX) = cos(shiftX) + i*sin(shiftX)
-    float shiftX = 0.5f * cellSize * kx;
-    float shiftY = 0.5f * cellSize * ky;
+    float shiftX = -0.5f * cellSize * kx;
+    float shiftY = -0.5f * cellSize * ky;
     float2 e_ix = float2(cos(shiftX), sin(shiftX));
     float2 e_iy = float2(cos(shiftY), sin(shiftY));
     DelHxOut[id] = ComplexMul(dhdx, e_ix);
