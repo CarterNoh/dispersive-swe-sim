@@ -66,20 +66,6 @@ RWTexture2D<float> out5: register(u5);
 
 
 //////////////////// HELPER FUNCTIONS /////////////////////////
-float LimitVelocity(float velocity_in, float cflFactor) {
-	if (velocity_in >= 0.f)
-		return min(velocity_in, cflFactor);
-	else
-		return max(velocity_in, -cflFactor);
-}
-
-float LimitFlowRate(float flow_rate_in, float waterDepth_left, float waterDepth_right, float cflFactor) {
-	if (flow_rate_in >= 0.f)
-		return min(flow_rate_in, cflFactor * waterDepth_left);
-	else
-		return max(flow_rate_in, -cflFactor * waterDepth_right);
-}
-
 float LimitFlowRate(float flow_rate_in, float waterDepth_left, float terrain_left, float waterDepth_right, float terrain_right, float cflFactor) {
 	if (flow_rate_in >= 0.f) {
 		if (waterDepth_left <= minWaterHeight || (terrain_left + waterDepth_left <= terrain_right))
@@ -276,31 +262,32 @@ void DecomposeFields(uint3 id : SV_DispatchThreadID) {
     
     int2 curr = int2(id.xy);
     int2 maxGrid = int2(gridSizeX - 1, gridSizeY - 1);
-    
-    float t_curr = in6[curr];
-    float hbar = clamp(in0[curr] - t_curr, 0.f, maxSafeDepth);
-    out0[curr] = hbar;
-    out1[curr] = in1[curr];
-    out2[curr] = in2[curr];
-    out3[curr] = in3[curr] - hbar;
-    out4[curr] = in4[curr] - in1[curr];
-    out5[curr] = in5[curr] - in2[curr];
-
-    float h_curr = in3[curr];
     int2 right = clamp(curr + int2(1, 0), int2(0, 0), maxGrid);
-    float h_right = in3[right];
-    float t_right = in6[right];
-
-    float cflFactor = cflCondition * cellSize / timeStep;
-    out1[curr] = LimitFlowRate(out1[curr], h_curr, t_curr, clamp(in0[right] - t_right, 0.f, maxSafeDepth), t_right, cflFactor);
-    out4[curr] = LimitFlowRate(out4[curr], h_curr, t_curr, h_right, t_right, cflFactor);
-
     int2 up = clamp(curr + int2(0, 1), int2(0, 0), maxGrid);
+    
+    float h_curr = in3[curr];
+    float h_right = in3[right];
     float h_up = in3[up];
+    float t_curr = in6[curr];
+    float t_right = in6[right];
     float t_up = in6[up];
 
-    out2[curr] = LimitFlowRate(out2[curr], h_curr, t_curr, clamp(in0[up] - t_up, 0.f, maxSafeDepth), t_up, cflFactor);
-    out5[curr] = LimitFlowRate(out5[curr], h_curr, t_curr, h_up, t_up, cflFactor);
+    float hbar = clamp(in0[curr] - t_curr, 0.f, maxSafeDepth);
+    float hbar_right = clamp(in0[right] - t_right, 0.f, maxSafeDepth);
+    float hbar_up = clamp(in0[up] - t_up, 0.f, maxSafeDepth);
+
+    out0[curr] = hbar;
+    float qbar_x = in1[curr];
+    float qbar_y = in2[curr];
+    out3[curr] = in3[curr] - hbar;
+    float qtilde_x = in4[curr] - in1[curr];
+    float qtilde_y = in5[curr] - in2[curr];
+
+    float cflFactor = cflCondition * cellSize / timeStep;
+    out1[curr] = LimitFlowRate(qbar_x,   h_curr, t_curr, hbar_right, t_right, cflFactor);
+    out2[curr] = LimitFlowRate(qbar_y,   h_curr, t_curr, hbar_up,    t_up,    cflFactor);
+    out4[curr] = LimitFlowRate(qtilde_x, h_curr, t_curr, h_right,    t_right, cflFactor);
+    out5[curr] = LimitFlowRate(qtilde_y, h_curr, t_curr, h_up,       t_up,    cflFactor);
 }
 
 
@@ -327,13 +314,13 @@ void CalcUbar(uint3 id : SV_DispatchThreadID) {
 
     // Enforcing CFL condition for later surface waves advection
     float cflFactor = cflCondition * cellSize / timeStep;
-    out0[curr] = LimitVelocity(ubar_x, cflFactor);  
-    out1[curr] = LimitVelocity(ubar_y, cflFactor); 
+    out0[curr] = clamp(ubar_x, -cflFactor, cflFactor);
+    out1[curr] = clamp(ubar_y, -cflFactor, cflFactor);
 }
 
 [numthreads(16, 16, 1)]
 void CalcSWE(uint3 id : SV_DispatchThreadID) {
-    // Inputs: in0 = ubar_x, in1 = ubar_y, in2 = hbar, in3 = H, in4 = delHfft_x, delHfft_y
+    // Inputs: in0 = ubar_x, in1 = ubar_y, in2 = hbar, in3 = H, in4 = delHfft_x, in5 = delHfft_y, in6 = terrain
     // Outputs: out0 = ubarNew_x, out1 = ubarNew_y, out2 = qbar_x, out3 = qbar_y
     if (id.x >= (uint)(gridSizeX) || id.y >= (uint)(gridSizeY)) return;
 
@@ -397,8 +384,8 @@ void CalcSWE(uint3 id : SV_DispatchThreadID) {
 
     // Integrate u, calculate q
     float cflFactor = cflCondition * cellSize / timeStep;
-    float ubarNew_x = LimitVelocity(in0[curr] + timeStep * dux_dt, cflFactor);
-    float ubarNew_y = LimitVelocity(in1[curr] + timeStep * duy_dt, cflFactor);
+    float ubarNew_x = clamp(in0[curr] + timeStep * dux_dt, -cflFactor, cflFactor);
+    float ubarNew_y = clamp(in1[curr] + timeStep * duy_dt, -cflFactor, cflFactor);
 
     float h_x_face = (ubarNew_x >= 0.f) ? in2[curr] : in2[right];
     float h_y_face = (ubarNew_y >= 0.f) ? in2[curr] : in2[up];
@@ -407,13 +394,8 @@ void CalcSWE(uint3 id : SV_DispatchThreadID) {
 
     out0[curr] = ubarNew_x;
     out1[curr] = ubarNew_y;
-
-    float t_curr = in3[curr] - in2[curr];
-    float t_right = in3[right] - in2[right];
-    float t_up = in3[up] - in2[up];
-
-    out2[curr] = LimitFlowRate(ubarNew_x * h_x_face, in2[curr], t_curr, in2[right], t_right, cflFactor);
-    out3[curr] = LimitFlowRate(ubarNew_y * h_y_face, in2[curr], t_curr, in2[up], t_up, cflFactor);
+    out2[curr] = LimitFlowRate(ubarNew_x * h_x_face, in2[curr], in6[curr], in2[right], in6[right], cflFactor);
+    out3[curr] = LimitFlowRate(ubarNew_y * h_y_face, in2[curr], in6[curr], in2[up],    in6[up],    cflFactor);
 }
 
 
@@ -422,7 +404,7 @@ void CalcSWE(uint3 id : SV_DispatchThreadID) {
 [numthreads(16, 16, 1)]
 void UpdateTilde(uint3 id : SV_DispatchThreadID) {
     // Inputs: in0 = ubarNew_x, in1 = ubar_x, in2 = ubarNew_y, in3 = ubar_y, 
-    //         in4 = qtildePast_x, in5 = qtildePast_y, in6 = h, in7 = htilde
+    //         in4 = qtildePast_x, in5 = qtildePast_y, in6 = h, in7 = htilde, in8 = terrain
     // Outputs: out0 = htilde, out1 = qtilde_x, out2 = qtilde_y
     if (id.x >= (uint)(gridSizeX) || id.y >= (uint)(gridSizeY)) return;
 
@@ -455,50 +437,44 @@ void UpdateTilde(uint3 id : SV_DispatchThreadID) {
     float div_ux = 0.5f * (div_ubar + div_right); // at right boundary
     float div_uy = 0.5f * (div_ubar + div_up); // at up boundary
 
-    // Clamp divergence to prevent exponential growth during flow convergence over shallow bathymetry
-    float maxDivergence = 1.0f / max(1e-4f, timeStep);
-    div_ubar = clamp(div_ubar, -maxDivergence, maxDivergence);
-    div_ux   = clamp(div_ux,   -maxDivergence, maxDivergence);
-    div_uy   = clamp(div_uy,   -maxDivergence, maxDivergence);
+    // // Clamp divergence to prevent exponential growth during flow convergence over shallow bathymetry
+    // float maxDivergence = 1.0f / max(1e-4f, timeStep);
+    // div_ubar = clamp(div_ubar, -maxDivergence, maxDivergence);
+    // div_ux   = clamp(div_ux,   -maxDivergence, maxDivergence);
+    // div_uy   = clamp(div_uy,   -maxDivergence, maxDivergence);
 
     div_ubar *= (div_ubar < 0.f) ? gammaTransport : 1; // Dampen if converging to avoid breaking waves
     div_ux   *= (div_ux   < 0.f) ? gammaTransport : 1;
     div_uy   *= (div_uy   < 0.f) ? gammaTransport : 1;
 
-    // Bound exponential amplification factor to prevent runaway growth
-    float exp_ux = exp(clamp(-div_ux * timeStep, -5.0f, 1.0f));
-    float exp_uy = exp(clamp(-div_uy * timeStep, -5.0f, 1.0f));
-
-    // Update qtilde using bulk flow and ubar divergence: dq/dt = -q * div(ubar)
+    // Update qtilde using exponential integration semi-lagrangian advection
     float timeStepOverCellSize = timeStep * invCellSize;
     float step_x = - ubar_x_avg * timeStepOverCellSize; // unitless (cells)
     float step_y = - ubar_y_avg * timeStepOverCellSize; // unitless (cells)
     float2 samplePos = float2(id.x + step_x, id.y + step_y);
-    out1[curr] = SampleCubicClamped2D(in4, samplePos) * exp_ux;
-    out2[curr] = SampleCubicClamped2D(in5, samplePos) * exp_uy;
+    float qtilde_x_sampled = SampleCubicClamped2D(in4, samplePos) * exp(-div_ux * timeStep);
+    float qtilde_y_sampled = SampleCubicClamped2D(in5, samplePos) * exp(-div_uy * timeStep);
+    // float qtilde_x_sampled = in4[curr] * exp(-div_ux * timeStep);
+    // float qtilde_y_sampled = in5[curr] * exp(-div_uy * timeStep);
 
     // Limit flow to prevent negative water heights and enforce terrain boundaries
     float cflFactor = cflCondition * cellSize / timeStep;
-    out1[curr] = LimitFlowRate(out1[curr], in6[curr], in6[right], cflFactor); 
-    out2[curr] = LimitFlowRate(out2[curr], in6[curr], in6[up], cflFactor);
-    // float t_curr = terrain[curr];
-    // float t_right = terrain[right];
-    // float t_up = terrain[up];
-    // qtildeOut_x[curr] = LimitFlowRate(qtildeOut_x[curr], hIn[curr], t_curr, hIn[right], t_right, cflFactor); 
-    // qtildeOut_y[curr] = LimitFlowRate(qtildeOut_y[curr], hIn[curr], t_curr, hIn[up], t_up, cflFactor); 
+    out1[curr] = LimitFlowRate(qtilde_x_sampled, in6[curr], in8[curr], in6[right], in8[right], cflFactor); 
+    out2[curr] = LimitFlowRate(qtilde_y_sampled, in6[curr], in8[curr], in6[up],    in8[up],    cflFactor); 
       
     // Update htilde using ubar divergence (not at middle of timestep)
     div_ubar  = (in0[curr] - in0[left] + in2[curr] - in2[down]) * invCellSize;
-    div_ubar  = clamp(div_ubar, -maxDivergence, maxDivergence);
+    // div_ubar  = clamp(div_ubar, -maxDivergence, maxDivergence);
     div_ubar *= (div_ubar < 0.f) ? gammaTransport : 1; // dampen if converging to avoid breaking waves
-    float exp_h = exp(clamp(-div_ubar * timeStep, -5.0f, 1.0f));
-    out0[curr] = in7[curr] * exp_h;
+    out0[curr] = in7[curr] * exp(-div_ubar * timeStep);
 }
 
 [numthreads(16, 16, 1)]
 void CalcQAdvect(uint3 id : SV_DispatchThreadID) {
-    // Inputs: in0 = ubarNew_x, in1 = ubarNew_y, in2 = htilde
+    // Inputs: in0 = ubarNew_x, in1 = ubarNew_y, in2 = htilde, in3 = qtildePast_x, in4 = qtildePast_y, in5 = ubar_x, in6 = ubar_y, in7 = h, in8 = terrain
     // Outputs: out0 = qAdvect_x, out1 = qAdvect_y
+
+    ///// H Update /////
     // cubic reconstruction: 1/2 cell accounts for staggered grid, 0.5 * dt accounts for h and u at different 1/2 times
     if (id.x >= (uint)(gridSizeX) || id.y >= (uint)(gridSizeY)) return;
     float halfTimeStepOverCellSize = (0.5f * timeStep) / cellSize;
@@ -508,6 +484,22 @@ void CalcQAdvect(uint3 id : SV_DispatchThreadID) {
     float h_sample = SampleCubicClamped2D(in2, samplePos);
     out0[id.xy] = in0[id.xy] * h_sample;
     out1[id.xy] = in1[id.xy] * h_sample;
+
+    // ///// Q Update /////
+    // float ubar_x_avg = 0.5f * (in0[id.xy] + in5[id.xy]); 
+    // float ubar_y_avg = 0.5f * (in1[id.xy] + in6[id.xy]);
+    // float timeStepOverCellSize = timeStep / cellSize;
+    // step_x = - ubar_x_avg * timeStepOverCellSize; // unitless (cells)
+    // step_y = - ubar_y_avg * timeStepOverCellSize; // unitless (cells)
+    // samplePos = float2(id.x + step_x, id.y + step_y);
+    // float qtilde_x_sampled = SampleCubicClamped2D(in3, samplePos);
+    // float qtilde_y_sampled = SampleCubicClamped2D(in4, samplePos);
+
+    // int2 maxGrid = int2(gridSizeX - 1, gridSizeY - 1);
+    // int2 right = clamp(id.xy + int2(1, 0), int2(0, 0), maxGrid);
+    // int2 up    = clamp(id.xy + int2(0, 1), int2(0, 0), maxGrid);
+    // out1[id.xy] = LimitFlowRate(qtilde_x_sampled, in7[id.xy], in8[id.xy], in7[right], in8[right], cflFactor); 
+    // out2[id.xy] = LimitFlowRate(qtilde_y_sampled, in7[id.xy], in8[id.xy], in7[up],    in8[up],    cflFactor); 
 }
 
 [numthreads(16, 16, 1)]
@@ -568,10 +560,10 @@ void IntegrateH(uint3 id : SV_DispatchThreadID) {
         out0[curr] = clamp(h_curr - timeStep * div_q, 0.f, maxSafeDepth);
     }
 
-    out1[curr] = q_x - in2[curr]; // qbar + qtilde, removing qAdvect
-    out2[curr] = q_y - in5[curr];
-    out1[curr] = LimitFlowRate(out1[curr], h_curr, t_curr, h_right, t_right, cflFactor);
-    out2[curr] = LimitFlowRate(out2[curr], h_curr, t_curr, h_up,    t_up,    cflFactor);
+    float qOut_x = q_x - in2[curr]; // qbar + qtilde, removing qAdvect
+    float qOut_y = q_y - in5[curr];
+    out1[curr] = LimitFlowRate(qOut_x, h_curr, t_curr, h_right, t_right, cflFactor);
+    out2[curr] = LimitFlowRate(qOut_y, h_curr, t_curr, h_up,    t_up,    cflFactor);
 }
 
 

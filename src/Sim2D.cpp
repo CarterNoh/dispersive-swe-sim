@@ -285,7 +285,7 @@ void Sim::SWEStep() {
 	// Compute time derivative of u_bar and integrate to get new u_bar, then 
 	// transfer back to flow rate using upwinding on most recent hbar
 	gpu->Dispatch(CalcSWE,
-		{ubar_x.srv, ubar_y.srv, hbar.srv, H.srv, delH_x.srv, delH_y.srv}, 
+		{ubar_x.srv, ubar_y.srv, hbar.srv, H.srv, delH_x.srv, delH_y.srv, terrain.srv}, 
 		{ubarNew_x.uav, ubarNew_y.uav, qbar_x.uav, qbar_y.uav});
 
 	// store current hbar for next timestep
@@ -300,14 +300,17 @@ void Sim::TransportStep() {
 	std::swap(qtilde_y, qtildePast_y);
 	gpu->Dispatch(UpdateTilde, 
 		{ubarNew_x.srv, ubar_x.srv, ubarNew_y.srv, ubar_y.srv, 
-			qtildePast_x.srv, qtildePast_y.srv, h.srv, htilde.srv},
+			qtildePast_x.srv, qtildePast_y.srv, h.srv, htilde.srv, terrain.srv},
 		{htilde.uav, qtilde_x.uav, qtilde_y.uav});	
+
+	// std::swap(qtilde_x, qtildePast_x);
+	// std::swap(qtilde_y, qtildePast_y);
 	
 	// Advection of h through ubar:
 	// Construct q_advect = ubar * htilde sampled at cell edges using cubic sampling
 	gpu->Dispatch(CalcQAdvect, 
-		{ubarNew_x.srv, ubarNew_y.srv, htilde.srv},
-		{qAdvect_x.uav, qAdvect_y.uav});
+		{ubarNew_x.srv, ubarNew_y.srv, htilde.srv}, //, qtildePast_x.srv, qtildePast_y.srv, ubar_x.srv, ubar_y.srv, h.srv, terrain.srv
+		{qAdvect_x.uav, qAdvect_y.uav}); //, qtilde_x.uav, qtilde_y.uav
 
 	std::swap(h, hPast);
 }

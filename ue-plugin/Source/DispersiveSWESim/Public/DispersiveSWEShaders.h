@@ -252,6 +252,7 @@ public:
 		SHADER_PARAMETER_RDG_TEXTURE_SRV(Texture2D<float>, H_In)
 		SHADER_PARAMETER_RDG_TEXTURE_SRV(Texture2D<float>, delH_x)
 		SHADER_PARAMETER_RDG_TEXTURE_SRV(Texture2D<float>, delH_y)
+		SHADER_PARAMETER_RDG_TEXTURE_SRV(Texture2D<float>, terrain)
 		SHADER_PARAMETER_RDG_TEXTURE_UAV(RWTexture2D<float>, ubarNewOut_x)
 		SHADER_PARAMETER_RDG_TEXTURE_UAV(RWTexture2D<float>, ubarNewOut_y)
 		SHADER_PARAMETER_RDG_TEXTURE_UAV(RWTexture2D<float>, qbarOut_x)

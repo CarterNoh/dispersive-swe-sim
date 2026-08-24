@@ -778,6 +778,7 @@ void UDispersiveSWESimulator::ExecuteSimulation_RenderThread(
 		Params->H_In = GraphBuilder.CreateSRV(H_RDG);
 		Params->delH_x = GraphBuilder.CreateSRV(delHx);
 		Params->delH_y = GraphBuilder.CreateSRV(delHy);
+		Params->terrain = GraphBuilder.CreateSRV(Terrain_RDG);
 		Params->ubarNewOut_x = GraphBuilder.CreateUAV(ubarNewX);
 		Params->ubarNewOut_y = GraphBuilder.CreateUAV(ubarNewY);
 		Params->qbarOut_x = GraphBuilder.CreateUAV(qbarx_RDG);
