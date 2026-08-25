@@ -309,8 +309,8 @@ void Sim::TransportStep() {
 	// Advection of h through ubar:
 	// Construct q_advect = ubar * htilde sampled at cell edges using cubic sampling
 	gpu->Dispatch(CalcQAdvect, 
-		{ubarNew_x.srv, ubarNew_y.srv, htilde.srv}, //, qtildePast_x.srv, qtildePast_y.srv, ubar_x.srv, ubar_y.srv, h.srv, terrain.srv
-		{qAdvect_x.uav, qAdvect_y.uav}); //, qtilde_x.uav, qtilde_y.uav
+		{ubarNew_x.srv, ubarNew_y.srv, htilde.srv},
+		{qAdvect_x.uav, qAdvect_y.uav});
 
 	std::swap(h, hPast);
 }

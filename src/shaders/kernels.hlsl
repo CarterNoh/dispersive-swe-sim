@@ -370,8 +370,8 @@ void CalcSWE(uint3 id : SV_DispatchThreadID) {
     // Calculate FFT wave forcing
     float invDepthCutoff = 1.0f / depthCutoff;
     float depthWeight = SafeTanh(in2[curr] * invDepthCutoff); // scaling term to reduce FFT waves in shallow water
-    gradh_x += depthWeight * in4[curr]; // FFT wave pressure gradient 
-    gradh_y += depthWeight * in5[curr];
+    // gradh_x += depthWeight * in4[curr]; // FFT wave pressure gradient 
+    // gradh_y += depthWeight * in5[curr];
 
     // Limit steep waves: When wave gets too steep, it "crashes"
     gradh_x = clamp(gradh_x, -slopeLimit, slopeLimit);
@@ -454,8 +454,6 @@ void UpdateTilde(uint3 id : SV_DispatchThreadID) {
     float2 samplePos = float2(id.x + step_x, id.y + step_y);
     float qtilde_x_sampled = SampleCubicClamped2D(in4, samplePos) * exp(-div_ux * timeStep);
     float qtilde_y_sampled = SampleCubicClamped2D(in5, samplePos) * exp(-div_uy * timeStep);
-    // float qtilde_x_sampled = in4[curr] * exp(-div_ux * timeStep);
-    // float qtilde_y_sampled = in5[curr] * exp(-div_uy * timeStep);
 
     // Limit flow to prevent negative water heights and enforce terrain boundaries
     float cflFactor = cflCondition * cellSize / timeStep;
@@ -471,7 +469,7 @@ void UpdateTilde(uint3 id : SV_DispatchThreadID) {
 
 [numthreads(16, 16, 1)]
 void CalcQAdvect(uint3 id : SV_DispatchThreadID) {
-    // Inputs: in0 = ubarNew_x, in1 = ubarNew_y, in2 = htilde, in3 = qtildePast_x, in4 = qtildePast_y, in5 = ubar_x, in6 = ubar_y, in7 = h, in8 = terrain
+    // Inputs: in0 = ubarNew_x, in1 = ubarNew_y, in2 = htilde
     // Outputs: out0 = qAdvect_x, out1 = qAdvect_y
 
     ///// H Update /////
@@ -484,22 +482,6 @@ void CalcQAdvect(uint3 id : SV_DispatchThreadID) {
     float h_sample = SampleCubicClamped2D(in2, samplePos);
     out0[id.xy] = in0[id.xy] * h_sample;
     out1[id.xy] = in1[id.xy] * h_sample;
-
-    // ///// Q Update /////
-    // float ubar_x_avg = 0.5f * (in0[id.xy] + in5[id.xy]); 
-    // float ubar_y_avg = 0.5f * (in1[id.xy] + in6[id.xy]);
-    // float timeStepOverCellSize = timeStep / cellSize;
-    // step_x = - ubar_x_avg * timeStepOverCellSize; // unitless (cells)
-    // step_y = - ubar_y_avg * timeStepOverCellSize; // unitless (cells)
-    // samplePos = float2(id.x + step_x, id.y + step_y);
-    // float qtilde_x_sampled = SampleCubicClamped2D(in3, samplePos);
-    // float qtilde_y_sampled = SampleCubicClamped2D(in4, samplePos);
-
-    // int2 maxGrid = int2(gridSizeX - 1, gridSizeY - 1);
-    // int2 right = clamp(id.xy + int2(1, 0), int2(0, 0), maxGrid);
-    // int2 up    = clamp(id.xy + int2(0, 1), int2(0, 0), maxGrid);
-    // out1[id.xy] = LimitFlowRate(qtilde_x_sampled, in7[id.xy], in8[id.xy], in7[right], in8[right], cflFactor); 
-    // out2[id.xy] = LimitFlowRate(qtilde_y_sampled, in7[id.xy], in8[id.xy], in7[up],    in8[up],    cflFactor); 
 }
 
 [numthreads(16, 16, 1)]
@@ -658,8 +640,8 @@ void CalcEWave(uint3 id : SV_DispatchThreadID) {
     // Fourier gradient along wave direction: dh/dx = hhat * (i * k)
     float2 dh = ComplexMul(hhat[id.xy], float2(0, k));
     // Phase shift in X: shift by dx/2 by multiplying by e^(i * shiftX) = cos(shiftX) + i*sin(shiftX)
-    float theta_x = -0.5f * cellSize * kx;
-    float theta_y = -0.5f * cellSize * ky;
+    float theta_x = 0.5f * cellSize * kx;
+    float theta_y = 0.5f * cellSize * ky;
     float2 shift_x = float2(cos(theta_x), sin(theta_x));
     float2 shift_y = float2(cos(theta_y), sin(theta_y));
     float2 dhdx = ComplexMul(dh, shift_x);
@@ -672,8 +654,6 @@ void CalcEWave(uint3 id : SV_DispatchThreadID) {
     shift_y = float2(cos(theta_y), sin(theta_y));
     float2 qx_shifted = ComplexMul(qhat_x[id.xy], shift_x); // now on top face
     float2 qy_shifted = ComplexMul(qhat_y[id.xy], shift_y); // now on right face
-    // float2 qx_shifted = qhat_x[id.xy];
-    // float2 qy_shifted = qhat_y[id.xy];
 
     /////// Update Q ///////
     // Shift to cell centers, do the following, shift back to faces

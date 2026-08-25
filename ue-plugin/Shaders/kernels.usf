@@ -462,16 +462,16 @@ void CalcEWave(uint3 id : SV_DispatchThreadID) {
     // Fourier gradient along wave direction: dh/dx = hhat * (i * k)
     float2 dh = ComplexMul(hhat[id.xy], float2(0, k));
     // Phase shift in X: shift by dx/2 by multiplying by e^(i * shiftX) = cos(shiftX) + i*sin(shiftX)
-    float theta_x = -0.5f * cellSize * kx;
-    float theta_y = -0.5f * cellSize * ky;
+    float theta_x = 0.5f * cellSize * kx;
+    float theta_y = 0.5f * cellSize * ky;
     float2 shift_x = float2(cos(theta_x), sin(theta_x));
     float2 shift_y = float2(cos(theta_y), sin(theta_y));
     float2 dhdx = ComplexMul(dh, shift_x);
     float2 dhdy = ComplexMul(dh, shift_y);
 
     // Shift the q cross-terms to align with their target faces
-    theta_x = 0.5f * cellSize * (kx - ky);
-    theta_y = 0.5f * cellSize * (ky - kx);
+    theta_x = 0.5f * cellSize * (ky - kx);
+    theta_y = 0.5f * cellSize * (kx - ky);
     shift_x = float2(cos(theta_x), sin(theta_x));
     shift_y = float2(cos(theta_y), sin(theta_y));
     float2 qx_shifted = ComplexMul(qhat_x[id.xy], shift_x); // now on top face
