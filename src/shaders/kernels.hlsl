@@ -417,6 +417,8 @@ void UpdateTilde(uint3 id : SV_DispatchThreadID) {
     int2 rdown = clamp(curr + int2(1, -1), int2(0, 0), maxGrid);
     int2 uleft = clamp(curr + int2(-1, 1), int2(0, 0), maxGrid);
 
+    ///// Q Update /////
+
     // integrate at midpoint of timestep 
     float ubar_x_avg = 0.5f * (in0[curr] + in1[curr]); 
     float ubar_y_avg = 0.5f * (in2[curr] + in3[curr]);
@@ -447,19 +449,21 @@ void UpdateTilde(uint3 id : SV_DispatchThreadID) {
     div_ux   *= (div_ux   < 0.f) ? gammaTransport : 1;
     div_uy   *= (div_uy   < 0.f) ? gammaTransport : 1;
 
-    // Update qtilde using exponential integration semi-lagrangian advection
+    // Update qtilde using exponential integration & semi-lagrangian advection
     float timeStepOverCellSize = timeStep * invCellSize;
-    float step_x = - ubar_x_avg * timeStepOverCellSize; // unitless (cells)
-    float step_y = - ubar_y_avg * timeStepOverCellSize; // unitless (cells)
-    float2 samplePos = float2(id.x + step_x, id.y + step_y);
-    float qtilde_x_sampled = SampleCubicClamped2D(in4, samplePos) * exp(-div_ux * timeStep);
-    float qtilde_y_sampled = SampleCubicClamped2D(in5, samplePos) * exp(-div_uy * timeStep);
+    float2 step_x = float2(-ubar_x_avg, 0.0f) * timeStepOverCellSize; // unitless (cells)
+    float2 step_y = float2(0.0f, -ubar_y_avg) * timeStepOverCellSize; // unitless (cells)
+    float2 sample_x = id.xy + step_x; //float2(id.x + step_x, id.y);
+    float2 sample_y = id.xy + step_y; //float2(id.x, id.y + step_y);
+    float qtilde_x_sampled = SampleCubicClamped2D(in4, sample_x) * exp(-div_ux * timeStep);
+    float qtilde_y_sampled = SampleCubicClamped2D(in5, sample_y) * exp(-div_uy * timeStep);
 
     // Limit flow to prevent negative water heights and enforce terrain boundaries
     float cflFactor = cflCondition * cellSize / timeStep;
     out1[curr] = LimitFlowRate(qtilde_x_sampled, in6[curr], in8[curr], in6[right], in8[right], cflFactor); 
     out2[curr] = LimitFlowRate(qtilde_y_sampled, in6[curr], in8[curr], in6[up],    in8[up],    cflFactor); 
-      
+    
+    ///// H Update /////
     // Update htilde using ubar divergence (not at middle of timestep)
     div_ubar  = (in0[curr] - in0[left] + in2[curr] - in2[down]) * invCellSize;
     // div_ubar  = clamp(div_ubar, -maxDivergence, maxDivergence);
@@ -471,15 +475,25 @@ void UpdateTilde(uint3 id : SV_DispatchThreadID) {
 void CalcQAdvect(uint3 id : SV_DispatchThreadID) {
     // Inputs: in0 = ubarNew_x, in1 = ubarNew_y, in2 = htilde
     // Outputs: out0 = qAdvect_x, out1 = qAdvect_y
-
-    ///// H Update /////
-    // cubic reconstruction: 1/2 cell accounts for staggered grid, 0.5 * dt accounts for h and u at different 1/2 times
     if (id.x >= (uint)(gridSizeX) || id.y >= (uint)(gridSizeY)) return;
+
+    int2 curr = int2(id.xy);
+    int2 maxGrid = int2(gridSizeX - 1, gridSizeY - 1);
+    int2 right = clamp(curr + int2(1, 0), int2(0, 0), maxGrid);
+    int2 left  = clamp(curr + int2(-1, 0), int2(0, 0), maxGrid);
+    int2 up    = clamp(curr + int2(0, 1), int2(0, 0), maxGrid);
+    int2 down  = clamp(curr + int2(0, -1), int2(0, 0), maxGrid);
+    int2 rdown = clamp(curr + int2(1, -1), int2(0, 0), maxGrid);
+    int2 uleft = clamp(curr + int2(-1, 1), int2(0, 0), maxGrid);
+
+    // cubic reconstruction: 1/2 cell accounts for staggered grid, 0.5 * dt accounts for h and u at different 1/2 times
     float halfTimeStepOverCellSize = (0.5f * timeStep) / cellSize;
-    float step_x = 0.5f - in0[id.xy] * halfTimeStepOverCellSize;
-    float step_y = 0.5f - in1[id.xy] * halfTimeStepOverCellSize;
-    float2 sample_x = float2(id.x + step_x, id.y);
-    float2 sample_y = float2(id.x, id.y + step_y);
+    float ubar_avg_x = 0.25 * (in0[left] + in0[curr] + in0[uleft] + in0[up]); // average ubar_x centered at cell top face
+    float ubar_avg_y = 0.25 * (in1[down] + in1[curr] + in1[rdown] + in1[right]); // average ubar_y centered at cell right face
+    float2 step_x = float2(0.5f, 0.0f) - float2(in0[id.xy], ubar_avg_y) * halfTimeStepOverCellSize;
+    float2 step_y = float2(0.0f, 0.5f) - float2(ubar_avg_x, in1[id.xy]) * halfTimeStepOverCellSize;
+    float2 sample_x = id.xy + step_x;
+    float2 sample_y = id.xy + step_y;
     float h_sample_x = SampleCubicClamped2D(in2, sample_x);
     float h_sample_y = SampleCubicClamped2D(in2, sample_y);
     out0[id.xy] = in0[id.xy] * h_sample_x;
