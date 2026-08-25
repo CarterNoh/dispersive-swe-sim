@@ -725,10 +725,12 @@ void CalcQAdvect(uint3 id : SV_DispatchThreadID) {
     float halfTimeStepOverCellSize = (0.5f * timeStep) / cellSize;
     float step_x = 0.5f - ubarNewIn_x[id.xy] * halfTimeStepOverCellSize;
     float step_y = 0.5f - ubarNewIn_y[id.xy] * halfTimeStepOverCellSize;
-    float2 samplePos = float2(id.x + step_x, id.y + step_y);
-    float h_sample = SampleCubicClamped2D(htildeIn, samplePos);
-    qAdvectOut_x[id.xy] = ubarNewIn_x[id.xy] * h_sample;
-    qAdvectOut_y[id.xy] = ubarNewIn_y[id.xy] * h_sample;
+    float2 sample_x = float2(id.x + step_x, id.y);
+    float2 sample_y = float2(id.x, id.y + step_y);
+    float h_sample_x = SampleCubicClamped2D(htildeIn, sample_x);
+    float h_sample_y = SampleCubicClamped2D(htildeIn, sample_y);
+    qAdvectOut_x[id.xy] = ubarNewIn_x[id.xy] * h_sample_x;
+    qAdvectOut_y[id.xy] = ubarNewIn_y[id.xy] * h_sample_y;
 }
 
 [numthreads(16, 16, 1)]
