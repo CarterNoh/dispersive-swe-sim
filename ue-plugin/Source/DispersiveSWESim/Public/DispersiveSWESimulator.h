@@ -232,61 +232,64 @@ private:
 
 	// Persistent graphics buffers for simulation states
 	TRefCountPtr<IPooledRenderTarget> TexTerrain;
-	TRefCountPtr<IPooledRenderTarget> TexTerrainBulk;
 	TRefCountPtr<IPooledRenderTarget> TexH;
 	TRefCountPtr<IPooledRenderTarget> TexQ_x;
 	TRefCountPtr<IPooledRenderTarget> TexQ_y;
 	TRefCountPtr<IPooledRenderTarget> Texh;
 	TRefCountPtr<IPooledRenderTarget> Texq_x;
 	TRefCountPtr<IPooledRenderTarget> Texq_y;
+	TRefCountPtr<IPooledRenderTarget> TexHOrig;
+	TRefCountPtr<IPooledRenderTarget> TexQOrig_x;
+	TRefCountPtr<IPooledRenderTarget> TexQOrig_y;
+	TRefCountPtr<IPooledRenderTarget> TexHPast;
+	TRefCountPtr<IPooledRenderTarget> TexQPast_x;
+	TRefCountPtr<IPooledRenderTarget> TexQPast_y;
+	TRefCountPtr<IPooledRenderTarget> TexAlpha_H;
+	TRefCountPtr<IPooledRenderTarget> TexAlpha_Q_x;
+	TRefCountPtr<IPooledRenderTarget> TexAlpha_Q_y;
 	TRefCountPtr<IPooledRenderTarget> Texhbar;
 	TRefCountPtr<IPooledRenderTarget> TexhbarOld;
 	TRefCountPtr<IPooledRenderTarget> Texqbar_x;
 	TRefCountPtr<IPooledRenderTarget> Texqbar_y;
 	TRefCountPtr<IPooledRenderTarget> Texhtilde;
+	TRefCountPtr<IPooledRenderTarget> TexhtildePast;
 	TRefCountPtr<IPooledRenderTarget> TexhtildeOld;
+	TRefCountPtr<IPooledRenderTarget> TexhtildeOldNext;
 	TRefCountPtr<IPooledRenderTarget> Texqtilde_x;
 	TRefCountPtr<IPooledRenderTarget> Texqtilde_y;
 	TRefCountPtr<IPooledRenderTarget> Texubar_x;
 	TRefCountPtr<IPooledRenderTarget> Texubar_y;
-	TRefCountPtr<IPooledRenderTarget> TexFoam;
-	TRefCountPtr<IPooledRenderTarget> TexRoughness;
+	TRefCountPtr<IPooledRenderTarget> TexubarNew_x;
+	TRefCountPtr<IPooledRenderTarget> TexubarNew_y;
+	TRefCountPtr<IPooledRenderTarget> TexqtildePast_x;
+	TRefCountPtr<IPooledRenderTarget> TexqtildePast_y;
+	TRefCountPtr<IPooledRenderTarget> TexqAdvect_x;
+	TRefCountPtr<IPooledRenderTarget> TexqAdvect_y;
+	TRefCountPtr<IPooledRenderTarget> TexhPast;
+	TRefCountPtr<IPooledRenderTarget> TexhHat;
+	TRefCountPtr<IPooledRenderTarget> TexqHat_x;
+	TRefCountPtr<IPooledRenderTarget> TexqHat_y;
+	TRefCountPtr<IPooledRenderTarget> TexqHat_x_array;
+	TRefCountPtr<IPooledRenderTarget> TexqHat_y_array;
 
 	// Stateful complex textures array for wave FFT propagation
 	TRefCountPtr<IPooledRenderTarget> TexHPos;
 	TRefCountPtr<IPooledRenderTarget> TexHNeg;
+	TRefCountPtr<IPooledRenderTarget> TexDelH_x;
+	TRefCountPtr<IPooledRenderTarget> TexDelH_y;
+	TRefCountPtr<IPooledRenderTarget> TexDisp_x;
+	TRefCountPtr<IPooledRenderTarget> TexDisp_y;
+	TRefCountPtr<IPooledRenderTarget> TexdelH_x;
+	TRefCountPtr<IPooledRenderTarget> TexdelH_y;
+	TRefCountPtr<IPooledRenderTarget> Texdisp_x;
+	TRefCountPtr<IPooledRenderTarget> Texdisp_y;
 
-	// Persistent buffers for transient textures to speed up RDG
-	TRefCountPtr<IPooledRenderTarget> TexAlpha_H;
-	TRefCountPtr<IPooledRenderTarget> TexAlpha_Qx;
-	TRefCountPtr<IPooledRenderTarget> TexAlpha_Qy;
-	TRefCountPtr<IPooledRenderTarget> TexHNext;
-	TRefCountPtr<IPooledRenderTarget> TexQNextX;
-	TRefCountPtr<IPooledRenderTarget> TexQNextY;
-	TRefCountPtr<IPooledRenderTarget> TexDelHx;
-	TRefCountPtr<IPooledRenderTarget> TexDelHy;
-	TRefCountPtr<IPooledRenderTarget> TexDispX;
-	TRefCountPtr<IPooledRenderTarget> TexDispY;
-	TRefCountPtr<IPooledRenderTarget> TexDelHx_Out;
-	TRefCountPtr<IPooledRenderTarget> TexDelHy_Out;
-	TRefCountPtr<IPooledRenderTarget> TexDispX_Out;
-	TRefCountPtr<IPooledRenderTarget> TexDispY_Out;
-	TRefCountPtr<IPooledRenderTarget> TexHHat;
-	TRefCountPtr<IPooledRenderTarget> TexQHatX;
-	TRefCountPtr<IPooledRenderTarget> TexQHatY;
-	TRefCountPtr<IPooledRenderTarget> TexQHatXArray;
-	TRefCountPtr<IPooledRenderTarget> TexQHatYArray;
-	TRefCountPtr<IPooledRenderTarget> TexQTildePastX;
-	TRefCountPtr<IPooledRenderTarget> TexQTildePastY;
-	TRefCountPtr<IPooledRenderTarget> TexQAdvectX;
-	TRefCountPtr<IPooledRenderTarget> TexQAdvectY;
-	TRefCountPtr<IPooledRenderTarget> TexHPast_Transport;
-	TRefCountPtr<IPooledRenderTarget> TexUbarNewX;
-	TRefCountPtr<IPooledRenderTarget> TexUbarNewY;
-	TRefCountPtr<IPooledRenderTarget> TexHtildeOldCopy;
-	TRefCountPtr<IPooledRenderTarget> TexHtildeCopy;
+	// Foam, roughness, and dummy export textures
+	TRefCountPtr<IPooledRenderTarget> TexFoam;
 	TRefCountPtr<IPooledRenderTarget> TexNewFoam;
+	TRefCountPtr<IPooledRenderTarget> TexRoughness;
 	TRefCountPtr<IPooledRenderTarget> TexNewRoughness;
+	TRefCountPtr<IPooledRenderTarget> TexTerrainExportDummy;
 
 	void InitializeSimulation();
 	void AllocatePersistentTargets(FRHICommandListImmediate& RHICmdList);

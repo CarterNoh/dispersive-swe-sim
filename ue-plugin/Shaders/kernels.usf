@@ -63,7 +63,7 @@ Texture2D<float>   alpha_QIn_y;
 Texture2D<float>   htildeIn;
 Texture2D<float>   qtildeIn_x;
 Texture2D<float>   qtildeIn_y;
-Texture2D<float>   htildeOldCopy;
+Texture2D<float>   htildeOld;
 Texture2D<float>   hbarIn;
 Texture2D<float>   qbarIn_x;
 Texture2D<float>   qbarIn_y;
@@ -111,7 +111,7 @@ RWTexture2D<float> qbarOut_y;
 RWTexture2D<float> htildeOut;
 RWTexture2D<float> qtildeOut_x;
 RWTexture2D<float> qtildeOut_y;
-RWTexture2D<float> htildeOldOut;
+RWTexture2D<float> htildeOldNext;
 RWTexture2D<float2> hHat;
 RWTexture2D<float2> qHat_x;
 RWTexture2D<float2> qHat_y;
@@ -382,8 +382,8 @@ void DecomposeFields(uint3 id : SV_DispatchThreadID) {
 
 [numthreads(16, 16, 1)]
 void TransferToFFT(uint3 id : SV_DispatchThreadID) {
-    // Inputs: htildeIn, qtildeIn_x, qtildeIn_y, htildeOldCopy (read-only copy)
-    // Outputs: htildeOldOut (write new value), hHat, qHat_x, qHat_y
+    // Inputs: htildeIn, qtildeIn_x, qtildeIn_y, htildeOld
+    // Outputs: htildeOldNext, hHat, qHat_x, qHat_y
     if (id.x >= (uint)(paddedGridSizeX) || id.y >= (uint)(paddedGridSizeY)) return;
 
     if (id.x >= (uint)(gridSizeX) || id.y >= (uint)(gridSizeY)) {
@@ -393,8 +393,8 @@ void TransferToFFT(uint3 id : SV_DispatchThreadID) {
         return;
     }
 
-    float h_real = 0.5 * (htildeIn[id.xy] + htildeOldCopy[id.xy]);
-    htildeOldOut[id.xy]   = htildeIn[id.xy];
+    float h_real = 0.5 * (htildeIn[id.xy] + htildeOld[id.xy]);
+    htildeOldNext[id.xy] = htildeIn[id.xy];
     hHat[id.xy]   = float2(h_real, 0.0f);
     qHat_x[id.xy] = float2(qtildeIn_x[id.xy], 0.0f);
     qHat_y[id.xy] = float2(qtildeIn_y[id.xy], 0.0f);
