@@ -30,7 +30,7 @@ public:
 	static constexpr float WATER_SCALE = 4.f;     // scale of water height features
 	
 	// Decomposition Parameters
-	static constexpr int DIFFUSION_ITERATIONS = 256;  // number of iterations for diffusion step, more iterations means more stable but also more expensive
+	static constexpr int DIFFUSION_ITERATIONS = 16;  // number of iterations for diffusion step, more iterations means more stable but also more expensive
 	static constexpr int MAX_DIFFUSION_CELLS = 8; 	  // maximum height of diffusion stencil in cells, higher means more diffusion in deep water
 	static constexpr float DIFFUSION_PENALTY = 0.01f; // penalty factor for diffusion, higher means more diffusion and more stability but also more damping of waves
 	
@@ -42,7 +42,7 @@ public:
 	static constexpr float SLOPE_LIMIT = 1.f; 	    // max slope of buld flow surface before energy dissipation occurs
 	static constexpr float GAMMA_TRANSPORT = 0.25f; // blending factor for transport step, lower means more damping of waves
 	static constexpr int   SPONGE_THICKNESS = 8; // thickness in cells of the sponge layer used to absorb waves at the boundaries
-	static constexpr float LAPLACIAN_DAMPING = 0.001f; // damping factor for Laplacian smoothing to reduce spikes and unstable grid-scale ripples
+	static constexpr float LAPLACIAN_DAMPING = 0.01f; // damping factor for Laplacian smoothing to reduce spikes and unstable grid-scale ripples
 
     // FFT Wave Parameters
     float time = 0.f;

@@ -44,6 +44,21 @@ void UDispersiveSWESimulator::InitializeSimulation()
 {
 	UE_LOG(LogTemp, Warning, TEXT("InitializeSimulation() running: GridSizeX=%d, GridSizeY=%d, CellSize=%f, CapturedWorldWidth=%f"), GridSizeX, GridSizeY, CellSize, CapturedWorldWidth);
 
+	// // Disable RDG resource aliasing and extend lifetimes to ensure pooled persistent render targets remain stable
+	// auto SafeSetCVar = [](const TCHAR* Name, int32 Value) {
+	// 	if (IConsoleVariable* CVar = IConsoleManager::Get().FindConsoleVariable(Name))
+	// 	{
+	// 		CVar->Set(Value, ECVF_SetByCode);
+	// 	}
+	// };
+
+	// SafeSetCVar(TEXT("r.RDG.TransientAllocator"), 0);
+	// SafeSetCVar(TEXT("r.RDG.ResourceAliasing"), 0);
+	// SafeSetCVar(TEXT("r.RDG.Debug.ExtendResourceLifetimes"), 1);
+	// SafeSetCVar(TEXT("r.RDG.Debug.ResourceClobber"), 1);
+	// SafeSetCVar(TEXT("r.RDG.ClobberResources"), 1);
+	// SafeSetCVar(TEXT("r.RDG.ParallelExecute"), 0);
+
 	// Load configuration from JSON if path is provided
 	if (!JsonConfigFilePath.IsEmpty()) {
 		LoadParametersFromJson(JsonConfigFilePath);
@@ -260,13 +275,24 @@ void UDispersiveSWESimulator::SetupInitialStates(FRHICommandListImmediate& RHICm
 
 	TUniformBufferRef<FSimConstants> ConstantBuffer = CreateUniformBufferImmediate(CPUConstants, EUniformBufferUsage::UniformBuffer_SingleFrame);
 
-	// Clear all persistent simulation state textures to zero to avoid uninitialized GPU garbage
+	// Clear all persistent simulation state textures to zero to avoid uninitialized GPU garbage (matching Sim2D.cpp)
 	{
 		FRDGBuilder GraphBuilder(RHICmdList);
+
+		// 1. 2D Scalar simulation fields
 		if (TexQ_x.IsValid()) AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(GraphBuilder.RegisterExternalTexture(TexQ_x)), FLinearColor::Black);
 		if (TexQ_y.IsValid()) AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(GraphBuilder.RegisterExternalTexture(TexQ_y)), FLinearColor::Black);
 		if (Texq_x.IsValid()) AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(GraphBuilder.RegisterExternalTexture(Texq_x)), FLinearColor::Black);
 		if (Texq_y.IsValid()) AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(GraphBuilder.RegisterExternalTexture(Texq_y)), FLinearColor::Black);
+		if (TexHOrig.IsValid()) AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(GraphBuilder.RegisterExternalTexture(TexHOrig)), FLinearColor::Black);
+		if (TexQOrig_x.IsValid()) AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(GraphBuilder.RegisterExternalTexture(TexQOrig_x)), FLinearColor::Black);
+		if (TexQOrig_y.IsValid()) AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(GraphBuilder.RegisterExternalTexture(TexQOrig_y)), FLinearColor::Black);
+		if (TexHPast.IsValid()) AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(GraphBuilder.RegisterExternalTexture(TexHPast)), FLinearColor::Black);
+		if (TexQPast_x.IsValid()) AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(GraphBuilder.RegisterExternalTexture(TexQPast_x)), FLinearColor::Black);
+		if (TexQPast_y.IsValid()) AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(GraphBuilder.RegisterExternalTexture(TexQPast_y)), FLinearColor::Black);
+		if (TexAlpha_H.IsValid()) AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(GraphBuilder.RegisterExternalTexture(TexAlpha_H)), FLinearColor::Black);
+		if (TexAlpha_Q_x.IsValid()) AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(GraphBuilder.RegisterExternalTexture(TexAlpha_Q_x)), FLinearColor::Black);
+		if (TexAlpha_Q_y.IsValid()) AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(GraphBuilder.RegisterExternalTexture(TexAlpha_Q_y)), FLinearColor::Black);
 		if (Texqbar_x.IsValid()) AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(GraphBuilder.RegisterExternalTexture(Texqbar_x)), FLinearColor::Black);
 		if (Texqbar_y.IsValid()) AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(GraphBuilder.RegisterExternalTexture(Texqbar_y)), FLinearColor::Black);
 		if (Texhtilde.IsValid()) AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(GraphBuilder.RegisterExternalTexture(Texhtilde)), FLinearColor::Black);
@@ -279,6 +305,38 @@ void UDispersiveSWESimulator::SetupInitialStates(FRHICommandListImmediate& RHICm
 		if (TexqtildePast_y.IsValid()) AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(GraphBuilder.RegisterExternalTexture(TexqtildePast_y)), FLinearColor::Black);
 		if (Texubar_x.IsValid()) AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(GraphBuilder.RegisterExternalTexture(Texubar_x)), FLinearColor::Black);
 		if (Texubar_y.IsValid()) AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(GraphBuilder.RegisterExternalTexture(Texubar_y)), FLinearColor::Black);
+		if (TexubarNew_x.IsValid()) AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(GraphBuilder.RegisterExternalTexture(TexubarNew_x)), FLinearColor::Black);
+		if (TexubarNew_y.IsValid()) AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(GraphBuilder.RegisterExternalTexture(TexubarNew_y)), FLinearColor::Black);
+		if (TexqAdvect_x.IsValid()) AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(GraphBuilder.RegisterExternalTexture(TexqAdvect_x)), FLinearColor::Black);
+		if (TexqAdvect_y.IsValid()) AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(GraphBuilder.RegisterExternalTexture(TexqAdvect_y)), FLinearColor::Black);
+		if (TexhPast.IsValid()) AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(GraphBuilder.RegisterExternalTexture(TexhPast)), FLinearColor::Black);
+		if (TexdelH_x.IsValid()) AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(GraphBuilder.RegisterExternalTexture(TexdelH_x)), FLinearColor::Black);
+		if (TexdelH_y.IsValid()) AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(GraphBuilder.RegisterExternalTexture(TexdelH_y)), FLinearColor::Black);
+		if (Texdisp_x.IsValid()) AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(GraphBuilder.RegisterExternalTexture(Texdisp_x)), FLinearColor::Black);
+		if (Texdisp_y.IsValid()) AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(GraphBuilder.RegisterExternalTexture(Texdisp_y)), FLinearColor::Black);
+		if (TexTerrainExportDummy.IsValid()) AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(GraphBuilder.RegisterExternalTexture(TexTerrainExportDummy)), FLinearColor::Black);
+
+		// 2. 2D Complex float2 fields
+		if (TexhHat.IsValid()) AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(GraphBuilder.RegisterExternalTexture(TexhHat)), FLinearColor::Black);
+		if (TexqHat_x.IsValid()) AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(GraphBuilder.RegisterExternalTexture(TexqHat_x)), FLinearColor::Black);
+		if (TexqHat_y.IsValid()) AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(GraphBuilder.RegisterExternalTexture(TexqHat_y)), FLinearColor::Black);
+
+		// 3. 2D Complex float2 array fields
+		if (TexDelH_x.IsValid()) AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(GraphBuilder.RegisterExternalTexture(TexDelH_x)), FLinearColor::Black);
+		if (TexDelH_y.IsValid()) AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(GraphBuilder.RegisterExternalTexture(TexDelH_y)), FLinearColor::Black);
+		if (TexDisp_x.IsValid()) AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(GraphBuilder.RegisterExternalTexture(TexDisp_x)), FLinearColor::Black);
+		if (TexDisp_y.IsValid()) AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(GraphBuilder.RegisterExternalTexture(TexDisp_y)), FLinearColor::Black);
+		if (TexqHat_x_array.IsValid()) AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(GraphBuilder.RegisterExternalTexture(TexqHat_x_array)), FLinearColor::Black);
+		if (TexqHat_y_array.IsValid()) AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(GraphBuilder.RegisterExternalTexture(TexqHat_y_array)), FLinearColor::Black);
+		if (TexHPos.IsValid()) AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(GraphBuilder.RegisterExternalTexture(TexHPos)), FLinearColor::Black);
+		if (TexHNeg.IsValid()) AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(GraphBuilder.RegisterExternalTexture(TexHNeg)), FLinearColor::Black);
+
+		// 4. Foam & Roughness
+		if (TexFoam.IsValid()) AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(GraphBuilder.RegisterExternalTexture(TexFoam)), FLinearColor::Black);
+		if (TexNewFoam.IsValid()) AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(GraphBuilder.RegisterExternalTexture(TexNewFoam)), FLinearColor::Black);
+		if (TexRoughness.IsValid()) AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(GraphBuilder.RegisterExternalTexture(TexRoughness)), FLinearColor::Black);
+		if (TexNewRoughness.IsValid()) AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(GraphBuilder.RegisterExternalTexture(TexNewRoughness)), FLinearColor::Black);
+
 		GraphBuilder.Execute();
 	}
 
