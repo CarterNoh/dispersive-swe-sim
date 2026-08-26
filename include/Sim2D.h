@@ -16,7 +16,7 @@ public:
 	static constexpr float DOMAIN_SIZE_X = 252.f; // domain size in meters
 	static constexpr float CELLSIZE = DOMAIN_SIZE_X / GRIDSIZE_X;	// cell size in one dimension (meters/cell)
 	static constexpr float TIMESTEP = 1.f / 60.f;
-	static constexpr int SPONGE_THICKNESS = 8; // thickness in cells of the sponge layer used to absorb waves at the boundaries
+	static constexpr float CFL_CONDITION = 0.25f;  // max allowed CFL condition for stability
 	static constexpr float MIN_WATER_HEIGHT = 0.001f; // minimum water height for stability
     static constexpr float SURFACE_TENSION = 0.001f;
     static constexpr float DENSITY = 999.f;
@@ -30,21 +30,21 @@ public:
 	static constexpr float WATER_SCALE = 4.f;     // scale of water height features
 	
 	// Decomposition Parameters
-	static constexpr int DIFFUSION_ITERATIONS = 16;  // number of iterations for diffusion step, more iterations means more stable but also more expensive
-	static constexpr int MAX_DIFFUSION_CELLS = 8; 	  // total virtual time of the diffusion step. Smaller is less diffusion, larger is more
+	static constexpr int DIFFUSION_ITERATIONS = 256;  // number of iterations for diffusion step, more iterations means more stable but also more expensive
+	static constexpr int MAX_DIFFUSION_CELLS = 8; 	  // maximum height of diffusion stencil in cells, higher means more diffusion in deep water
 	static constexpr float DIFFUSION_PENALTY = 0.01f; // penalty factor for diffusion, higher means more diffusion and more stability but also more damping of waves
 	
 	// eWave Parameters
 	std::vector<float> depths = { 1.0f, 2.0f, 4.0f, 16.0f, 64.0f };
 	int DEPTH_NUM = depths.size(); // number of discrete water depth solutions to compute for eWave dispersion correction
 
-	// Transport Parameters
-	static constexpr float SLOPE_LIMIT = 1.f; 		// 
-	static constexpr float CFL_CONDITION = 0.25f;  // max allowed CFL condition for stability of SWE step, can be higher than overall CFL condition since diffusion and transport steps handle stability as well
+	// SWE & Transport Parameters
+	static constexpr float SLOPE_LIMIT = 1.f; 	    // max slope of buld flow surface before energy dissipation occurs
 	static constexpr float GAMMA_TRANSPORT = 0.25f; // blending factor for transport step, lower means more damping of waves
-	static constexpr float LAPLACIAN_DAMPING = 0.0f; // damping factor for Laplacian smoothing to reduce spikes and unstable grid-scale ripples
+	static constexpr int   SPONGE_THICKNESS = 8; // thickness in cells of the sponge layer used to absorb waves at the boundaries
+	static constexpr float LAPLACIAN_DAMPING = 0.001f; // damping factor for Laplacian smoothing to reduce spikes and unstable grid-scale ripples
 
-    // FFT Parameters
+    // FFT Wave Parameters
     float time = 0.f;
     static constexpr float FETCH        = 200.f;    // kilometers
     static constexpr float WIND_SPEED   = 14.f;     // m/s, at 10 meters above surface
@@ -56,7 +56,7 @@ public:
     static constexpr float FILTER_BIG   = 10000.f;  // 
     static constexpr float FILTER_WIDTH = 1.f;      // 
     static constexpr float FILTER_MIN   = 0.01f;    // 
-	static constexpr float DEPTH_CUTOFF = 8.f; 		// depth to start attenuating FFT waves
+	static constexpr float DEPTH_CUTOFF = 4.f; 		// depth to start attenuating FFT waves
 
 	// Simulation variables
 	GPUField terrain, H, Q_x, Q_y, h, q_x, q_y, 

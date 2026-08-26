@@ -238,16 +238,17 @@ void Sim::FFTStep() {
     // Propagate waves
 	gpu->DispatchPadded(PropagateWaves, 
 		{HPos.srv, HNeg.srv},
-		{DelH_x.uav, DelH_y.uav, Disp_x.uav, Disp_y.uav}, DEPTH_NUM);
+		{DelH_x.uav, DelH_y.uav, Disp_x.uav, Disp_y.uav, HProp.uav}, DEPTH_NUM);
 	gpu->ExecuteFFT(DelH_x.uav,  paddedSizeX, paddedSizeY, true, DEPTH_NUM);
 	gpu->ExecuteFFT(DelH_y.uav,  paddedSizeX, paddedSizeY, true, DEPTH_NUM);
 	gpu->ExecuteFFT(Disp_x.uav,  paddedSizeX, paddedSizeY, true, DEPTH_NUM);
 	gpu->ExecuteFFT(Disp_y.uav,  paddedSizeX, paddedSizeY, true, DEPTH_NUM);
+	gpu->ExecuteFFT(HProp.uav,  paddedSizeX, paddedSizeY, true, DEPTH_NUM);
 
 	// Interpolate outputs between depths
 	gpu->Dispatch(Interp, 
-		{DelH_x.srv, DelH_y.srv, Disp_x.srv, Disp_y.srv, hbar.srv}, 
-		{delH_x.uav, delH_y.uav, disp_x.uav, disp_y.uav});
+		{DelH_x.srv, DelH_y.srv, Disp_x.srv, Disp_y.srv, hbar.srv, HProp.srv}, 
+		{delH_x.uav, delH_y.uav, disp_x.uav, disp_y.uav, hFFT.uav});
 }
 
 void Sim::eWaveStep() {

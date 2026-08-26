@@ -68,7 +68,7 @@ public:
 
 	// Iterations of the diffusion step per frame
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SWE Simulation|Decomposition")
-	int32 DiffusionIterations = 32;
+	int32 DiffusionIterations = 256;
 
 	// Total virtual time of the diffusion step
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SWE Simulation|Decomposition")
@@ -92,7 +92,7 @@ public:
 
 	// Damping factor for Laplacian smoothing to reduce spikes and unstable grid-scale ripples
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SWE Simulation|SWE")
-	float LaplacianDamping = 0.08f;
+	float LaplacianDamping = 0.001f;
 
 	// Fetch in kilometers for JONSWAP wave spectrum
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SWE Simulation|Wind Wave")

@@ -390,6 +390,7 @@ RWTexture2DArray<float2> DelHxOut : register(u0);
 RWTexture2DArray<float2> DelHyOut : register(u1);
 RWTexture2DArray<float2> DispXOut : register(u2);
 RWTexture2DArray<float2> DispYOut : register(u3);
+RWTexture2DArray<float2> HPropOut : register(u4);
 [numthreads(16, 16, 1)]
 void PropagateWaves(uint3 id : SV_DispatchThreadID) {
     if (id.x >= (uint)(paddedGridSizeX) || id.y >= (uint)(paddedGridSizeY)) return;
@@ -399,6 +400,7 @@ void PropagateWaves(uint3 id : SV_DispatchThreadID) {
         DelHyOut[id] = float2(0.f, 0.f);
         DispXOut[id] = float2(0.f, 0.f);
         DispYOut[id] = float2(0.f, 0.f);
+        HPropOut[id] = float2(0.f, 0.f);
         return;
     }
 
@@ -419,6 +421,7 @@ void PropagateWaves(uint3 id : SV_DispatchThreadID) {
         DelHyOut[id] = float2(0.f, 0.f);
         DispXOut[id] = float2(0.f, 0.f);
         DispYOut[id] = float2(0.f, 0.f);
+        HPropOut[id] = float2(0.f, 0.f);
         return;
     }
     float invK = rsqrt(k2);
@@ -437,6 +440,7 @@ void PropagateWaves(uint3 id : SV_DispatchThreadID) {
     float2 HPlus = ComplexMul(HPosIn[id], fwd);
     float2 HMin = ComplexMul(HNegIn[id], bkwd);
     float2 HProp = HPlus + HMin;
+    HPropOut[id] = HProp;
 
     // Calculate spatial derivative of H, shifted to cell faces
     float2 dhdx = ComplexMul(HProp, float2(0, kx));
@@ -459,10 +463,12 @@ Texture2DArray<float2> HyIn: register(t1);
 Texture2DArray<float2> DxIn: register(t2);
 Texture2DArray<float2> DyIn: register(t3);
 Texture2D<float>       hbar: register(t4);
+Texture2DArray<float2> HIn: register(t5);
 RWTexture2D<float> HxOut: register(u0);
 RWTexture2D<float> HyOut: register(u1);
 RWTexture2D<float> DxOut: register(u2);
 RWTexture2D<float> DyOut: register(u3);
+RWTexture2D<float> HOut: register(u4);
 [numthreads(16, 16, 1)]
 void Interp(uint3 id : SV_DispatchThreadID) {
     if (id.x >= (uint)(gridSizeX) || id.y >= (uint)(gridSizeY)) return;
@@ -473,6 +479,7 @@ void Interp(uint3 id : SV_DispatchThreadID) {
         HyOut[id.xy] = 0.f;
         DxOut[id.xy] = 0.f;
         DyOut[id.xy] = 0.f;
+        HOut[id.xy] = 0.f;
         return;
     }
     int d1 = 0;
@@ -487,6 +494,7 @@ void Interp(uint3 id : SV_DispatchThreadID) {
         HyOut[id.xy] = s * HyIn[uint3(id.x, id.y, 0)].x;
         DxOut[id.xy] = s * DxIn[uint3(id.x, id.y, 0)].x;
         DyOut[id.xy] = s * DyIn[uint3(id.x, id.y, 0)].x;
+        HOut[id.xy]  = s * HIn[uint3(id.x, id.y, 0)].x;
     } else {
         // Interpolate between depths
         float s = 0.f;
@@ -498,5 +506,6 @@ void Interp(uint3 id : SV_DispatchThreadID) {
         HyOut[id.xy] = s * HyIn[id1].x + (1.f - s) * HyIn[id2].x;
         DxOut[id.xy] = s * DxIn[id1].x + (1.f - s) * DxIn[id2].x;
         DyOut[id.xy] = s * DyIn[id1].x + (1.f - s) * DyIn[id2].x;
+        HOut[id.xy]  = s * HIn[id1].x  + (1.f - s) * HIn[id2].x;
     }
 }
