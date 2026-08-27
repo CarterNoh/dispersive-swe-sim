@@ -75,8 +75,8 @@ std::vector<float> Sim::SetWater(std::vector<float>& terrain) {
 			}
             else if (WATER_TYPE == 3) { // Localized splash (Gaussian)
                 float dist = sqrt(pow(xf - 0.5f, 2) + pow(yf - 0.5f, 2));
-                if (dist < 0.1f) 
-					waterSurface += WATER_SCALE * cos(dist * PI * 5.0f);
+                if (dist < 0.05f) 
+					waterSurface += WATER_SCALE; // * cos(dist * PI * 5.0f);
             }
 			else if (WATER_TYPE == 4) { // Surface Ripples
 				waterSurface += 0.5f * WATER_SCALE * (cos(2.f * PI * x / 37.f) + cos(2.f * PI * y / 49.f)); // this needs some work
@@ -254,11 +254,13 @@ void Sim::FFTStep() {
 void Sim::eWaveStep() {
 	// Copy variables to fourier domain & perform FFT
 	gpu->DispatchPadded(TransferToFFT, 
-		{htilde.srv, qtilde_x.srv, qtilde_y.srv},
-		{htildeOld.uav, hHat.uav, qHat_x.uav, qHat_y.uav});
+		{htilde.srv, htildeOld.srv, qtilde_x.srv, qtilde_y.srv},
+		{htildeOldNext.uav, hHat.uav, qHat_x.uav, qHat_y.uav});
 	gpu->ExecuteFFT(hHat.uav, paddedSizeX, paddedSizeY, false);
 	gpu->ExecuteFFT(qHat_x.uav, paddedSizeX, paddedSizeY, false);
 	gpu->ExecuteFFT(qHat_y.uav, paddedSizeX, paddedSizeY, false);
+
+	std::swap(htildeOldNext, htildeOld);
 
 	// Compute eWave
 	gpu->DispatchPadded(CalcEWave, 
@@ -299,13 +301,12 @@ void Sim::TransportStep() {
 	// Adjust qtilde to account for advection by ubar, using cubic sampling to get better accuracy.
 	std::swap(qtilde_x, qtildePast_x);
 	std::swap(qtilde_y, qtildePast_y);
+	std::swap(htilde, htildePast);
+
 	gpu->Dispatch(UpdateTilde, 
 		{ubarNew_x.srv, ubar_x.srv, ubarNew_y.srv, ubar_y.srv, 
-			qtildePast_x.srv, qtildePast_y.srv, h.srv, htilde.srv, terrain.srv},
+			htildePast.srv, qtildePast_x.srv, qtildePast_y.srv},
 		{htilde.uav, qtilde_x.uav, qtilde_y.uav});	
-
-	// std::swap(qtilde_x, qtildePast_x);
-	// std::swap(qtilde_y, qtildePast_y);
 	
 	// Advection of h through ubar:
 	// Construct q_advect = ubar * htilde sampled at cell edges using cubic sampling

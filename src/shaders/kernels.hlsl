@@ -400,7 +400,7 @@ void CalcSWE(uint3 id : SV_DispatchThreadID) {
 [numthreads(16, 16, 1)]
 void UpdateTilde(uint3 id : SV_DispatchThreadID) {
     // Inputs: in0 = ubarNew_x, in1 = ubar_x, in2 = ubarNew_y, in3 = ubar_y, 
-    //         in4 = qtildePast_x, in5 = qtildePast_y, in6 = h, in7 = htilde, in8 = terrain
+    //         in4 = htildePast, in5 = qtildePast_x, in6 = qtildePast_y
     // Outputs: out0 = htilde, out1 = qtilde_x, out2 = qtilde_y
     if (id.x >= (uint)(gridSizeX) || id.y >= (uint)(gridSizeY)) return;
 
@@ -451,15 +451,15 @@ void UpdateTilde(uint3 id : SV_DispatchThreadID) {
     float timeStepOverCellSize = timeStep * rcp(cellSize);
     float2 step_x = -float2(ubar_x_avg, ubar_y_at_xface) * timeStepOverCellSize; // unitless (cells)
     float2 step_y = -float2(ubar_x_at_yface, ubar_y_avg) * timeStepOverCellSize; // unitless (cells)
-    out1[curr] = SampleCubicClamped2D(in4, id.xy + step_x) * exp(-div_ux * timeStep);
-    out2[curr] = SampleCubicClamped2D(in5, id.xy + step_y) * exp(-div_uy * timeStep); 
+    out1[curr] = SampleCubicClamped2D(in5, id.xy + step_x) * exp(-div_ux * timeStep);
+    out2[curr] = SampleCubicClamped2D(in6, id.xy + step_y) * exp(-div_uy * timeStep); 
     
     ///// H Update /////
     // Update htilde using ubar divergence (not at middle of timestep)
     div_ubar  = (in0[curr] - in0[left] + in2[curr] - in2[down]) * rcp(cellSize);
     // div_ubar  = clamp(div_ubar, -maxDivergence, maxDivergence);
     div_ubar *= (div_ubar < 0.f) ? gammaTransport : 1; // dampen if converging to avoid breaking waves
-    out0[curr] = in7[curr] * exp(-div_ubar * timeStep);
+    out0[curr] = in4[curr] * exp(-div_ubar * timeStep);
 }
 
 [numthreads(16, 16, 1)]
@@ -483,20 +483,20 @@ void CalcQAdvect(uint3 id : SV_DispatchThreadID) {
     float ubar_avg_y = 0.25 * (in1[down] + in1[curr] + in1[rdown] + in1[right]); // average ubar_y centered at cell right face
     float2 step_x = float2(0.5f, 0.0f) - float2(in0[id.xy], ubar_avg_y) * halfTimeStepOverCellSize;
     float2 step_y = float2(0.0f, 0.5f) - float2(ubar_avg_x, in1[id.xy]) * halfTimeStepOverCellSize;
-    // float h_sample_x = SampleCubicClamped2D(in2, id.xy + step_x);
-    // float h_sample_y = SampleCubicClamped2D(in2, id.xy + step_y);
+    float h_sample_x = SampleCubicClamped2D(in2, id.xy + step_x);
+    float h_sample_y = SampleCubicClamped2D(in2, id.xy + step_y);
 
-    // High-order cubic reconstructed values
-    float h_cubic_x = SampleCubicClamped2D(in2, id.xy + step_x);
-    float h_cubic_y = SampleCubicClamped2D(in2, id.xy + step_y);
-    // 1st-order upwind donor-cell values
-    float h_upwind_x = (in0[id.xy] >= 0.0f) ? in2[curr] : in2[right];
-    float h_upwind_y = (in1[id.xy] >= 0.0f) ? in2[curr] : in2[up];
-    // TVD / Slope-limited blend: Use cubic where smooth, blend to upwind near sharp gradients
-    float nu_x = abs(in0[id.xy]) * halfTimeStepOverCellSize;
-    float nu_y = abs(in1[id.xy]) * halfTimeStepOverCellSize;
-    float h_sample_x = lerp(h_upwind_x, h_cubic_x, clamp(1.0f - nu_x, 0.0f, 1.0f));
-    float h_sample_y = lerp(h_upwind_y, h_cubic_y, clamp(1.0f - nu_y, 0.0f, 1.0f));
+    // // High-order cubic reconstructed values
+    // float h_cubic_x = SampleCubicClamped2D(in2, id.xy + step_x);
+    // float h_cubic_y = SampleCubicClamped2D(in2, id.xy + step_y);
+    // // 1st-order upwind donor-cell values
+    // float h_upwind_x = (in0[id.xy] >= 0.0f) ? in2[curr] : in2[right];
+    // float h_upwind_y = (in1[id.xy] >= 0.0f) ? in2[curr] : in2[up];
+    // // TVD / Slope-limited blend: Use cubic where smooth, blend to upwind near sharp gradients
+    // float nu_x = abs(in0[id.xy]) * halfTimeStepOverCellSize;
+    // float nu_y = abs(in1[id.xy]) * halfTimeStepOverCellSize;
+    // float h_sample_x = lerp(h_upwind_x, h_cubic_x, clamp(1.0f - nu_x, 0.0f, 1.0f));
+    // float h_sample_y = lerp(h_upwind_y, h_cubic_y, clamp(1.0f - nu_y, 0.0f, 1.0f));
 
     out0[id.xy] = in0[id.xy] * h_sample_x;
     out1[id.xy] = in1[id.xy] * h_sample_y;
@@ -516,16 +516,16 @@ void IntegrateH(uint3 id : SV_DispatchThreadID) {
     int2 left  = clamp(curr + int2(-1, 0), int2(0, 0), maxGrid);
     int2 up    = clamp(curr + int2(0, 1), int2(0, 0), maxGrid);
     int2 down  = clamp(curr + int2(0, -1), int2(0, 0), maxGrid);
-    float h_curr = in6[curr];
-    float t_curr = in7[curr];
+    float h_curr  = in6[curr];
     float h_right = in6[right];
+    float h_left  = in6[left];
+    float h_up    = in6[up];
+    float h_down  = in6[down];
+    float t_curr  = in7[curr];
     float t_right = in7[right];
-    float h_left = in6[left];
-    float t_left = in7[left];
-    float h_up = in6[up];
-    float t_up = in7[up];
-    float h_down = in6[down];
-    float t_down = in7[down];
+    float t_left  = in7[left];
+    float t_up    = in7[up];
+    float t_down  = in7[down];
 
     // q = qbar + qtilde + qAdvect
     // sponge layer: damp q near edges to absorb waves, simulate an open boundary
@@ -573,8 +573,8 @@ RWTexture2D<float2> qHat_x: register(u2); // Complex
 RWTexture2D<float2> qHat_y: register(u3); // Complex
 [numthreads(16, 16, 1)]
 void TransferToFFT(uint3 id : SV_DispatchThreadID) {
-    // Inputs: in0 = htilde, in1 = qtilde_x, in2 = qtilde_y
-    // Outputs: out0 = htildeOld, out1 = hHat, out2 = qHat_x, out3 = qHat_y
+    // Inputs: in0 = htilde, in1 = htildeOld, in2 = qtilde_x, in3 = qtilde_y
+    // Outputs: out0 = htildeOldNext, out1 = hHat, out2 = qHat_x, out3 = qHat_y
     if (id.x >= (uint)(paddedGridSizeX) || id.y >= (uint)(paddedGridSizeY)) return;
 
     if (id.x >= (uint)(gridSizeX) || id.y >= (uint)(gridSizeY)) {
@@ -585,11 +585,11 @@ void TransferToFFT(uint3 id : SV_DispatchThreadID) {
     }
 
     // Average htilde in time to get on same timestep as q, then prep variables for FFT
-    float h_real = 0.5 * (in0[id.xy] + out0[id.xy]);
+    float h_real = 0.5 * (in0[id.xy] + in1[id.xy]);
     out0[id.xy]   = in0[id.xy];
     hHat[id.xy]   = float2(h_real, 0.0f);
-    qHat_x[id.xy] = float2(in1[id.xy], 0.0f);
-    qHat_y[id.xy] = float2(in2[id.xy], 0.0f);
+    qHat_x[id.xy] = float2(in2[id.xy], 0.0f);
+    qHat_y[id.xy] = float2(in3[id.xy], 0.0f);
 }
 
 Texture2D<float2> hhat   : register(t0);
@@ -641,8 +641,7 @@ void CalcEWave(uint3 id : SV_DispatchThreadID) {
 
     /////// Dispersion ///////
     // numerical dispersion correction
-    float beta = sqrt((2.0 / (k * cellSize)) * sin(k * cellSize / 2.0)); // From their 1D code, but different from paper
-    // float beta = sqrt((2.0 * k / cellSize) * sin(k * cellSize / 2.0)); // correct formula from paper, but not stable?
+    float beta = sqrt((2.0 * k / cellSize) * sin(k * cellSize / 2.0));
     // Angular frequency for dispersion relation
     float omega = sqrt(GRAVITY * k * SafeTanh(k * min(depth[id.z], maxSafeDepth))) / beta;
     float S = sin(omega * timeStep) * omega / k2;

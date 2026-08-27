@@ -756,9 +756,9 @@ void UDispersiveSWESimulator::ExecuteSimulation_RenderThread(
 		FTransferToFFTCS::FParameters* Params = GraphBuilder.AllocParameters<FTransferToFFTCS::FParameters>();
 		Params->SimConstants = ConstantBuffer;
 		Params->htildeIn = GraphBuilder.CreateSRV(htilde_RDG);
+		Params->htildeOldIn = GraphBuilder.CreateSRV(htildeOld_RDG);
 		Params->qtildeIn_x = GraphBuilder.CreateSRV(qtildex_RDG);
 		Params->qtildeIn_y = GraphBuilder.CreateSRV(qtildey_RDG);
-		Params->htildeOld = GraphBuilder.CreateSRV(htildeOld_RDG);
 		Params->htildeOldNext = GraphBuilder.CreateUAV(htildeOldNext_RDG);
 		Params->hHat = GraphBuilder.CreateUAV(hHat_RDG);
 		Params->qHat_x = GraphBuilder.CreateUAV(qHat_x_RDG);
@@ -874,9 +874,8 @@ void UDispersiveSWESimulator::ExecuteSimulation_RenderThread(
 		Params->qtildePast_x = GraphBuilder.CreateSRV(qtildePast_x_RDG);
 		Params->qtildePast_y = GraphBuilder.CreateSRV(qtildePast_y_RDG);
 		Params->hIn = GraphBuilder.CreateSRV(h_RDG);
-		Params->htildeCopy = GraphBuilder.CreateSRV(htildePast_RDG);     // Read-only past htilde
-		Params->terrain = GraphBuilder.CreateSRV(Terrain_RDG);
-		Params->htildeOut = GraphBuilder.CreateUAV(htilde_RDG);    // Write the new htilde value
+		Params->htildePast = GraphBuilder.CreateSRV(htildePast_RDG);
+		Params->htildeOut = GraphBuilder.CreateUAV(htilde_RDG);
 		Params->qtildeOut_x = GraphBuilder.CreateUAV(qtildex_RDG);
 		Params->qtildeOut_y = GraphBuilder.CreateUAV(qtildey_RDG);
 

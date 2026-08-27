@@ -63,7 +63,7 @@ Texture2D<float>   alpha_QIn_y;
 Texture2D<float>   htildeIn;
 Texture2D<float>   qtildeIn_x;
 Texture2D<float>   qtildeIn_y;
-Texture2D<float>   htildeOld;
+Texture2D<float>   htildeOldIn;
 Texture2D<float>   hbarIn;
 Texture2D<float>   qbarIn_x;
 Texture2D<float>   qbarIn_y;
@@ -73,9 +73,9 @@ Texture2D<float>   delH_x;
 Texture2D<float>   delH_y;
 Texture2D<float>   ubarNewIn_x;
 Texture2D<float>   ubarNewIn_y;
+Texture2D<float>   htildePast;
 Texture2D<float>   qtildePast_x;
 Texture2D<float>   qtildePast_y;
-Texture2D<float>   htildeCopy;
 Texture2D<float>   hPast;
 Texture2D<float>   qAdvectIn_x;
 Texture2D<float>   qAdvectIn_y;
@@ -386,7 +386,7 @@ void DecomposeFields(uint3 id : SV_DispatchThreadID) {
 
 [numthreads(16, 16, 1)]
 void TransferToFFT(uint3 id : SV_DispatchThreadID) {
-    // Inputs: htildeIn, qtildeIn_x, qtildeIn_y, htildeOld
+    // Inputs: htildeIn, htildeOldIn, qtildeIn_x, qtildeIn_y,
     // Outputs: htildeOldNext, hHat, qHat_x, qHat_y
     if (id.x >= (uint)(paddedGridSizeX) || id.y >= (uint)(paddedGridSizeY)) return;
 
@@ -397,7 +397,7 @@ void TransferToFFT(uint3 id : SV_DispatchThreadID) {
         return;
     }
 
-    float h_real = 0.5 * (htildeIn[id.xy] + htildeOld[id.xy]);
+    float h_real = 0.5 * (htildeIn[id.xy] + htildeOldIn[id.xy]);
     htildeOldNext[id.xy] = htildeIn[id.xy];
     hHat[id.xy]   = float2(h_real, 0.0f);
     qHat_x[id.xy] = float2(qtildeIn_x[id.xy], 0.0f);
@@ -446,8 +446,7 @@ void CalcEWave(uint3 id : SV_DispatchThreadID) {
 
     /////// Dispersion ///////
     // numerical dispersion correction
-    float beta = sqrt((2.0 / (k * cellSize)) * sin(k * cellSize / 2.0)); // From their 1D code, but different from paper
-    // float beta = sqrt((2.0 * k / cellSize) * sin(k * cellSize / 2.0)); // correct formula from paper, but not stable?
+    float beta = sqrt((2.0 * k / cellSize) * sin(k * cellSize / 2.0));
     // Angular frequency for dispersion relation
     float omega = sqrt(GRAVITY * k * SafeTanh(k * min(getDepthLevel(id.z), maxSafeDepth))) / beta;
     float S = sin(omega * timeStep) * omega / k2;
@@ -647,7 +646,7 @@ void CalcSWE(uint3 id : SV_DispatchThreadID) {
 [numthreads(16, 16, 1)]
 void UpdateTilde(uint3 id : SV_DispatchThreadID) {
     // Inputs: ubarNewIn_x, ubarIn_x, ubarNewIn_y, ubarIn_y, 
-    //         qtildePast_x, qtildePast_y, hIn, htildeOut
+    //         htildePast, qtildePast_x, qtildePast_y
     // Outputs: htildeOut, qtildeOut_x, qtildeOut_y
     if (id.x >= (uint)(gridSizeX) || id.y >= (uint)(gridSizeY)) return;
 
@@ -706,7 +705,7 @@ void UpdateTilde(uint3 id : SV_DispatchThreadID) {
     div_ubar = (ubarNewIn_x[curr] - ubarNewIn_x[left] + ubarNewIn_y[curr] - ubarNewIn_y[down]) * rcp(cellSize);
     // div_ubar = max(div_ubar, -maxDivergence);
     div_ubar *= (div_ubar < 0.f) ? gammaTransport : 1; // dampen if converging to avoid breaking waves
-    htildeOut[curr] = htildeCopy[curr] * exp(-div_ubar * timeStep);
+    htildeOut[curr] = htildePast[curr] * exp(-div_ubar * timeStep);
 }
 
 [numthreads(16, 16, 1)]
@@ -730,20 +729,20 @@ void CalcQAdvect(uint3 id : SV_DispatchThreadID) {
     float ubar_avg_y = 0.25 * (ubarNewIn_y[down] + ubarNewIn_y[curr] + ubarNewIn_y[rdown] + ubarNewIn_y[right]); // average ubar_y centered at right face
     float2 step_x = float2(0.5f, 0.0f) - float2(ubarNewIn_x[id.xy], ubar_avg_y) * halfTimeStepOverCellSize;
     float2 step_y = float2(0.0f, 0.5f) - float2(ubar_avg_x, ubarNewIn_y[id.xy]) * halfTimeStepOverCellSize;
-    // float h_sample_x = SampleCubicClamped2D(htildeIn, id.xy + step_x);
-    // float h_sample_y = SampleCubicClamped2D(htildeIn, id.xy + step_y);
+    float h_sample_x = SampleCubicClamped2D(htildeIn, id.xy + step_x);
+    float h_sample_y = SampleCubicClamped2D(htildeIn, id.xy + step_y);
 
-    // High-order cubic reconstructed values
-    float h_cubic_x = SampleCubicClamped2D(htildeIn, id.xy + step_x);
-    float h_cubic_y = SampleCubicClamped2D(htildeIn, id.xy + step_y);
-    // 1st-order upwind donor-cell values
-    float h_upwind_x = (ubarNewIn_x[id.xy] >= 0.0f) ? htildeIn[curr] : htildeIn[right];
-    float h_upwind_y = (ubarNewIn_y[id.xy] >= 0.0f) ? htildeIn[curr] : htildeIn[up];
-    // TVD / Slope-limited blend: Use cubic where smooth, blend to upwind near sharp gradients
-    float nu_x = abs(ubarNewIn_x[id.xy]) * halfTimeStepOverCellSize;
-    float nu_y = abs(ubarNewIn_y[id.xy]) * halfTimeStepOverCellSize;
-    float h_sample_x = lerp(h_upwind_x, h_cubic_x, clamp(1.0f - nu_x, 0.0f, 1.0f));
-    float h_sample_y = lerp(h_upwind_y, h_cubic_y, clamp(1.0f - nu_y, 0.0f, 1.0f));
+    // // High-order cubic reconstructed values
+    // float h_cubic_x = SampleCubicClamped2D(htildeIn, id.xy + step_x);
+    // float h_cubic_y = SampleCubicClamped2D(htildeIn, id.xy + step_y);
+    // // 1st-order upwind donor-cell values
+    // float h_upwind_x = (ubarNewIn_x[id.xy] >= 0.0f) ? htildeIn[curr] : htildeIn[right];
+    // float h_upwind_y = (ubarNewIn_y[id.xy] >= 0.0f) ? htildeIn[curr] : htildeIn[up];
+    // // TVD / Slope-limited blend: Use cubic where smooth, blend to upwind near sharp gradients
+    // float nu_x = abs(ubarNewIn_x[id.xy]) * halfTimeStepOverCellSize;
+    // float nu_y = abs(ubarNewIn_y[id.xy]) * halfTimeStepOverCellSize;
+    // float h_sample_x = lerp(h_upwind_x, h_cubic_x, clamp(1.0f - nu_x, 0.0f, 1.0f));
+    // float h_sample_y = lerp(h_upwind_y, h_cubic_y, clamp(1.0f - nu_y, 0.0f, 1.0f));
 
     qAdvectOut_x[id.xy] = ubarNewIn_x[id.xy] * h_sample_x;
     qAdvectOut_y[id.xy] = ubarNewIn_y[id.xy] * h_sample_y;
@@ -762,16 +761,16 @@ void IntegrateH(uint3 id : SV_DispatchThreadID) {
     int2 left  = clamp(curr + int2(-1, 0), int2(0, 0), maxGrid);
     int2 up    = clamp(curr + int2(0, 1), int2(0, 0), maxGrid);
     int2 down  = clamp(curr + int2(0, -1), int2(0, 0), maxGrid);
-    float h_curr = hPast[curr];
-    float t_curr = terrain[curr];
+    float h_curr  = hPast[curr];
     float h_right = hPast[right];
+    float h_left  = hPast[left];
+    float h_up    = hPast[up];
+    float h_down  = hPast[down];
+    float t_curr  = terrain[curr];
     float t_right = terrain[right];
-    float h_left = hPast[left];
-    float t_left = terrain[left];
-    float h_up = hPast[up];
-    float t_up = terrain[up];
-    float h_down = hPast[down];
-    float t_down = terrain[down];
+    float t_left  = terrain[left];
+    float t_up    = terrain[up];
+    float t_down  = terrain[down];
 
     // q = qbar + qtilde + qAdvect
     // sponge layer: damp q near edges to absorb waves, simulate an open boundary

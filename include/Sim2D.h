@@ -27,10 +27,10 @@ public:
 	static constexpr float TERRAIN_HEIGHT = -13.f; // base height of terrain features (meters)
 	static constexpr float TERRAIN_SCALE = 20.f;    // scale of terrain features (meters)
 	static constexpr float WATER_LEVEL = 0.f; 	   // level of water free surface at start (H)
-	static constexpr float WATER_SCALE = 4.f;     // scale of water height features
+	static constexpr float WATER_SCALE = 0.f;     // scale of water height features
 	
 	// Decomposition Parameters
-	static constexpr int DIFFUSION_ITERATIONS = 16;  // number of iterations for diffusion step, more iterations means more stable but also more expensive
+	static constexpr int DIFFUSION_ITERATIONS = 256;   // number of iterations for diffusion step, more iterations means more stable but also more expensive
 	static constexpr int MAX_DIFFUSION_CELLS = 8; 	  // maximum height of diffusion stencil in cells, higher means more diffusion in deep water
 	static constexpr float DIFFUSION_PENALTY = 0.001f; // penalty factor for diffusion, higher means more diffusion and more stability but also more damping of waves
 	
@@ -59,54 +59,62 @@ public:
 	static constexpr float DEPTH_CUTOFF = 4.f; 		// depth to start attenuating FFT waves
 
 	// Simulation variables
-	GPUField terrain, H, Q_x, Q_y, h, q_x, q_y, 
+	GPUField terrain, H, Q_x, Q_y, h, q_x, q_y,
 			 HOrig, QOrig_x, QOrig_y, HPast, QPast_x, QPast_y, 
 			 alpha_H, alpha_Q_x, alpha_Q_y, 
 			 hbar, qbar_x, qbar_y, htilde, qtilde_x, qtilde_y,
 			 ubar_x, ubar_y, ubarNew_x, ubarNew_y,
-			 qtildePast_x, qtildePast_y, qAdvect_x, qAdvect_y, 
-			 hPast, hbarOld, htildeOld, 
+			 htildePast, qtildePast_x, qtildePast_y, qAdvect_x, qAdvect_y, 
+			 hPast, hbarOld, htildeOld, htildeOldNext,
 			 hHat, qHat_x, qHat_y, qHat_x_array, qHat_y_array;
+	
     GPUField HPos, HNeg, HProp, DelH_x, DelH_y, Disp_x, Disp_y, // Outputs of PopulateSpectrum, PropagateWaves (complex arrays)
              hFFT, delH_x, delH_y, disp_x, disp_y; // iFFT'd variables after interpolation
-             
-	GPUField* fields[38] = {
+	GPUField* fields[40] = {
 		&terrain, &H, &Q_x, &Q_y, &h, &q_x, &q_y,
 		&HOrig, &QOrig_x, &QOrig_y, &HPast, &QPast_x, &QPast_y, 
 		&alpha_H, &alpha_Q_x, &alpha_Q_y,
 		&hbar, &qbar_x, &qbar_y, &htilde, &qtilde_x, &qtilde_y,
 		&ubar_x, &ubar_y, &ubarNew_x, &ubarNew_y,
-		&qtildePast_x, &qtildePast_y, &qAdvect_x, &qAdvect_y,
-		&hPast, &hbarOld, &htildeOld, 
+		&htildePast, &qtildePast_x, &qtildePast_y, &qAdvect_x, &qAdvect_y,
+		&hPast, &hbarOld, &htildeOld, &htildeOldNext,
         &hFFT, &delH_x, &delH_y, &disp_x, &disp_y,
 	};
 	GPUField* fields_complex[3] = {&hHat, &qHat_x, &qHat_y};
 	GPUField* fields_arrays[9] = {&qHat_x_array, &qHat_y_array, 
         &HPos, &HNeg, &HProp, &DelH_x, &DelH_y, &Disp_x, &Disp_y};
 	GPUBuffer depth;
-
 	GPU* gpu;
 
 	// Functions
 	Sim();	// default constructor
 	Sim(HWND hwnd);	// constructor with handle for rendering
 	int Release(void);
-	void SimStep();	// ticks the simulation by one timestep using the following substeps:
-
-private:
-	int paddedSizeX;
-	int paddedSizeY;
-
-	void Init(GPU* gpu);
-    std::vector<float> SetTerrain();
-	std::vector<float> SetWater(std::vector<float>& terrain);
-	// Functions
+	void SimStep();	// ticks the simulation by one timestep
 	void DecompositionStep();	// bulk vs surface decomposition
     void FFTStep();				// propagate FFT wave simulation
 	void eWaveStep();			// surface wave simulation step
 	void SWEStep();				// SWE bulk simulation step
 	void TransportStep();		// transport of bulk and surface quantities
 	void ComputeValues();		// compute final h and q values
+
+	// Constants
+	SimConstants constants = {time, GRIDSIZE_X, GRIDSIZE_Y, CELLSIZE, TIMESTEP, MIN_WATER_HEIGHT, SURFACE_TENSION, DENSITY, // Sim Params
+							  DIFFUSION_ITERATIONS, MAX_DIFFUSION_CELLS, DIFFUSION_PENALTY, // Diffusion Params
+							  SLOPE_LIMIT, CFL_CONDITION, GAMMA_TRANSPORT, SPONGE_THICKNESS, LAPLACIAN_DAMPING, DEPTH_NUM, // SWE & eWave Params
+							  FETCH, WIND_SPEED, WIND_ANGLE, SWELL, SWELL_ANGLE, CHOPPINESS, // FFT Params
+							  FILTER_SMALL, FILTER_BIG, FILTER_WIDTH, FILTER_MIN, DEPTH_CUTOFF,
+							  0, 0, 0.0f, {0.0f}};    
+	RenderConstants render_constants = {DirectX::XMMatrixIdentity(), (float)GRIDSIZE_X, (float)GRIDSIZE_Y, CELLSIZE};
+
+private:
+	int paddedSizeX;
+	int paddedSizeY;
+
+	// Functions
+	void Init(GPU* gpu);
+    std::vector<float> SetTerrain();
+	std::vector<float> SetWater(std::vector<float>& terrain);	
 
 	// Helper functions
 	inline int idx(int x, int y) const {return y * GRIDSIZE_X + x;}
@@ -125,13 +133,5 @@ private:
     // FFT Wave Compute Shaders
 	ID3D11ComputeShader *PopulateSpectrum, *PropagateWaves, *Interp;
 	ID3D11ComputeShader** waveShaders[3] = {&PopulateSpectrum, &PropagateWaves, &Interp};
-	char* waveNames[3] = {"PopulateSpectrum", "PropagateWaves", "Interp"};
-    // Constants
-	SimConstants constants = {time, GRIDSIZE_X, GRIDSIZE_Y, CELLSIZE, TIMESTEP, MIN_WATER_HEIGHT, SURFACE_TENSION, DENSITY, // Sim Params
-							  DIFFUSION_ITERATIONS, MAX_DIFFUSION_CELLS, DIFFUSION_PENALTY, // Diffusion Params
-							  SLOPE_LIMIT, CFL_CONDITION, GAMMA_TRANSPORT, SPONGE_THICKNESS, LAPLACIAN_DAMPING, DEPTH_NUM, // SWE & eWave Params
-							  FETCH, WIND_SPEED, WIND_ANGLE, SWELL, SWELL_ANGLE, CHOPPINESS, // FFT Params
-							  FILTER_SMALL, FILTER_BIG, FILTER_WIDTH, FILTER_MIN, DEPTH_CUTOFF,
-							  0, 0, 0.0f, {0.0f}};    
-	RenderConstants render_constants = {DirectX::XMMatrixIdentity(), (float)GRIDSIZE_X, (float)GRIDSIZE_Y, CELLSIZE};
+	char* waveNames[3] = {"PopulateSpectrum", "PropagateWaves", "Interp"};	
 };
