@@ -122,14 +122,14 @@ private:
 	// Compute Shaders
 	ID3D11ComputeShader *InitDecomp, *CalcDiffusionCoeffs, *DiffusionStep, *DecomposeFields, 
 						*CalcUbar, *CalcSWE, *UpdateTilde, *CalcQAdvect, *IntegrateH, 
-						*TransferToFFT, *CalcEWave, *InterpQ, *DiffuseTerrain;
-	ID3D11ComputeShader** shaders[13] = {
+						*TransferToFFT, *CalcEWave, *InterpQ;
+	ID3D11ComputeShader** shaders[12] = {
 						&InitDecomp, &CalcDiffusionCoeffs, &DiffusionStep, &DecomposeFields, 
 						&CalcUbar, &CalcSWE, &UpdateTilde, &CalcQAdvect, &IntegrateH, 
-						&TransferToFFT, &CalcEWave, &InterpQ, &DiffuseTerrain};
-	char* names[13] = {"InitDecomp", "CalcDiffusionCoeffs", "DiffusionStep", "DecomposeFields", 
+						&TransferToFFT, &CalcEWave, &InterpQ};
+	char* names[12] = {"InitDecomp", "CalcDiffusionCoeffs", "DiffusionStep", "DecomposeFields", 
 					   "CalcUbar", "CalcSWE", "UpdateTilde", "CalcQAdvect", "IntegrateH", 
-					   "TransferToFFT", "CalcEWave", "InterpQ", "DiffuseTerrain"};
+					   "TransferToFFT", "CalcEWave", "InterpQ"};
     // FFT Wave Compute Shaders
 	ID3D11ComputeShader *PopulateSpectrum, *PropagateWaves, *Interp;
 	ID3D11ComputeShader** waveShaders[3] = {&PopulateSpectrum, &PropagateWaves, &Interp};

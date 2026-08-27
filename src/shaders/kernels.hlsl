@@ -260,7 +260,7 @@ void DiffusionStep(uint3 id : SV_DispatchThreadID) {
 [numthreads(16, 16, 1)]
 void DecomposeFields(uint3 id : SV_DispatchThreadID) {
     // Inputs: in0 = H, in1 = Q_x, in2 = Q_y
-    //         in3 = h, in4 = q_x, in5 = q_y, in6 = terrain, in7 = terrain_bar
+    //         in3 = h, in4 = q_x, in5 = q_y, in6 = terrain
     // Outputs: out0 = hbar, out1 = qbar_x, out2 = qbar_y, 
     //          out3 = htilde, out4 = qtilde_x, out5 = qtilde_y
     if (id.x >= (uint)(gridSizeX) || id.y >= (uint)(gridSizeY)) return;

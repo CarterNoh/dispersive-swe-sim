@@ -194,57 +194,10 @@ void Sim::Init(GPU* gpu) {
 		H_temp[i] = terrain_temp[i] + h_temp[i];
 	}
 	gpu->UploadToGPU(terrain.tex, terrain_temp, GRIDSIZE_X, GRIDSIZE_Y);
-	gpu->UploadToGPU(terrainBulk.tex, terrain_temp, GRIDSIZE_X, GRIDSIZE_Y);
 	gpu->UploadToGPU(h.tex, h_temp, GRIDSIZE_X, GRIDSIZE_Y);
 	gpu->UploadToGPU(H.tex, H_temp, GRIDSIZE_X, GRIDSIZE_Y);
 	gpu->UploadToGPU(hbar.tex, h_temp, GRIDSIZE_X, GRIDSIZE_Y);
 	gpu->UploadToGPU(hbarOld.tex, h_temp, GRIDSIZE_X, GRIDSIZE_Y);
-
-	// One-time terrain diffusion pass on terrainBulk
-	{
-		GPUField temp_H, temp_Qx, temp_Qy, temp_alpha_H, temp_alpha_Qx, temp_alpha_Qy;
-		gpu->CreateGridTexture(&temp_H, GRIDSIZE_X, GRIDSIZE_Y);
-		gpu->CreateGridTexture(&temp_Qx, GRIDSIZE_X, GRIDSIZE_Y);
-		gpu->CreateGridTexture(&temp_Qy, GRIDSIZE_X, GRIDSIZE_Y);
-		gpu->CreateGridTexture(&temp_alpha_H, GRIDSIZE_X, GRIDSIZE_Y);
-		gpu->CreateGridTexture(&temp_alpha_Qx, GRIDSIZE_X, GRIDSIZE_Y);
-		gpu->CreateGridTexture(&temp_alpha_Qy, GRIDSIZE_X, GRIDSIZE_Y);
-
-		gpu->Dispatch(InitDecomp, 
-			{h.srv, nullptr, nullptr, terrain.srv}, 
-			{temp_H.uav, temp_Qx.uav, temp_Qy.uav});
-
-		gpu->Dispatch(CalcDiffusionCoeffs, 
-			{temp_H.srv, terrain.srv}, 
-			{temp_alpha_H.uav, temp_alpha_Qx.uav, temp_alpha_Qy.uav});
-
-		GPUField temp_terrainBulk;
-		gpu->CreateGridTexture(&temp_terrainBulk, GRIDSIZE_X, GRIDSIZE_Y);
-		gpu->UploadToGPU(temp_terrainBulk.tex, terrain_temp, GRIDSIZE_X, GRIDSIZE_Y);
-
-		GPUField* src = &temp_terrainBulk;
-		GPUField* dst = &terrainBulk;
-
-		for (int j = 0; j < DIFFUSION_ITERATIONS; j++) {
-			gpu->Dispatch(DiffuseTerrain, 
-				{src->srv, temp_alpha_H.srv}, 
-				{dst->uav});
-			std::swap(src, dst);
-		}
-
-		if (dst == &terrainBulk) {
-			std::swap(terrainBulk, temp_terrainBulk);
-		}
-
-		// Cleanup D3D11 resources for temporary fields
-		temp_H.tex->Release(); temp_H.srv->Release(); temp_H.uav->Release();
-		temp_Qx.tex->Release(); temp_Qx.srv->Release(); temp_Qx.uav->Release();
-		temp_Qy.tex->Release(); temp_Qy.srv->Release(); temp_Qy.uav->Release();
-		temp_alpha_H.tex->Release(); temp_alpha_H.srv->Release(); temp_alpha_H.uav->Release();
-		temp_alpha_Qx.tex->Release(); temp_alpha_Qx.srv->Release(); temp_alpha_Qx.uav->Release();
-		temp_alpha_Qy.tex->Release(); temp_alpha_Qy.srv->Release(); temp_alpha_Qy.uav->Release();
-		temp_terrainBulk.tex->Release(); temp_terrainBulk.srv->Release(); temp_terrainBulk.uav->Release();
-	}
 
     // Initialize FFT Wave Spectrum
     gpu->DispatchPadded(PopulateSpectrum, {}, 
@@ -324,7 +277,7 @@ void Sim::DecompositionStep() {
 
 	// final conversion to individual solver quantities
 	gpu->Dispatch(DecomposeFields, 
-		{H.srv, Q_x.srv, Q_y.srv, h.srv, q_x.srv, q_y.srv, terrain.srv, terrainBulk.srv}, 
+		{H.srv, Q_x.srv, Q_y.srv, h.srv, q_x.srv, q_y.srv, terrain.srv}, 
 		{hbar.uav, qbar_x.uav, qbar_y.uav, htilde.uav, qtilde_x.uav, qtilde_y.uav});
 
     // Recalculate H for use later (reusing shader)
