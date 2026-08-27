@@ -222,10 +222,12 @@ float SafeTanh(float x) {
     else                return tanh(x);
 }
 
-float SolveJacobi(float u_orig, float sigma, float u_E, float u_W, float u_N, float u_S, float C_E, float C_W, float C_N, float C_S) {
+precise float SolveJacobi(float u_orig, float sigma, float u_E, float u_W, float u_N, float u_S, float C_E, float C_W, float C_N, float C_S) {
     // u is the quantity being diffused, C is the diffusion coefficient
     // E, W, N, S are cardinal directions - neighbor cells
-    return (u_orig + sigma * (C_E * u_E + C_W * u_W + C_N * u_N + C_S * u_S)) / (1.0f + sigma * (C_E + C_W + C_N + C_S));
+    precise float numerator = u_orig + sigma * (C_E * u_E + C_W * u_W + C_N * u_N + C_S * u_S);
+    precise float denominator = 1.0f + sigma * (C_E + C_W + C_N + C_S);
+    return numerator / denominator;
 }
 
 float SpongeDamping(uint2 id, bool isYDir = false) {
@@ -339,10 +341,12 @@ void DiffusionStep(uint3 id : SV_DispatchThreadID) {
     float a_topleft  = 0.25f * (aH_curr + aH_up   + aH_left  + alpha_HIn[lu]);
 
     float invCellSizeSq = rcp(cellSize * cellSize);
-    float newH    = SolveJacobi(H_Orig[curr],   invCellSizeSq, H_Past[right],   H_Past[left],   H_Past[up],   H_Past[down],   alpha_QIn_x[curr], alpha_QIn_x[left], alpha_QIn_y[curr], alpha_QIn_y[down]);
+    precise float newH    = SolveJacobi(H_Orig[curr],   invCellSizeSq, H_Past[right],   H_Past[left],   H_Past[up],   H_Past[down],   alpha_QIn_x[curr], alpha_QIn_x[left], alpha_QIn_y[curr], alpha_QIn_y[down]);
     H_Out[curr]   = max(terrain[curr], newH);
-    Q_Out_x[curr] = SolveJacobi(Q_Orig_x[curr], invCellSizeSq, Q_Past_x[right], Q_Past_x[left], Q_Past_x[up], Q_Past_x[down], aH_right,   aH_curr,   a_topright, a_botright);
-    Q_Out_y[curr] = SolveJacobi(Q_Orig_y[curr], invCellSizeSq, Q_Past_y[right], Q_Past_y[left], Q_Past_y[up], Q_Past_y[down], a_topright, a_topleft, aH_up,      aH_curr);
+    precise float newQx   = SolveJacobi(Q_Orig_x[curr], invCellSizeSq, Q_Past_x[right], Q_Past_x[left], Q_Past_x[up], Q_Past_x[down], aH_right,   aH_curr,   a_topright, a_botright);
+    Q_Out_x[curr] = newQx;
+    precise float newQy   = SolveJacobi(Q_Orig_y[curr], invCellSizeSq, Q_Past_y[right], Q_Past_y[left], Q_Past_y[up], Q_Past_y[down], a_topright, a_topleft, aH_up,      aH_curr);
+    Q_Out_y[curr] = newQy;
 }
 
 [numthreads(16, 16, 1)]
@@ -618,13 +622,13 @@ void CalcSWE(uint3 id : SV_DispatchThreadID) {
 
     // Incorporate gravity force and bottom friction 
     float bottomFriction = 0.05f; // subtle bottom drag to allow water to settle to rest
-    dux_dt -= GRAVITY * gradh_x + bottomFriction * ubarIn_x[curr]; // When wave gets too steep, it "crashes"
-    duy_dt -= GRAVITY * gradh_y + bottomFriction * ubarIn_y[curr];
+    precise float dux_dt_total = dux_dt - (GRAVITY * gradh_x + bottomFriction * ubarIn_x[curr]);
+    precise float duy_dt_total = duy_dt - (GRAVITY * gradh_y + bottomFriction * ubarIn_y[curr]);
 
     // Integrate u, calculate q
     float cflFactor = cflCondition * cellSize / timeStep;
-    float localUbarNew_x = clamp(ubarIn_x[curr] + timeStep * dux_dt, -cflFactor, cflFactor);
-    float localUbarNew_y = clamp(ubarIn_y[curr] + timeStep * duy_dt, -cflFactor, cflFactor);
+    precise float localUbarNew_x = clamp(ubarIn_x[curr] + timeStep * dux_dt_total, -cflFactor, cflFactor);
+    precise float localUbarNew_y = clamp(ubarIn_y[curr] + timeStep * duy_dt_total, -cflFactor, cflFactor);
 
     float h_x_face = (localUbarNew_x >= 0.f) ? hbarIn[curr] : hbarIn[right];
     float h_y_face = (localUbarNew_y >= 0.f) ? hbarIn[curr] : hbarIn[up];
@@ -786,14 +790,14 @@ void IntegrateH(uint3 id : SV_DispatchThreadID) {
     q_xm = LimitFlowRate(q_xm, h_left, t_left, h_curr,  t_curr,  cflFactor);
     q_ym = LimitFlowRate(q_ym, h_down, t_down, h_curr,  t_curr,  cflFactor);
 
-    float div_q = (q_x - q_xm + q_y - q_ym) * rcp(cellSize);
+    precise float div_q = (q_x - q_xm + q_y - q_ym) * rcp(cellSize);
     
     // Final height integration
     // Wetting-Aware Laplacian to reduce spikes and unstable grid-scale ripples
     bool isFullyWet = (h_curr > minWaterHeight && h_left > minWaterHeight && 
                     h_right > minWaterHeight && h_up > minWaterHeight && h_down > minWaterHeight);
     if (isFullyWet) {
-        float laplacian_h = (h_right + h_left + h_up + h_down - 4.0f * h_curr);
+        precise float laplacian_h = (h_right + h_left + h_up + h_down - 4.0f * h_curr);
         hOut[curr] = clamp(h_curr - timeStep * div_q + laplacianDamping * laplacian_h, 0.f, maxSafeDepth);
     } else {
         hOut[curr] = clamp(h_curr - timeStep * div_q, 0.f, maxSafeDepth);

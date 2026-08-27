@@ -156,8 +156,10 @@ float SafeTanh(float x) {
     else                return tanh(x);
 }
 
-float SolveJacobi(float u_orig, float sigma, float u_E, float u_W, float u_N, float u_S, float C_E, float C_W, float C_N, float C_S) {
-    return (u_orig + sigma * (C_E * u_E + C_W * u_W + C_N * u_N + C_S * u_S)) / (1.0f + sigma * (C_E + C_W + C_N + C_S));
+precise float SolveJacobi(float u_orig, float sigma, float u_E, float u_W, float u_N, float u_S, float C_E, float C_W, float C_N, float C_S) {
+    precise float numerator = u_orig + sigma * (C_E * u_E + C_W * u_W + C_N * u_N + C_S * u_S);
+    precise float denominator = 1.0f + sigma * (C_E + C_W + C_N + C_S);
+    return numerator / denominator;
 }
 
 float SpongeDamping(uint2 id, bool isYDir = false) {
@@ -247,10 +249,12 @@ void DiffusionStep(uint3 id : SV_DispatchThreadID) {
     float a_topleft  = 0.25f * (aH_curr + aH_up   + aH_left  + in7[lu]);
 
     float invCellSizeSq = rcp(cellSize * cellSize);   
-    float newH = SolveJacobi(in1[curr], invCellSizeSq, in4[right], in4[left], in4[up], in4[down], in8[curr], in8[left], in9[curr], in9[down]);
+    precise float newH = SolveJacobi(in1[curr], invCellSizeSq, in4[right], in4[left], in4[up], in4[down], in8[curr], in8[left], in9[curr], in9[down]);
     out0[curr] = max(in0[curr], newH);
-    out1[curr] = SolveJacobi(in2[curr], invCellSizeSq, in5[right], in5[left], in5[up], in5[down], aH_right,   aH_curr,   a_topright, a_botright);
-    out2[curr] = SolveJacobi(in3[curr], invCellSizeSq, in6[right], in6[left], in6[up], in6[down], a_topright, a_topleft, aH_up,      aH_curr);
+    precise float newQx = SolveJacobi(in2[curr], invCellSizeSq, in5[right], in5[left], in5[up], in5[down], aH_right,   aH_curr,   a_topright, a_botright);
+    out1[curr] = newQx;
+    precise float newQy = SolveJacobi(in3[curr], invCellSizeSq, in6[right], in6[left], in6[up], in6[down], a_topright, a_topleft, aH_up,      aH_curr);
+    out2[curr] = newQy;
 }
 
 [numthreads(16, 16, 1)]
@@ -371,13 +375,13 @@ void CalcSWE(uint3 id : SV_DispatchThreadID) {
 
     // Incorporate gravity force and bottom friction
     float bottomFriction = 0.05f; // subtle bottom drag to allow water to settle to rest
-    dux_dt -= GRAVITY * gradh_x + bottomFriction * in0[curr];
-    duy_dt -= GRAVITY * gradh_y + bottomFriction * in1[curr];
+    precise float dux_dt_total = dux_dt - (GRAVITY * gradh_x + bottomFriction * in0[curr]);
+    precise float duy_dt_total = duy_dt - (GRAVITY * gradh_y + bottomFriction * in1[curr]);
 
     // Integrate u, calculate q
     float cflFactor = cflCondition * cellSize / timeStep;
-    float ubarNew_x = clamp(in0[curr] + timeStep * dux_dt, -cflFactor, cflFactor);
-    float ubarNew_y = clamp(in1[curr] + timeStep * duy_dt, -cflFactor, cflFactor);
+    precise float ubarNew_x = clamp(in0[curr] + timeStep * dux_dt_total, -cflFactor, cflFactor);
+    precise float ubarNew_y = clamp(in1[curr] + timeStep * duy_dt_total, -cflFactor, cflFactor);
 
     float h_x_face = (ubarNew_x >= 0.f) ? in2[curr] : in2[right];
     float h_y_face = (ubarNew_y >= 0.f) ? in2[curr] : in2[up];
@@ -540,13 +544,13 @@ void IntegrateH(uint3 id : SV_DispatchThreadID) {
     q_xm = LimitFlowRate(q_xm, h_left, t_left, h_curr,  t_curr,  cflFactor);
     q_ym = LimitFlowRate(q_ym, h_down, t_down, h_curr,  t_curr,  cflFactor);
 
-    float div_q = (q_x - q_xm + q_y - q_ym) * rcp(cellSize);
+    precise float div_q = (q_x - q_xm + q_y - q_ym) * rcp(cellSize);
 
     // Wetting-Aware Laplacian to reduce spikes and unstable grid-scale ripples
     bool isFullyWet = (h_curr > minWaterHeight && h_left > minWaterHeight && 
                     h_right > minWaterHeight && h_up > minWaterHeight && h_down > minWaterHeight);
     if (isFullyWet) {
-        float laplacian_h = (h_right + h_left + h_up + h_down - 4.0f * h_curr);
+        precise float laplacian_h = (h_right + h_left + h_up + h_down - 4.0f * h_curr);
         out0[curr] = clamp(h_curr - timeStep * div_q + laplacianDamping * laplacian_h, 0.f, maxSafeDepth);
     } else {
         out0[curr] = clamp(h_curr - timeStep * div_q, 0.f, maxSafeDepth);
