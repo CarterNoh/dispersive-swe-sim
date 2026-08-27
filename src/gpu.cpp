@@ -231,6 +231,12 @@ bool GPU::CreateGridTexture(GPUField* field, int width, int height, bool isCompl
     return true;
 }
 
+void GPU::CopyField(GPUField* dest, GPUField* src) {
+    if (dest && src && dest->tex && src->tex) {
+        context->CopyResource(dest->tex, src->tex);
+    }
+}
+
 bool GPU::UploadToGPU(ID3D11Texture2D* tex, const std::vector<float>& data, int width, int height, bool isComplex, int arraySize) {
     int floatsPerPixel = isComplex ? 2 : 1; // If complex, there are 2 floats per pixel.
     int rowPitch = width * sizeof(float) * floatsPerPixel; // byte size of a single row
@@ -396,11 +402,17 @@ bool GPU::DownloadBuffer(ID3D11Buffer* buf, std::vector<float>& data, int size) 
     return false;
 }
 
+#if defined(_DEBUG) || defined(DEBUG)
+static const UINT DefaultShaderCompileFlags = D3DCOMPILE_DEBUG | D3DCOMPILE_SKIP_OPTIMIZATION;
+#else
+static const UINT DefaultShaderCompileFlags = D3DCOMPILE_OPTIMIZATION_LEVEL3 | D3DCOMPILE_ENABLE_STRICTNESS;
+#endif
+
 bool GPU::CompileComputeShader(const std::wstring& file, const std::string& entryPoint, ID3D11ComputeShader** shader) {
     ID3DBlob* shaderBlob = nullptr;
     ID3DBlob* errorBlob = nullptr;
 
-    HRESULT hr = D3DCompileFromFile(file.c_str(), nullptr, nullptr, entryPoint.c_str(), "cs_5_0", 0, 0, &shaderBlob, &errorBlob);
+    HRESULT hr = D3DCompileFromFile(file.c_str(), nullptr, nullptr, entryPoint.c_str(), "cs_5_0", DefaultShaderCompileFlags, 0, &shaderBlob, &errorBlob);
     if (FAILED(hr)) {
         if (errorBlob) std::cerr << "Shader Error: " << (char*)errorBlob->GetBufferPointer() << std::endl;
         return false;
@@ -483,7 +495,7 @@ bool GPU::CompileFFTShaders(int sizeX, int sizeY) {
     D3D_SHADER_MACRO singleMacrosX[] = {
         { "FFT_SIZE", fftSizeXStr.c_str() },
         { NULL, NULL }};
-    HRESULT hrX = D3DCompileFromFile(L"shaders/fft.hlsl", singleMacrosX, nullptr, "FFTKernel_1D", "cs_5_0", 0, 0, &shaderBlob, &errorBlob);
+    HRESULT hrX = D3DCompileFromFile(L"shaders/fft.hlsl", singleMacrosX, nullptr, "FFTKernel_1D", "cs_5_0", DefaultShaderCompileFlags, 0, &shaderBlob, &errorBlob);
     if (FAILED(hrX)) {
         if (errorBlob) std::cerr << "Shader Error Single X: " << (char*)errorBlob->GetBufferPointer() << std::endl;
         return false;
@@ -495,7 +507,7 @@ bool GPU::CompileFFTShaders(int sizeX, int sizeY) {
     D3D_SHADER_MACRO singleMacrosY[] = {
         { "FFT_SIZE", fftSizeYStr.c_str() },
         { NULL, NULL }};
-    HRESULT hrY = D3DCompileFromFile(L"shaders/fft.hlsl", singleMacrosY, nullptr, "FFTKernel_1D", "cs_5_0", 0, 0, &shaderBlob, &errorBlob);
+    HRESULT hrY = D3DCompileFromFile(L"shaders/fft.hlsl", singleMacrosY, nullptr, "FFTKernel_1D", "cs_5_0", DefaultShaderCompileFlags, 0, &shaderBlob, &errorBlob);
     if (FAILED(hrY)) {
         if (errorBlob) std::cerr << "Shader Error Single Y: " << (char*)errorBlob->GetBufferPointer() << std::endl;
         return false;
@@ -509,7 +521,7 @@ bool GPU::CompileFFTShaders(int sizeX, int sizeY) {
         { "FFT_SIZE", fftSizeXStr.c_str() },
         { "IS_ARRAY", "1" },
         { NULL, NULL }};
-    HRESULT hrAX = D3DCompileFromFile(L"shaders/fft.hlsl", arrayMacrosX, nullptr, "FFTKernel_1D", "cs_5_0", 0, 0, &shaderBlob, &errorBlob);
+    HRESULT hrAX = D3DCompileFromFile(L"shaders/fft.hlsl", arrayMacrosX, nullptr, "FFTKernel_1D", "cs_5_0", DefaultShaderCompileFlags, 0, &shaderBlob, &errorBlob);
     if (FAILED(hrAX)) {
         if (errorBlob) std::cerr << "Shader Error Array X: " << (char*)errorBlob->GetBufferPointer() << std::endl;
         return false;
@@ -522,7 +534,7 @@ bool GPU::CompileFFTShaders(int sizeX, int sizeY) {
         { "FFT_SIZE", fftSizeYStr.c_str() },
         { "IS_ARRAY", "1" },
         { NULL, NULL }};
-    HRESULT hrAY = D3DCompileFromFile(L"shaders/fft.hlsl", arrayMacrosY, nullptr, "FFTKernel_1D", "cs_5_0", 0, 0, &shaderBlob, &errorBlob);
+    HRESULT hrAY = D3DCompileFromFile(L"shaders/fft.hlsl", arrayMacrosY, nullptr, "FFTKernel_1D", "cs_5_0", DefaultShaderCompileFlags, 0, &shaderBlob, &errorBlob);
     if (FAILED(hrAY)) {
         if (errorBlob) std::cerr << "Shader Error Array Y: " << (char*)errorBlob->GetBufferPointer() << std::endl;
         return false;
@@ -673,7 +685,7 @@ bool GPU::CompileVertexShader(const std::wstring& file, const std::string& entry
     ID3DBlob* shaderBlob = nullptr;
     ID3DBlob* errorBlob = nullptr;
 
-    HRESULT hr = D3DCompileFromFile(file.c_str(), nullptr, nullptr, entryPoint.c_str(), "vs_5_0", 0, 0, &shaderBlob, &errorBlob);
+    HRESULT hr = D3DCompileFromFile(file.c_str(), nullptr, nullptr, entryPoint.c_str(), "vs_5_0", DefaultShaderCompileFlags, 0, &shaderBlob, &errorBlob);
     if (FAILED(hr)) {
         if (errorBlob) std::cerr << "VS Compile Error: " << (char*)errorBlob->GetBufferPointer() << std::endl;
         return false;
@@ -694,7 +706,7 @@ bool GPU::CompilePixelShader(const std::wstring& file, const std::string& entryP
     ID3DBlob* shaderBlob = nullptr;
     ID3DBlob* errorBlob = nullptr;
 
-    HRESULT hr = D3DCompileFromFile(file.c_str(), nullptr, nullptr, entryPoint.c_str(), "ps_5_0", 0, 0, &shaderBlob, &errorBlob);
+    HRESULT hr = D3DCompileFromFile(file.c_str(), nullptr, nullptr, entryPoint.c_str(), "ps_5_0", DefaultShaderCompileFlags, 0, &shaderBlob, &errorBlob);
     if (FAILED(hr)) {
         if (errorBlob) std::cerr << "PS Compile Error: " << (char*)errorBlob->GetBufferPointer() << std::endl;
         return false;

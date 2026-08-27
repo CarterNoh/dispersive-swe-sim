@@ -10,18 +10,19 @@ cbuffer Constants : register(b0) {
     int gridSizeY; 
     float cellSize;
     float timeStep;
-    int spongeThickness;
     float minWaterHeight;
     float surfaceTension;
     float density;
     // Decomposition Params
     int diffusionIterations;
-    float deltaT;
+    int maxDiffusionCells;
     float diffusionPenalty;
     // SWE & Transport Params
     float slopeLimit;
     float cflCondition;
     float gammaTransport;
+    int spongeThickness;
+    float laplacianDamping;
     // eWave Params
     int depthNum;
     // FFT Wave Params
@@ -39,7 +40,7 @@ cbuffer Constants : register(b0) {
     int paddedGridSizeX;
     int paddedGridSizeY;
     float maxSafeDepth;
-    float simConstantPadding[2];
+    float simConstantPadding[1];
 };
 
 #define G 9.80665f
@@ -301,7 +302,7 @@ float AmpFilter(float k, int filterInvert) {
 
 
 ///////////////// Shaders /////////////////
-StructuredBuffer<float> depth : register(t8);
+StructuredBuffer<float> depth : register(t12);
 
 RWTexture2DArray<float2> HPosOut: register(u0);
 RWTexture2DArray<float2> HNegOut: register(u1);
@@ -385,21 +386,21 @@ void PopulateSpectrum(uint3 id : SV_DispatchThreadID) {
 
 Texture2DArray<float2>   HPosIn : register(t0);
 Texture2DArray<float2>   HNegIn : register(t1);
-RWTexture2DArray<float2> HPropOut : register(u0);
-RWTexture2DArray<float2> DelHxOut : register(u1);
-RWTexture2DArray<float2> DelHyOut : register(u2);
-RWTexture2DArray<float2> DispXOut : register(u3);
-RWTexture2DArray<float2> DispYOut : register(u4);
+RWTexture2DArray<float2> DelHxOut : register(u0);
+RWTexture2DArray<float2> DelHyOut : register(u1);
+RWTexture2DArray<float2> DispXOut : register(u2);
+RWTexture2DArray<float2> DispYOut : register(u3);
+RWTexture2DArray<float2> HPropOut : register(u4);
 [numthreads(16, 16, 1)]
 void PropagateWaves(uint3 id : SV_DispatchThreadID) {
     if (id.x >= (uint)(paddedGridSizeX) || id.y >= (uint)(paddedGridSizeY)) return;
 
     if (id.x == 0 && id.y == 0) {
-        HPropOut[id] = float2(0.f, 0.f);
         DelHxOut[id] = float2(0.f, 0.f);
         DelHyOut[id] = float2(0.f, 0.f);
         DispXOut[id] = float2(0.f, 0.f);
         DispYOut[id] = float2(0.f, 0.f);
+        HPropOut[id] = float2(0.f, 0.f);
         return;
     }
 
@@ -416,11 +417,11 @@ void PropagateWaves(uint3 id : SV_DispatchThreadID) {
     float ky = (float)freqY * dKy;
     float k2 = kx * kx + ky * ky;
     if (k2 < 1e-12) {
-        HPropOut[id] = float2(0.f, 0.f);
         DelHxOut[id] = float2(0.f, 0.f);
         DelHyOut[id] = float2(0.f, 0.f);
         DispXOut[id] = float2(0.f, 0.f);
         DispYOut[id] = float2(0.f, 0.f);
+        HPropOut[id] = float2(0.f, 0.f);
         return;
     }
     float invK = rsqrt(k2);
@@ -457,42 +458,54 @@ void PropagateWaves(uint3 id : SV_DispatchThreadID) {
     DispYOut[id] = ComplexMul(HProp, float2(0.f, ky_ * choppiness));
 }
 
-Texture2DArray<float2> HIn: register(t0);
-Texture2DArray<float2> HxIn: register(t1);
-Texture2DArray<float2> HyIn: register(t2);
-Texture2DArray<float2> DxIn: register(t3);
-Texture2DArray<float2> DyIn: register(t4);
-Texture2D<float>       hbar: register(t5);
-RWTexture2D<float> HOut : register(u0);
-RWTexture2D<float> HxOut: register(u1);
-RWTexture2D<float> HyOut: register(u2);
-RWTexture2D<float> DxOut: register(u3);
-RWTexture2D<float> DyOut: register(u4);
+Texture2DArray<float2> HxIn: register(t0);
+Texture2DArray<float2> HyIn: register(t1);
+Texture2DArray<float2> DxIn: register(t2);
+Texture2DArray<float2> DyIn: register(t3);
+Texture2D<float>       hbar: register(t4);
+Texture2DArray<float2> HIn: register(t5);
+RWTexture2D<float> HxOut: register(u0);
+RWTexture2D<float> HyOut: register(u1);
+RWTexture2D<float> DxOut: register(u2);
+RWTexture2D<float> DyOut: register(u3);
+RWTexture2D<float> HOut: register(u4);
 [numthreads(16, 16, 1)]
 void Interp(uint3 id : SV_DispatchThreadID) {
     if (id.x >= (uint)(gridSizeX) || id.y >= (uint)(gridSizeY)) return;
 
     float waterDepth = min(hbar[id.xy], maxSafeDepth);
     if (waterDepth <= minWaterHeight) {
-        HOut[id.xy] = 0.f;
         HxOut[id.xy] = 0.f;
         HyOut[id.xy] = 0.f;
         DxOut[id.xy] = 0.f;
         DyOut[id.xy] = 0.f;
+        HOut[id.xy] = 0.f;
         return;
     }
     int d1 = 0;
     for (int d = 0; d < depthNum; d++)
         if (waterDepth >= depth[d]) d1 = d;
     int d2 = min(depthNum - 1, d1 + 1);
-    float s = 0.f;
-    if (d1 != d2)
-        s = (depth[d2] - waterDepth) / (depth[d2] - depth[d1]);
-    uint3 id1 = uint3(id.x, id.y, d1);
-    uint3 id2 = uint3(id.x, id.y, d2);
-    HOut [id.xy] = s * HIn [id1].x + (1.f - s) * HIn [id2].x;
-    HxOut[id.xy] = s * HxIn[id1].x + (1.f - s) * HxIn[id2].x;
-    HyOut[id.xy] = s * HyIn[id1].x + (1.f - s) * HyIn[id2].x;
-    DxOut[id.xy] = s * DxIn[id1].x + (1.f - s) * DxIn[id2].x;
-    DyOut[id.xy] = s * DyIn[id1].x + (1.f - s) * DyIn[id2].x;
+
+    if (waterDepth < depth[0]) {
+        // Handle shallowest case separately
+        float s = waterDepth / depth[0];
+        HxOut[id.xy] = s * HxIn[uint3(id.x, id.y, 0)].x;
+        HyOut[id.xy] = s * HyIn[uint3(id.x, id.y, 0)].x;
+        DxOut[id.xy] = s * DxIn[uint3(id.x, id.y, 0)].x;
+        DyOut[id.xy] = s * DyIn[uint3(id.x, id.y, 0)].x;
+        HOut[id.xy]  = s * HIn[uint3(id.x, id.y, 0)].x;
+    } else {
+        // Interpolate between depths
+        float s = 0.f;
+        if (d1 != d2)
+            s = (depth[d2] - waterDepth) / (depth[d2] - depth[d1]);
+        uint3 id1 = uint3(id.x, id.y, d1);
+        uint3 id2 = uint3(id.x, id.y, d2);
+        HxOut[id.xy] = s * HxIn[id1].x + (1.f - s) * HxIn[id2].x;
+        HyOut[id.xy] = s * HyIn[id1].x + (1.f - s) * HyIn[id2].x;
+        DxOut[id.xy] = s * DxIn[id1].x + (1.f - s) * DxIn[id2].x;
+        DyOut[id.xy] = s * DyIn[id1].x + (1.f - s) * DyIn[id2].x;
+        HOut[id.xy]  = s * HIn[id1].x  + (1.f - s) * HIn[id2].x;
+    }
 }

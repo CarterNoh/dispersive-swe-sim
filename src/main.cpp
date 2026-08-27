@@ -16,7 +16,7 @@ extern "C" {
 namespace fs = std::filesystem;
 
 // Parameters
-int numTicks = 2000; // Number of simulation steps to run
+int numTicks = 5000; // Number of simulation steps to run
 bool render = true; // Whether to render the simulation or just run it headless
 
 void SaveToCSV(const std::vector<float>& h, int size, int tick) {
@@ -35,6 +35,28 @@ void SaveToCSV(const std::vector<float>& h, int size, int tick) {
     for (int y = 0; y < size; ++y) {
         for (int x = 0; x < size; ++x) {
             file << h[y * size + x] << (x == size - 1 ? "" : ",");
+        }
+        file << "\n";
+    }
+    file.close();
+}
+
+void SaveToCSV(const std::vector<float>& h, int sizeX, int sizeY, int tick) {
+    if (!fs::exists("data")) {
+        fs::create_directory("data");
+    }
+    std::string filename = "data/frame_" + std::to_string(tick) + ".csv";
+    if (tick < 0) {
+        filename = "data/terrain.csv";
+    }
+    std::ofstream file(filename);
+    if (!file.is_open()) {
+        std::cerr << "Error: Could not open file " << filename << " for writing!" << std::endl;
+        return;
+    }
+    for (int y = 0; y < sizeY; ++y) {
+        for (int x = 0; x < sizeX; ++x) {
+            file << h[y * sizeX + x] << (x == sizeX - 1 ? "" : ",");
         }
         file << "\n";
     }
@@ -98,7 +120,6 @@ void SaveToCSV(const std::vector<std::complex<float>>& data, int size, int array
     }
 }
 
-// New overload for non-square complex array outputs
 void SaveToCSV(const std::vector<std::complex<float>>& data, int width, int height, int arraySize, int tick) {
     if (!fs::exists("data")) {
         fs::create_directory("data");
@@ -201,7 +222,6 @@ int RunWithRender() {
     // Set up a camera looking at the center of the grid
     RenderConstants rConsts = InitCamera(sim.GRIDSIZE_X, sim.GRIDSIZE_Y);
     sim.gpu->UpdateRenderConstants(rConsts);
-    // sim.gpu->Render(sim.H.srv);
 
     // Loop
     MSG msg = {};
@@ -218,9 +238,7 @@ int RunWithRender() {
             DispatchMessage(&msg);
         }
         sim.SimStep();
-        // sim.gpu->Render(sim.H.srv);
         sim.gpu->Render({sim.H.srv, sim.disp_x.srv, sim.disp_y.srv});
-        // sim.gpu->Render({sim.H.srv});
         tick++;
         if (tick >= numTicks) running = false;
     }
@@ -254,30 +272,30 @@ int RunHeadless() {
     // sim.gpu->DownloadFromGPU(sim.H.tex, H, sizeX, sizeY);
     // SaveToCSV(terrain, sizeX, sizeY, -1); // Save terrain data for reference
     // SaveToCSV(H, sizeX, sizeY, 0); // Save initial water height data
-    sim.gpu->DownloadFromGPU(sim.HPos.tex, array, sizeX, sizeY, arraySize);
-    SaveToCSV(array, sizeX, sizeY, arraySize, 0);
+    // sim.gpu->DownloadFromGPU(sim.HPos.tex, array, sizeX, sizeY, arraySize);
+    // SaveToCSV(array, sizeX, sizeY, arraySize, 0);
 
-    // std::cout << "Starting simulation loop..." << std::endl;
-    // auto totalStart = std::chrono::high_resolution_clock::now();
-    // for (int tick = 1; tick < numTicks; ++tick) {
-    //     auto start = std::chrono::high_resolution_clock::now();
-    //     sim.SimStep();
-    //     sim.gpu->DownloadFromGPU(sim.H.tex, H, sizeX, sizeY);
-    //     SaveToCSV(H, sizeX, tick); // Note: SaveToCSV expects square sizes, this needs correction if uncommented
-    //     // sim.gpu->DownloadFromGPU(sim.H.tex, hHat, sizeX, sizeY);
-    //     // SaveToCSV(hHat, sizeX, tick);
-    //     // sim.gpu->DownloadFromGPU(sim.qHat_x_array.tex, array, sizeX, sizeY, arraySize);
-    //     // SaveToCSV(array, sizeX, sizeY, arraySize, tick);
+    std::cout << "Starting simulation loop..." << std::endl;
+    auto totalStart = std::chrono::high_resolution_clock::now();
+    for (int tick = 1; tick < numTicks; ++tick) {
+        auto start = std::chrono::high_resolution_clock::now();
+        sim.SimStep();
+        sim.gpu->DownloadFromGPU(sim.H.tex, H, sizeX, sizeY);
+        SaveToCSV(H, sizeX, sizeY, tick); // Note: SaveToCSV expects square sizes, this needs correction if uncommented
+        // sim.gpu->DownloadFromGPU(sim.H.tex, hHat, sizeX, sizeY);
+        // SaveToCSV(hHat, sizeX, sizeY, tick);
+        // sim.gpu->DownloadFromGPU(sim.qHat_x_array.tex, array, sizeX, sizeY, arraySize);
+        // SaveToCSV(array, sizeX, sizeY, arraySize, tick);
 
-    //     auto sim_time = std::chrono::high_resolution_clock::now();
-    //     std::chrono::duration<double, std::milli> elapsed = sim_time - start;
-    //     std::cout << "Tick: " << tick << " | Simulation Time: " << elapsed.count() << "ms" << std::endl;
-    // }
-    // auto totalEnd = std::chrono::high_resolution_clock::now();
-    // std::chrono::duration<double, std::milli> totalElapsed = totalEnd - totalStart;
-    // std::cout << "Total Simulation Time for " << numTicks << " ticks: " << totalElapsed.count() << "ms" << std::endl;
-    // std::cout << "Average Speed: " << ((totalElapsed.count() / 1000 / numTicks)) << " sec/tick" << std::endl;
-    // std::cout << "FPS: " << (1000.0 / (totalElapsed.count() / numTicks)) << " frames/sec" << std::endl;
+        auto sim_time = std::chrono::high_resolution_clock::now();
+        std::chrono::duration<double, std::milli> elapsed = sim_time - start;
+        std::cout << "Tick: " << tick << " | Simulation Time: " << elapsed.count() << "ms" << std::endl;
+    }
+    auto totalEnd = std::chrono::high_resolution_clock::now();
+    std::chrono::duration<double, std::milli> totalElapsed = totalEnd - totalStart;
+    std::cout << "Total Simulation Time for " << numTicks << " ticks: " << totalElapsed.count() << "ms" << std::endl;
+    std::cout << "Average Speed: " << ((totalElapsed.count() / 1000 / numTicks)) << " sec/tick" << std::endl;
+    std::cout << "FPS: " << (1000.0 / (totalElapsed.count() / numTicks)) << " frames/sec" << std::endl;
 
     return 0;
 }

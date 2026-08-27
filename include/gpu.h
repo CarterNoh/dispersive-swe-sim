@@ -16,18 +16,19 @@ struct alignas(16) SimConstants {
     int gridSizeY; 
     float cellSize;
     float timeStep;
-    int spongeThickness;
     float minWaterHeight;
     float surfaceTension;
     float density;
     // Decomposition Params
     int diffusionIterations;
-    float deltaT;
+    int maxDiffusionCells;
     float diffusionPenalty;
     // SWE & Transport Params
     float slopeLimit;
     float cflCondition;
     float gammaTransport;
+    int spongeThickness;
+    float laplacianDamping;
     // eWave Params
     int depthNum;
     // FFT wave params
@@ -45,7 +46,7 @@ struct alignas(16) SimConstants {
     int paddedGridSizeX;
     int paddedGridSizeY;
     float maxSafeDepth;
-    float simConstantPadding[2]; // Align to 16 bytes
+    float simConstantPadding[1]; // Align to 16 bytes
 };
 
 struct alignas(16) FFTConstants {
@@ -91,6 +92,7 @@ public:
     // Compute Shaders    
     void UpdateConstants(const SimConstants& constants);
     bool CreateGridTexture(GPUField* field, int width, int height, bool isComplex = false, int arraySize = 1);
+    void CopyField(GPUField* dest, GPUField* src);
     bool UploadToGPU(ID3D11Texture2D* tex, const std::vector<float>& data, int width, int height, bool isComplex = false, int arraySize = 1);
     bool DownloadFromGPU(ID3D11Texture2D* tex, std::vector<float>& data, int width, int height);
     bool DownloadFromGPU(ID3D11Texture2D* tex, std::vector<std::complex<float>>& data, int width, int height);

@@ -127,8 +127,8 @@ std::vector<float> Sim::SetWater(std::vector<float>& terrain) {
 			}
             else if (WATER_TYPE == 3) { // Localized splash (Gaussian)
                 float dist = sqrt(pow(xf - 0.5f, 2) + pow(yf - 0.5f, 2));
-                if (dist < 0.1f) 
-					waterSurface += WATER_SCALE * cos(dist * PI * 5.0f);
+                if (dist < 0.05f) 
+					waterSurface += WATER_SCALE; // * cos(dist * PI * 5.0f);
             }
 			else if (WATER_TYPE == 4) { // Surface Ripples
 				waterSurface += 0.5f * WATER_SCALE * (cos(2.f * PI * x / 37.f) + cos(2.f * PI * y / 49.f)); // this needs some work
@@ -186,7 +186,7 @@ void Sim::Init(GPU* gpu) {
 		gpu->UploadToGPU(fields_arrays[i]->tex, temp, paddedSizeX, paddedSizeY, true, DEPTH_NUM);
 	}
 	gpu->CreateBuffer(&depth, depths.data(), DEPTH_NUM);
-	gpu->BindSRV(8, depth.srv);
+	gpu->BindSRV(12, depth.srv);
 	std::vector<float> terrain_temp = SetTerrain();
 	std::vector<float> h_temp = SetWater(terrain_temp);
 	std::vector<float> H_temp(GRIDSIZE_X * GRIDSIZE_Y, 0.0f);
@@ -304,7 +304,12 @@ void Sim::DecompositionStep() {
 		{H.srv, terrain.srv}, 
 		{alpha_H.uav, alpha_Q_x.uav, alpha_Q_y.uav});
 	
-	// Run diffusion to low-pass filter H and Q
+	// Copy initial fields to Orig fields before starting Jacobi loop
+	gpu->CopyField(&HOrig, &H);
+	gpu->CopyField(&QOrig_x, &Q_x);
+	gpu->CopyField(&QOrig_y, &Q_y);
+
+	// Run diffusion to low-pass filter H and Q using Jacobi solver
 	for (int j = 0; (j < DIFFUSION_ITERATIONS); j++) {
 		// Swap H and HPast pointers for ping-ponging
         std::swap(H, HPast); 
@@ -313,7 +318,7 @@ void Sim::DecompositionStep() {
 
 		// Diffusion step for H and Q
 		gpu->Dispatch(DiffusionStep, 
-			{terrain.srv, HPast.srv, QPast_x.srv, QPast_y.srv, alpha_H.srv, alpha_Q_x.srv, alpha_Q_y.srv}, 
+			{terrain.srv, HOrig.srv, QOrig_x.srv, QOrig_y.srv, HPast.srv, QPast_x.srv, QPast_y.srv, alpha_H.srv, alpha_Q_x.srv, alpha_Q_y.srv}, 
 			{H.uav, Q_x.uav, Q_y.uav});
 	}
 
@@ -332,27 +337,29 @@ void Sim::FFTStep() {
     // Propagate waves
 	gpu->DispatchPadded(PropagateWaves, 
 		{HPos.srv, HNeg.srv},
-		{HProp.uav, DelH_x.uav, DelH_y.uav, Disp_x.uav, Disp_y.uav}, DEPTH_NUM);
-	gpu->ExecuteFFT(HProp.uav,   paddedSizeX, paddedSizeY, true, DEPTH_NUM);
+		{DelH_x.uav, DelH_y.uav, Disp_x.uav, Disp_y.uav, HProp.uav}, DEPTH_NUM);
 	gpu->ExecuteFFT(DelH_x.uav,  paddedSizeX, paddedSizeY, true, DEPTH_NUM);
 	gpu->ExecuteFFT(DelH_y.uav,  paddedSizeX, paddedSizeY, true, DEPTH_NUM);
 	gpu->ExecuteFFT(Disp_x.uav,  paddedSizeX, paddedSizeY, true, DEPTH_NUM);
 	gpu->ExecuteFFT(Disp_y.uav,  paddedSizeX, paddedSizeY, true, DEPTH_NUM);
+	gpu->ExecuteFFT(HProp.uav,  paddedSizeX, paddedSizeY, true, DEPTH_NUM);
 
 	// Interpolate outputs between depths
 	gpu->Dispatch(Interp, 
-		{HProp.srv, DelH_x.srv, DelH_y.srv, Disp_x.srv, Disp_y.srv, hbar.srv}, 
-		{hFFT.uav, delH_x.uav, delH_y.uav, disp_x.uav, disp_y.uav});
+		{DelH_x.srv, DelH_y.srv, Disp_x.srv, Disp_y.srv, hbar.srv, HProp.srv}, 
+		{delH_x.uav, delH_y.uav, disp_x.uav, disp_y.uav, hFFT.uav});
 }
 
 void Sim::eWaveStep() {
 	// Copy variables to fourier domain & perform FFT
 	gpu->DispatchPadded(TransferToFFT, 
-		{htilde.srv, qtilde_x.srv, qtilde_y.srv},
-		{htildeOld.uav, hHat.uav, qHat_x.uav, qHat_y.uav});
+		{htilde.srv, htildeOld.srv, qtilde_x.srv, qtilde_y.srv},
+		{htildeOldNext.uav, hHat.uav, qHat_x.uav, qHat_y.uav});
 	gpu->ExecuteFFT(hHat.uav, paddedSizeX, paddedSizeY, false);
 	gpu->ExecuteFFT(qHat_x.uav, paddedSizeX, paddedSizeY, false);
 	gpu->ExecuteFFT(qHat_y.uav, paddedSizeX, paddedSizeY, false);
+
+	std::swap(htildeOldNext, htildeOld);
 
 	// Compute eWave
 	gpu->DispatchPadded(CalcEWave, 
@@ -380,7 +387,7 @@ void Sim::SWEStep() {
 	// Compute time derivative of u_bar and integrate to get new u_bar, then 
 	// transfer back to flow rate using upwinding on most recent hbar
 	gpu->Dispatch(CalcSWE,
-		{ubar_x.srv, ubar_y.srv, hbar.srv, H.srv, delH_x.srv, delH_y.srv}, 
+		{ubar_x.srv, ubar_y.srv, hbar.srv, H.srv, delH_x.srv, delH_y.srv, terrain.srv}, 
 		{ubarNew_x.uav, ubarNew_y.uav, qbar_x.uav, qbar_y.uav});
 
 	// store current hbar for next timestep
@@ -393,9 +400,11 @@ void Sim::TransportStep() {
 	// Adjust qtilde to account for advection by ubar, using cubic sampling to get better accuracy.
 	std::swap(qtilde_x, qtildePast_x);
 	std::swap(qtilde_y, qtildePast_y);
+	std::swap(htilde, htildePast);
+
 	gpu->Dispatch(UpdateTilde, 
 		{ubarNew_x.srv, ubar_x.srv, ubarNew_y.srv, ubar_y.srv, 
-			qtildePast_x.srv, qtildePast_y.srv, h.srv, htilde.srv},
+			htildePast.srv, qtildePast_x.srv, qtildePast_y.srv},
 		{htilde.uav, qtilde_x.uav, qtilde_y.uav});	
 	
 	// Advection of h through ubar:

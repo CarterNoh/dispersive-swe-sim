@@ -5,19 +5,13 @@
 #include "Engine/StaticMesh.h"
 #include "UObject/ConstructorHelpers.h"
 #include "Math/Float16Color.h"
+#include "Components/StaticMeshComponent.h"
+#include "TextureResource.h"
 
-#if WITH_EDITOR
-#include "LandscapeProxy.h"
-#include "LandscapeInfo.h"
-#endif
 
 ASWESimulatorActor::ASWESimulatorActor()
 {
     PrimaryActorTick.bCanEverTick = false;
-
-#if WITH_EDITORONLY_DATA
-    bIsSpatiallyLoaded = false;
-#endif
 
     // 1. Root Component
     USceneComponent* Root = CreateDefaultSubobject<USceneComponent>(TEXT("Root"));
@@ -26,6 +20,8 @@ ASWESimulatorActor::ASWESimulatorActor()
     // 2. Attach Scene Capture (positioned facing straight down)
     TerrainCaptureComponent = CreateDefaultSubobject<USceneCaptureComponent2D>(TEXT("TerrainCapture"));
     TerrainCaptureComponent->SetupAttachment(Root);
+    TerrainCaptureComponent->bCaptureEveryFrame = false;
+    TerrainCaptureComponent->bCaptureOnMovement = false;
     TerrainCaptureComponent->SetRelativeLocation(FVector(0.0f, 0.0f, 5000.0f)); // default 50m above
     TerrainCaptureComponent->SetRelativeRotation(FRotator(-90.0f, 0.0f, -90.0f)); // Pointing down
 
@@ -66,75 +62,7 @@ void ASWESimulatorActor::OnConstruction(const FTransform& Transform)
     Super::OnConstruction(Transform);
 
     // Handle auto-fit logic in editor time so it's instantly visual to the developer
-    if (bAutoFitToTerrain && TerrainActor)
-    {
-        FVector Origin = FVector::ZeroVector;
-        FVector BoxExtent = FVector::ZeroVector;
-        bool bBoundsFound = false;
-
-#if WITH_EDITOR
-        if (ALandscapeProxy* LandscapeProxy = Cast<ALandscapeProxy>(TerrainActor))
-        {
-            if (ULandscapeInfo* LandscapeInfo = LandscapeProxy->GetLandscapeInfo())
-            {
-                FBox CompleteBounds = LandscapeInfo->GetCompleteBounds();
-                if (CompleteBounds.IsValid)
-                {
-                    Origin = CompleteBounds.GetCenter();
-                    BoxExtent = CompleteBounds.GetExtent();
-                    CapturedWorldWidth = FMath::Max(BoxExtent.X, BoxExtent.Y) * 2.0f;
-                    bBoundsFound = true;
-                }
-            }
-        }
-#endif
-
-        if (!bBoundsFound)
-        {
-            TerrainActor->GetActorBounds(false, Origin, BoxExtent);
-
-            // Fall back to landscape pivot and CapturedWorldWidth if bounds are zero (World Partition proxy case)
-            if (BoxExtent.X <= 10.0f || BoxExtent.Y <= 10.0f)
-            {
-                if (CapturedWorldWidth <= 10.0f)
-                {
-                    CapturedWorldWidth = 51200.0f; // Reset to default 512m
-                }
-                // Landscape pivot is at the bottom-left corner; offset by half-width to center it
-                Origin = TerrainActor->GetActorLocation() + FVector(CapturedWorldWidth * 0.5f, CapturedWorldWidth * 0.5f, 0.0f);
-                BoxExtent = FVector(CapturedWorldWidth * 0.5f, CapturedWorldWidth * 0.5f, 1000.0f);
-            }
-            else
-            {
-                CapturedWorldWidth = FMath::Max(BoxExtent.X, BoxExtent.Y) * 2.0f;
-            }
-        }
-
-        // Center horizontally and place actor at Z = 0.0f
-        FVector NewLoc = Origin;
-        NewLoc.Z = 0.0f;
-        SetActorLocation(NewLoc);
-
-        if (WaterMeshComponent)
-        {
-            WaterMeshComponent->SetWorldScale3D(FVector(1.0f, 1.0f, 1.0f));
-        }
-        if (TerrainCaptureComponent)
-        {
-            TerrainCaptureComponent->OrthoWidth = CapturedWorldWidth;
-            
-            // Put scene capture above the highest point of the terrain bounds
-            float TargetRelativeZ = (Origin.Z + BoxExtent.Z + 1000.0f) - WaterLevel;
-            TargetRelativeZ = FMath::Max(TargetRelativeZ, 5000.0f);
-            TerrainCaptureComponent->SetRelativeLocation(FVector(0.0f, 0.0f, TargetRelativeZ));
-        }
-
-        if (SimComponent)
-        {
-            SimComponent->WaterLevel = WaterLevel;
-            SimComponent->CapturedWorldWidth = CapturedWorldWidth;
-        }
-    }
+    FitToTerrain();
 
     // 5. Setup static water mesh representation and scale it
     if (WaterMeshComponent)
@@ -169,59 +97,7 @@ void ASWESimulatorActor::BeginPlay()
     UE_LOG(LogTemp, Warning, TEXT("ASWESimulatorActor::BeginPlay() started"));
 
     // 1. Re-run bounds calculation to ensure runtime matches any runtime changes
-    if (bAutoFitToTerrain && TerrainActor)
-    {
-        FVector Origin = FVector::ZeroVector;
-        FVector BoxExtent = FVector::ZeroVector;
-        bool bBoundsFound = false;
-
-#if WITH_EDITOR
-        if (ALandscapeProxy* LandscapeProxy = Cast<ALandscapeProxy>(TerrainActor))
-        {
-            if (ULandscapeInfo* LandscapeInfo = LandscapeProxy->GetLandscapeInfo())
-            {
-                FBox CompleteBounds = LandscapeInfo->GetCompleteBounds();
-                if (CompleteBounds.IsValid)
-                {
-                    Origin = CompleteBounds.GetCenter();
-                    BoxExtent = CompleteBounds.GetExtent();
-                    CapturedWorldWidth = FMath::Max(BoxExtent.X, BoxExtent.Y) * 2.0f;
-                    bBoundsFound = true;
-                }
-            }
-        }
-#endif
-
-        if (!bBoundsFound)
-        {
-            TerrainActor->GetActorBounds(false, Origin, BoxExtent);
-
-            // Fall back to landscape pivot and CapturedWorldWidth if bounds are zero (World Partition proxy case)
-            if (BoxExtent.X <= 10.0f || BoxExtent.Y <= 10.0f)
-            {
-                if (CapturedWorldWidth <= 10.0f)
-                {
-                    CapturedWorldWidth = 12800.0f; // Reset to default 128m
-                }
-                // Landscape pivot is at the bottom-left corner; offset by half-width to center it
-                Origin = TerrainActor->GetActorLocation() + FVector(CapturedWorldWidth * 0.5f, CapturedWorldWidth * 0.5f, 0.0f);
-                BoxExtent = FVector(CapturedWorldWidth * 0.5f, CapturedWorldWidth * 0.5f, 1000.0f);
-            }
-            else
-            {
-                CapturedWorldWidth = FMath::Max(BoxExtent.X, BoxExtent.Y) * 2.0f;
-            }
-        }
-
-        FVector NewLoc = Origin;
-        NewLoc.Z = 0.0f;
-        SetActorLocation(NewLoc);
-
-        if (WaterMeshComponent)
-        {
-            WaterMeshComponent->SetWorldScale3D(FVector(1.0f, 1.0f, 1.0f));
-        }
-    }
+    FitToTerrain();
 
     // Set up static water mesh at runtime
     if (WaterMeshComponent)
@@ -301,6 +177,11 @@ void ASWESimulatorActor::BeginPlay()
         if (WaterMeshComponent)
         {
             WaterMeshComponent->SetVisibility(false);
+        }
+        if (TerrainActor)
+        {
+            TerrainCaptureComponent->ShowOnlyActors.Add(TerrainActor);
+            TerrainCaptureComponent->PrimitiveRenderMode = ESceneCapturePrimitiveRenderMode::PRM_UseShowOnlyList;
         }
 
         TerrainCaptureComponent->ProjectionType = ECameraProjectionMode::Orthographic;
@@ -428,6 +309,62 @@ float ASWESimulatorActor::GetWaterHeightAtLocation(const FVector& WorldLocation)
         return SimComponent->GetWaterHeightAtLocation(WorldLocation);
     }
     return WaterLevel;
+}
+
+void ASWESimulatorActor::FitToTerrain()
+{
+    if (bAutoFitToTerrain && TerrainActor)
+    {
+        FVector Origin = FVector::ZeroVector;
+        FVector BoxExtent = FVector::ZeroVector;
+        bool bBoundsFound = false;
+
+        if (!bBoundsFound)
+        {
+            TerrainActor->GetActorBounds(false, Origin, BoxExtent);
+
+            // Fall back to landscape pivot and CapturedWorldWidth if bounds are zero (World Partition proxy case)
+            if (BoxExtent.X <= 10.0f || BoxExtent.Y <= 10.0f)
+            {
+                if (CapturedWorldWidth <= 10.0f)
+                {
+                    CapturedWorldWidth = 51200.0f; // Reset to default 512m
+                }
+                // Landscape pivot is at the bottom-left corner; offset by half-width to center it
+                Origin = TerrainActor->GetActorLocation() + FVector(CapturedWorldWidth * 0.5f, CapturedWorldWidth * 0.5f, 0.0f);
+                BoxExtent = FVector(CapturedWorldWidth * 0.5f, CapturedWorldWidth * 0.5f, 1000.0f);
+            }
+            else
+            {
+                CapturedWorldWidth = FMath::Max(BoxExtent.X, BoxExtent.Y) * 2.0f;
+            }
+        }
+
+        // Center horizontally and place actor at Z = 0.0f
+        FVector NewLoc = Origin;
+        NewLoc.Z = 0.0f;
+        SetActorLocation(NewLoc);
+
+        if (WaterMeshComponent)
+        {
+            WaterMeshComponent->SetWorldScale3D(FVector(1.0f, 1.0f, 1.0f));
+        }
+        if (TerrainCaptureComponent)
+        {
+            TerrainCaptureComponent->OrthoWidth = CapturedWorldWidth;
+            
+            // Put scene capture above the highest point of the terrain bounds
+            float TargetRelativeZ = (Origin.Z + BoxExtent.Z + 1000.0f) - WaterLevel;
+            TargetRelativeZ = FMath::Max(TargetRelativeZ, 5000.0f);
+            TerrainCaptureComponent->SetRelativeLocation(FVector(0.0f, 0.0f, TargetRelativeZ));
+        }
+
+        if (SimComponent)
+        {
+            SimComponent->WaterLevel = WaterLevel;
+            SimComponent->CapturedWorldWidth = CapturedWorldWidth;
+        }
+    }
 }
 
 

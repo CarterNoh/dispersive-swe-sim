@@ -9,16 +9,17 @@
 #define gridSizeY SimConstants.gridSizeY
 #define cellSize SimConstants.cellSize
 #define timeStep SimConstants.timeStep
-#define spongeThickness SimConstants.spongeThickness
 #define minWaterHeight SimConstants.minWaterHeight
 #define surfaceTension SimConstants.surfaceTension
 #define density SimConstants.density
 #define diffusionIterations SimConstants.diffusionIterations
-#define deltaT SimConstants.deltaT
+#define maxDiffusionCells SimConstants.maxDiffusionCells
 #define diffusionPenalty SimConstants.diffusionPenalty
 #define slopeLimit SimConstants.slopeLimit
 #define cflCondition SimConstants.cflCondition
 #define gammaTransport SimConstants.gammaTransport
+#define spongeThickness SimConstants.spongeThickness
+#define laplacianDamping SimConstants.laplacianDamping
 #define depthNum SimConstants.depthNum
 #define fetch SimConstants.fetch
 #define windSpeed SimConstants.windSpeed
@@ -43,44 +44,106 @@
 #define GRAVITY 9.80665
 #define PI 3.14159265358979323846f
 
-// Texture Registers
-Texture2D<float>   in0 ;
-Texture2D<float>   in1 ;
-Texture2D<float>   in2 ;
-Texture2D<float>   in3 ;
-Texture2D<float>   in4 ;
-Texture2D<float>   in5 ;
-Texture2D<float>   in6 ;
-Texture2D<float>   in7 ;
-RWTexture2D<float> out0;
-RWTexture2D<float> out1;
-RWTexture2D<float> out2;
-RWTexture2D<float> out3;
-RWTexture2D<float> out4;
-RWTexture2D<float> out5;
+// Texture Declarations (Globally mapped to shader parameters)
+Texture2D<float>   terrain;
+Texture2D<float>   terrainPast;
+Texture2D<float>   alpha_HIn;
+Texture2D<float>   hIn;
+Texture2D<float>   qIn_x;
+Texture2D<float>   qIn_y;
+Texture2D<float>   H_In;
+Texture2D<float>   H_Past;
+Texture2D<float>   Q_Past_x;
+Texture2D<float>   Q_Past_y;
+Texture2D<float>   H_Orig;
+Texture2D<float>   Q_Orig_x;
+Texture2D<float>   Q_Orig_y;
+Texture2D<float>   alpha_QIn_x;
+Texture2D<float>   alpha_QIn_y;
+Texture2D<float>   htildeIn;
+Texture2D<float>   qtildeIn_x;
+Texture2D<float>   qtildeIn_y;
+Texture2D<float>   htildeOldIn;
+Texture2D<float>   hbarIn;
+Texture2D<float>   qbarIn_x;
+Texture2D<float>   qbarIn_y;
+Texture2D<float>   ubarIn_x;
+Texture2D<float>   ubarIn_y;
+Texture2D<float>   delH_x;
+Texture2D<float>   delH_y;
+Texture2D<float>   ubarNewIn_x;
+Texture2D<float>   ubarNewIn_y;
+Texture2D<float>   htildePast;
+Texture2D<float>   qtildePast_x;
+Texture2D<float>   qtildePast_y;
+Texture2D<float>   hPast;
+Texture2D<float>   qAdvectIn_x;
+Texture2D<float>   qAdvectIn_y;
+Texture2D<float2>  hhat;
+Texture2D<float2>  qhat_x;
+Texture2D<float2>  qhat_y;
+Texture2DArray<float2> qHat_x_array;
+Texture2DArray<float2> qHat_y_array;
+Texture2D<float>   Q_In_x;
+Texture2D<float>   Q_In_y;
+
+Texture2D<float>   inDispX;
+Texture2D<float>   inDispY;
+Texture2D<float>   inHeight;
+Texture2D<float>   inPreviousFoam;
+Texture2D<float4>  inNormal;
+Texture2D<float>   inPreviousRoughness;
+SamplerState BilinearWrapSampler;
+
+RWTexture2D<float> hOut;
+RWTexture2D<float> H_Out;
+RWTexture2D<float> terrainOut;
+RWTexture2D<float> terrainOutCM;
+RWTexture2D<float> terrainNew;
+RWTexture2D<float> Q_Out_x;
+RWTexture2D<float> Q_Out_y;
+RWTexture2D<float> alpha_HOut;
+RWTexture2D<float> alpha_QOut_x;
+RWTexture2D<float> alpha_QOut_y;
+RWTexture2D<float> hbarOut;
+RWTexture2D<float> qbarOut_x;
+RWTexture2D<float> qbarOut_y;
+RWTexture2D<float> htildeOut;
+RWTexture2D<float> qtildeOut_x;
+RWTexture2D<float> qtildeOut_y;
+RWTexture2D<float> htildeOldNext;
+RWTexture2D<float2> hHat;
+RWTexture2D<float2> qHat_x;
+RWTexture2D<float2> qHat_y;
+RWTexture2D<float> ubarOut_x;
+RWTexture2D<float> ubarOut_y;
+RWTexture2D<float> ubarNewOut_x;
+RWTexture2D<float> ubarNewOut_y;
+RWTexture2D<float> qAdvectOut_x;
+RWTexture2D<float> qAdvectOut_y;
+RWTexture2D<float> qOut_x;
+RWTexture2D<float> qOut_y;
+RWTexture2DArray<float2> qhat_x_array;
+RWTexture2DArray<float2> qhat_y_array;
+RWTexture2D<float4> outDisp4;
+RWTexture2D<float4> outNormal;
+RWTexture2D<float>  outFoam;
+RWTexture2D<float>  outJacobianDet;
+RWTexture2D<float>  outRoughness;
+
 
 
 //////////////////// HELPER FUNCTIONS /////////////////////////
-bool StopFlowOnTerrainBoundary(float h_curr, float terrain_curr, float h_next, float terrain_next) {
-	if ((h_curr <= minWaterHeight) && (terrain_curr >= terrain_next + h_next))
-		return true;
-	if ((h_next <= minWaterHeight) && (terrain_next > terrain_curr + h_curr))
-		return true;
-	return false;
-}
-
-float LimitVelocity(float velocity_in, float cflFactor) {
-	if (velocity_in >= 0.f)
-		return min(velocity_in, cflFactor);
-	else
-		return max(velocity_in, -cflFactor);
-}
-
-float LimitFlowRate(float flow_rate_in, float waterDepth_left, float waterDepth_right, float cflFactor) {
-	if (flow_rate_in >= 0.f)
+float LimitFlowRate(float flow_rate_in, float waterDepth_left, float terrain_left, float waterDepth_right, float terrain_right, float cflFactor) {
+	if (flow_rate_in >= 0.f) {
+		if (waterDepth_left <= minWaterHeight || (terrain_left + waterDepth_left <= terrain_right))
+			return 0.f;
 		return min(flow_rate_in, cflFactor * waterDepth_left);
-	else
+	} else {
+		if (waterDepth_right <= minWaterHeight || (terrain_right + waterDepth_right <= terrain_left))
+			return 0.f;
 		return max(flow_rate_in, -cflFactor * waterDepth_right);
+	}
 }
 
 float SampleCubicClamped2D(Texture2D<float> dataField, float2 samplePos) {
@@ -159,29 +222,12 @@ float SafeTanh(float x) {
     else                return tanh(x);
 }
 
-float LoadClamped(Texture2D<float> tex, int2 coord) {
-    int x = clamp(coord.x, 0, gridSizeX - 1);
-    int y = clamp(coord.y, 0, gridSizeY - 1);
-    return tex[uint2(x, y)];
-}
-
-float CalcDiffusion(Texture2D<float> f, Texture2D<float> a, uint2 curr, float invCellSizeSq) {
-    int2 id = int2(curr);
-    float f_curr = f[curr];
-    float a_curr = a[curr];
-
-    float f_right = LoadClamped(f, id + int2(1, 0));
-    float f_left  = LoadClamped(f, id + int2(-1, 0));
-    float f_up    = LoadClamped(f, id + int2(0, 1));
-    float f_down  = LoadClamped(f, id + int2(0, -1));
-
-    float a_left  = LoadClamped(a, id + int2(-1, 0));
-    float a_down  = LoadClamped(a, id + int2(0, -1));
-
-    float dF_x = a_curr * (f_right - f_curr) - a_left * (f_curr - f_left);
-    float dF_y = a_curr * (f_up - f_curr) - a_down * (f_curr - f_down);
-    float dFdX = (dF_x + dF_y) * invCellSizeSq;
-    return dFdX;
+precise float SolveJacobi(float u_orig, float sigma, float u_E, float u_W, float u_N, float u_S, float C_E, float C_W, float C_N, float C_S) {
+    // u is the quantity being diffused, C is the diffusion coefficient
+    // E, W, N, S are cardinal directions - neighbor cells
+    precise float numerator = u_orig + sigma * (C_E * u_E + C_W * u_W + C_N * u_N + C_S * u_S);
+    precise float denominator = 1.0f + sigma * (C_E + C_W + C_N + C_S);
+    return numerator / denominator;
 }
 
 float SpongeDamping(uint2 id, bool isYDir = false) {
@@ -211,46 +257,40 @@ float WaterLevel;
 float TerrainCaptureCameraZ;
 [numthreads(16, 16, 1)]
 void InitializeWater(uint3 id : SV_DispatchThreadID) {
-    // Inputs: in3 = terrain (raw capture scene depth in cm)
-    // Outputs: out0 = h (water height), out1 = H (total elevation), out2 = converted terrain height (meters), out3 = visual terrain height (cm)
+    // Inputs: terrain (raw capture scene depth in cm)
+    // Outputs: hOut (water height), HOut (total elevation), terrainOut (converted terrain height in meters), terrainOutCM (visual terrain height in cm)
     if (id.x >= (uint)(gridSizeX) || id.y >= (uint)(gridSizeY)) return;
-    float terrainHeight = (TerrainCaptureCameraZ - in3[id.xy]) * 0.01f;
-    float h_val = max(0.f, WaterLevel - terrainHeight);
-    if (id.y < 0.25 * gridSizeX) {
-        h_val += 2;
+    float rawDepth = terrain[id.xy];
+    if (isnan(rawDepth) || isinf(rawDepth) || rawDepth <= 0.f || rawDepth > 1000000.f) {
+        rawDepth = TerrainCaptureCameraZ;
     }
-    out0[id.xy] = h_val;
-    out1[id.xy] = terrainHeight + h_val;
-    out2[id.xy] = terrainHeight;
-    out3[id.xy] = terrainHeight * 100.0f; // Converted terrain height in centimeters
-}
-
-[numthreads(16, 16, 1)]
-void DiffuseTerrain(uint3 id : SV_DispatchThreadID) {
-    // Inputs: in0 = TerrainPast, in1 = alpha_H
-    // Outputs: out0 = TerrainNew
-    if (id.x >= (uint)(gridSizeX) || id.y >= (uint)(gridSizeY)) return;
-
-    float invCellSizeSq = 1.0f / (cellSize * cellSize);
-    out0[id.xy] = in0[id.xy] + deltaT * CalcDiffusion(in0, in1, id.xy, invCellSizeSq);
+    float terrainHeight = (TerrainCaptureCameraZ - rawDepth) * 0.01f;
+    float h_val = max(0.f, WaterLevel - terrainHeight);
+    // if (id.y < 0.25f * gridSizeY) { // for testing: step function
+    //     h_val += 2.f;
+    // }
+    hOut[id.xy] = h_val;
+    H_Out[id.xy] = terrainHeight + h_val;
+    terrainOut[id.xy] = terrainHeight;
+    terrainOutCM[id.xy] = terrainHeight * 100.0f; // Converted terrain height in centimeters
 }
 
 /////////// Decomposition ///////////
 
 [numthreads(16, 16, 1)]
 void InitDecomp(uint3 id : SV_DispatchThreadID) {
-    // Inputs: in0 = h, in1 = q_x, in2 = q_y, in3 = terrain
-    // Outputs: out0 = H, out1 = Q_x, out2 = Q_y
+    // Inputs: hIn, qIn_x, qIn_y, terrain
+    // Outputs: HOut, QOut_x, QOut_y
     if (id.x >= (uint)(gridSizeX) || id.y >= (uint)(gridSizeY)) return;
-    out0[id.xy] = in0[id.xy] + in3[id.xy];
-    out1[id.xy] = in1[id.xy];
-    out2[id.xy] = in2[id.xy];
+    H_Out[id.xy] = hIn[id.xy] + terrain[id.xy];
+    Q_Out_x[id.xy] = qIn_x[id.xy];
+    Q_Out_y[id.xy] = qIn_y[id.xy];
 }
 
 [numthreads(16, 16, 1)]
 void CalcDiffusionCoeffs(uint3 id : SV_DispatchThreadID) {
-    // Inputs: in0 = H, in1 = terrain
-    // Outputs: out0 = alpha_H, out1 = alpha_Q_x, out2 = alpha_Q_y
+    // Inputs: HIn, terrain
+    // Outputs: alpha_HOut, alpha_QOut_x, alpha_QOut_y
     if (id.x >= (uint)(gridSizeX) || id.y >= (uint)(gridSizeY)) return;
 
     int2 curr  = int2(id.xy);
@@ -258,89 +298,96 @@ void CalcDiffusionCoeffs(uint3 id : SV_DispatchThreadID) {
     int2 right = clamp(curr + int2(1, 0), int2(0, 0), maxGrid);
     int2 up    = clamp(curr + int2(0, 1), int2(0, 0), maxGrid);
 
-    // float max_ground = max(in1[curr], in1[right], in1[up]);
-    // float min_water = min(in0[curr], in0[right], in0[up]); // or average of these 3
-    float h = clamp(in0[curr] - in1[curr], 0.f, maxSafeDepth); // min_water - max_ground;
-    float hr = clamp(in0[right] - in1[right], 0.f, maxSafeDepth);
-    float hu = clamp(in0[up] - in1[up], 0.f, maxSafeDepth);
+    float h = clamp(H_In[curr] - terrain[curr], 0.f, maxSafeDepth);
+    float hr = clamp(H_In[right] - terrain[right], 0.f, maxSafeDepth);
+    float hu = clamp(H_In[up] - terrain[up], 0.f, maxSafeDepth);
     hr = (h + hr) * 0.5f;
     hu = (h + hu) * 0.5f;
-    float invDenom = rcp(2.0f * deltaT * (float)diffusionIterations);
-    float invCellSize = 1.0f / cellSize;
-    float grad_x = (in0[right] - in0[curr]) * invCellSize;
-    float grad_y = (in0[up] - in0[curr]) * invCellSize;
+    float grad_x = (H_In[right] - H_In[curr]) * rcp(cellSize);
+    float grad_y = (H_In[up] - H_In[curr]) * rcp(cellSize);
     float penalty = exp(- diffusionPenalty * (grad_x * grad_x + grad_y * grad_y));
-    float max_alpha = (cellSize * cellSize) * rcp(4.0f * deltaT); // Von Neumann Stability Condition
-    out0[curr] = min(max_alpha, h * h   * invDenom) * penalty;
-    out1[curr] = min(max_alpha, hr * hr * invDenom) * penalty;
-    out2[curr] = min(max_alpha, hu * hu * invDenom) * penalty;
+
+    float max_alpha = 0.5 * (maxDiffusionCells * cellSize) * (maxDiffusionCells * cellSize);
+    alpha_HOut[curr]   = clamp(0.5 * h  * h * penalty,  0.0f, max_alpha);
+    alpha_QOut_x[curr] = clamp(0.5 * hr * hr * penalty, 0.0f, max_alpha);
+    alpha_QOut_y[curr] = clamp(0.5 * hu * hu * penalty, 0.0f, max_alpha);
 }
 
 [numthreads(16, 16, 1)]
 void DiffusionStep(uint3 id : SV_DispatchThreadID) {
-    // Inputs: in0 = terrain, in1 = HPast, in2 = QPast_x, in3 = QPast_y, 
-    //         in4 = alpha_H, in5 = alpha_Q_x, in6 = alpha_Q_y
-    // Outputs: out0 = H, out1 = Q_x, out3 = Q_y
+    // Inputs: terrain, H_Orig, Q_Orig_x, Q_Orig_y, 
+    //         H_Past, Q_Past_x, Q_Past_y,
+    //         alpha_HIn, alpha_QIn_x, alpha_QIn_y
+    // Outputs: H_Out, Q_Out_x, Q_Out_y
     if (id.x >= (uint)(gridSizeX) || id.y >= (uint)(gridSizeY)) return;
 
-    float invCellSizeSq = 1.0f / (cellSize * cellSize);
-    float newH = in1[id.xy] + deltaT * CalcDiffusion(in1, in4, id.xy, invCellSizeSq);
-    out0[id.xy] = max(in0[id.xy], newH);
-    out1[id.xy] = in2[id.xy] + deltaT * CalcDiffusion(in2, in5, id.xy, invCellSizeSq);
-    out2[id.xy] = in3[id.xy] + deltaT * CalcDiffusion(in3, in6, id.xy, invCellSizeSq);
+    int2 curr = int2(id.xy);
+    int2 maxGrid = int2(gridSizeX - 1, gridSizeY - 1);
+    int2 right = clamp(curr + int2(1, 0), int2(0, 0), maxGrid);
+    int2 left  = clamp(curr + int2(-1, 0), int2(0, 0), maxGrid);
+    int2 up    = clamp(curr + int2(0, 1), int2(0, 0), maxGrid);
+    int2 down  = clamp(curr + int2(0, -1), int2(0, 0), maxGrid);
+    int2 ru    = clamp(curr + int2(1, 1), int2(0, 0), maxGrid);
+    int2 rd    = clamp(curr + int2(1, -1), int2(0, 0), maxGrid);
+    int2 lu    = clamp(curr + int2(-1, 1), int2(0, 0), maxGrid);
+
+    float aH_curr  = alpha_HIn[curr];
+    float aH_right = alpha_HIn[right];
+    float aH_left  = alpha_HIn[left];
+    float aH_up    = alpha_HIn[up];
+    float aH_down  = alpha_HIn[down];
+    float a_topright = 0.25f * (aH_curr + aH_up   + aH_right + alpha_HIn[ru]);
+    float a_botright = 0.25f * (aH_curr + aH_down + aH_right + alpha_HIn[rd]);
+    float a_topleft  = 0.25f * (aH_curr + aH_up   + aH_left  + alpha_HIn[lu]);
+
+    float invCellSizeSq = rcp(cellSize * cellSize);
+    precise float newH    = SolveJacobi(H_Orig[curr],   invCellSizeSq, H_Past[right],   H_Past[left],   H_Past[up],   H_Past[down],   alpha_QIn_x[curr], alpha_QIn_x[left], alpha_QIn_y[curr], alpha_QIn_y[down]);
+    H_Out[curr]   = max(terrain[curr], newH);
+    precise float newQx   = SolveJacobi(Q_Orig_x[curr], invCellSizeSq, Q_Past_x[right], Q_Past_x[left], Q_Past_x[up], Q_Past_x[down], aH_right,   aH_curr,   a_topright, a_botright);
+    Q_Out_x[curr] = newQx;
+    precise float newQy   = SolveJacobi(Q_Orig_y[curr], invCellSizeSq, Q_Past_y[right], Q_Past_y[left], Q_Past_y[up], Q_Past_y[down], a_topright, a_topleft, aH_up,      aH_curr);
+    Q_Out_y[curr] = newQy;
 }
 
 [numthreads(16, 16, 1)]
 void DecomposeFields(uint3 id : SV_DispatchThreadID) {
-    // Inputs: in0 = H, in1 = Q_x, in2 = Q_y
-    //         in3 = h, in4 = q_x, in5 = q_y, in6 = terrain, in7 = terrain_bar
-    // Outputs: out0 = hbar, out1 = qbar_x, out2 = qbar_y, 
-    //          out3 = htilde, out4 = qtilde_x, out5 = qtilde_y
+    // Inputs: HIn, QIn_x, QIn_y
+    //         hIn, qIn_x, qIn_y, terrain
+    // Outputs: hbarOut, qbarOut_x, qbarOut_y, 
+    //          htildeOut, qtildeOut_x, qtildeOut_y
     if (id.x >= (uint)(gridSizeX) || id.y >= (uint)(gridSizeY)) return;
     
     int2 curr = int2(id.xy);
     int2 maxGrid = int2(gridSizeX - 1, gridSizeY - 1);
-    
-    float t_curr = in6[curr];
-    float t_bar_curr = in7[curr];
-    float hbar = clamp(in0[curr] - t_curr, 0.f, maxSafeDepth);
-    out0[curr] = hbar;
-    out1[curr] = in1[curr];
-    out2[curr] = in2[curr];
-    out3[curr] = in3[curr] - hbar;
-    out4[curr] = in4[curr] - in1[curr];
-    out5[curr] = in5[curr] - in2[curr];
-
-    float h_curr = in3[curr];
     int2 right = clamp(curr + int2(1, 0), int2(0, 0), maxGrid);
-    float h_right = in3[right];
-    float t_right = in6[right];
-
-    if (StopFlowOnTerrainBoundary(h_curr, t_curr, h_right, t_right)) { // stop flow in x direction
-        out1[curr] = 0.f;
-        out4[curr] = 0.f;
-    }
-
     int2 up = clamp(curr + int2(0, 1), int2(0, 0), maxGrid);
-    float h_up = in3[up];
-    float t_up = in6[up];
 
-    if (StopFlowOnTerrainBoundary(h_curr, t_curr, h_up, t_up)) { // stop flow in y direction
-        out2[curr] = 0.f;
-        out5[curr] = 0.f;
-    }
+    float h_curr = hIn[curr];
+    float h_right = hIn[right];
+    float h_up = hIn[up];
+    float t_curr = terrain[curr];
+    float t_right = terrain[right];
+    float t_up = terrain[up];
+    float hbar = clamp(H_In[curr] - t_curr, 0.f, maxSafeDepth);
+    float hbar_right = clamp(H_In[right] - t_right, 0.f, maxSafeDepth);
+    float hbar_up = clamp(H_In[up] - t_up, 0.f, maxSafeDepth);
+    
+    float cflFactor = cflCondition * cellSize / timeStep;
+    hbarOut[curr] = hbar;
+    qbarOut_x[curr] = LimitFlowRate(Q_In_x[curr], h_curr, t_curr, h_right, t_right, cflFactor);
+    qbarOut_y[curr] = LimitFlowRate(Q_In_y[curr], h_curr, t_curr, h_up,    t_up,    cflFactor);
+    htildeOut[curr] = hIn[curr] - hbar;
+    qtildeOut_x[curr] = qIn_x[curr] - qbarOut_x[curr];
+    qtildeOut_y[curr] = qIn_y[curr] - qbarOut_y[curr];
 }
 
 /////////// eWave ///////////
 // These all have slight variants on the names so HLSL doesn't get mad for redefining a name used before
 
-RWTexture2D<float2> hHat  ; // Complex
-RWTexture2D<float2> qHat_x; // Complex
-RWTexture2D<float2> qHat_y; // Complex
 [numthreads(16, 16, 1)]
 void TransferToFFT(uint3 id : SV_DispatchThreadID) {
-    // Inputs: in0 = htilde, in1 = qtilde_x, in2 = qtilde_y
-    // Outputs: out0 = htildeOld, out1 = hHat, out2 = qHat_x, out3 = qHat_y
+    // Inputs: htildeIn, htildeOldIn, qtildeIn_x, qtildeIn_y,
+    // Outputs: htildeOldNext, hHat, qHat_x, qHat_y
     if (id.x >= (uint)(paddedGridSizeX) || id.y >= (uint)(paddedGridSizeY)) return;
 
     if (id.x >= (uint)(gridSizeX) || id.y >= (uint)(gridSizeY)) {
@@ -350,25 +397,17 @@ void TransferToFFT(uint3 id : SV_DispatchThreadID) {
         return;
     }
 
-    // Average htilde in time to get on same timestep as q, then prep variables for FFT
-    float h_real = 0.5 * (in0[id.xy] + out0[id.xy]);
-    out0[id.xy]   = in0[id.xy];
+    float h_real = 0.5 * (htildeIn[id.xy] + htildeOldIn[id.xy]);
+    htildeOldNext[id.xy] = htildeIn[id.xy];
     hHat[id.xy]   = float2(h_real, 0.0f);
-    qHat_x[id.xy] = float2(in1[id.xy], 0.0f);
-    qHat_y[id.xy] = float2(in2[id.xy], 0.0f);
+    qHat_x[id.xy] = float2(qtildeIn_x[id.xy], 0.0f);
+    qHat_y[id.xy] = float2(qtildeIn_y[id.xy], 0.0f);
 }
 
-Texture2D<float2> hhat   ;
-Texture2D<float2> qhat_x ;
-Texture2D<float2> qhat_y ;
-Texture2D<float2> qhatFFT_x ;
-Texture2D<float2> qhatFFT_y ;
-RWTexture2DArray<float2> qhat_x_array;
-RWTexture2DArray<float2> qhat_y_array;
 [numthreads(16, 16, 1)]
 void CalcEWave(uint3 id : SV_DispatchThreadID) {
-    // Inputs: in0 = hHat, in1 = qHat_x, in2 = qHat_y, in3 = depth
-    // Outputs: out0 = qHat_x_array, qHat_y_array
+    // Inputs: hHat, qHat_x, qHat_y, depth
+    // Outputs: qHat_x_array, qHat_y_array
     if (id.x >= (uint)(paddedGridSizeX) || id.y >= (uint)(paddedGridSizeY)) return;
 
     // Early return for DC component 
@@ -407,52 +446,45 @@ void CalcEWave(uint3 id : SV_DispatchThreadID) {
 
     /////// Dispersion ///////
     // numerical dispersion correction
-    float beta = sqrt((2.0 / (k * cellSize)) * sin(k * cellSize / 2.0)); // From their 1D code, but different from paper
-    // float beta = sqrt((2.0 * k / cellSize) * sin(k * cellSize / 2.0)); // correct formula from paper, but not stable?
+    float beta = sqrt((2.0 * k / cellSize) * sin(k * cellSize / 2.0));
     // Angular frequency for dispersion relation
     float omega = sqrt(GRAVITY * k * SafeTanh(k * min(getDepthLevel(id.z), maxSafeDepth))) / beta;
-    float S = sin(omega * timeStep) * omega / (k * k);
+    float S = sin(omega * timeStep) * omega / k2;
     float C = cos(omega * timeStep);
-    float Cx = 1 + (C-1) * kx2;
-    float Cy = 1 + (C-1) * ky2;
+    float Cx = C * kx2 + ky2;
+    float Cy = C * ky2 + kx2;
     float Ck = (C-1) * kx_ * ky_;
 
     /////// Gradient of Shifted hHat ///////
-    // Fourier gradient in X: dh/dx = hhat * (i * kx)
-    float2 dhdx = ComplexMul(hhat[id.xy], float2(0, kx));
-    float2 dhdy = ComplexMul(hhat[id.xy], float2(0, ky));
+    // Fourier gradient along wave direction: dh/dx = hhat * (i * k)
+    float2 dh = ComplexMul(hhat[id.xy], float2(0, k));
     // Phase shift in X: shift by dx/2 by multiplying by e^(i * shiftX) = cos(shiftX) + i*sin(shiftX)
-    float shiftX = 0.5f * cellSize * kx;
-    float shiftY = 0.5f * cellSize * ky;
-    float2 e_ix = float2(cos(shiftX), sin(shiftX));
-    float2 e_iy = float2(cos(shiftY), sin(shiftY));
-    dhdx = ComplexMul(dhdx, e_ix);
-    dhdy = ComplexMul(dhdy, e_iy);
-    
+    float theta_x = 0.5f * cellSize * kx;
+    float theta_y = 0.5f * cellSize * ky;
+    float2 shift_x = float2(cos(theta_x), sin(theta_x));
+    float2 shift_y = float2(cos(theta_y), sin(theta_y));
+    float2 dhdx = ComplexMul(dh, shift_x);
+    float2 dhdy = ComplexMul(dh, shift_y);
+
     // Shift the q cross-terms to align with their target faces
-    float theta_x = 0.5f * cellSize * (ky - kx);
-    float theta_y = 0.5f * cellSize * (kx - ky);
-    float2 shift_x = float2(cos(theta_x), sin(theta_x)); // e^{i * theta_x} 
-    float2 shift_y = float2(cos(theta_y), sin(theta_y)); // e^{i * theta_y}
-    float2 qx_shifted = ComplexMul(qhat_x[id.xy], shift_x);
-    float2 qy_shifted = ComplexMul(qhat_y[id.xy], shift_y);
+    theta_x = 0.5f * cellSize * (ky - kx);
+    theta_y = 0.5f * cellSize * (kx - ky);
+    shift_x = float2(cos(theta_x), sin(theta_x));
+    shift_y = float2(cos(theta_y), sin(theta_y));
+    float2 qx_shifted = ComplexMul(qhat_x[id.xy], shift_x); // now on top face
+    float2 qy_shifted = ComplexMul(qhat_y[id.xy], shift_y); // now on right face
     // float2 qx_shifted = qhat_x[id.xy];
     // float2 qy_shifted = qhat_y[id.xy];
 
     /////// Update Q ///////
+    // Shift to cell centers, do the following, shift back to faces
     // 1) Decompose q into parallel and perpendicular: q_|| = kx_*qx + ky_*qy, q_T = kx_*qy - ky_*qx
     // 2) Update in rotated basis: q_||+ = C*q_|| - S*dhdx (q_T unchanged bc Airy is irrotational)
-    // 3) Recombine: q = q_T + q_||+
-    float qx_r = Cx * qhat_x[id.xy].x + Ck * qy_shifted.x - S * dhdx.x;
-    float qx_i = Cx * qhat_x[id.xy].y + Ck * qy_shifted.y - S * dhdx.y;
-    float qy_r = Cy * qhat_y[id.xy].x + Ck * qx_shifted.x - S * dhdy.x;
-    float qy_i = Cy * qhat_y[id.xy].y + Ck * qx_shifted.y - S * dhdy.y;
-    // float qx_r = C * qhat_x[id.xy].x - S * dhdx.x; // Naive 1D translation, but does just as well
-    // float qx_i = C * qhat_x[id.xy].y - S * dhdx.y;
-    // float qy_r = C * qhat_y[id.xy].x - S * dhdy.x;
-    // float qy_i = C * qhat_y[id.xy].y - S * dhdy.y;
-    qhat_x_array[id] = float2(qx_r, qx_i);
-    qhat_y_array[id] = float2(qy_r, qy_i);
+    // 3) Recombine: qx = kx_*q_||+ - ky_*q_T, qy = ky_*q_||+ + kx_*q_T
+    qhat_x_array[id] = Cx * qhat_x[id.xy] + Ck * qy_shifted - kx_ * S * dhdx;
+    qhat_y_array[id] = Cy * qhat_y[id.xy] + Ck * qx_shifted - ky_ * S * dhdy;
+    // qhat_x_array[id] = C * qhat_x[id.xy] - S * dhdx; // Naive 1D translation, but does just as well?
+    // qhat_y_array[id] = C * qhat_y[id.xy] - S * dhdy;
 
     if ((id.x == NXdiv2 && id.y == 0) || (id.x == 0 && id.y == NYdiv2) || (id.x == NXdiv2 && id.y == NYdiv2)) {
         qhat_x_array[id] = float2(qhat_x_array[id].x, 0.0f);
@@ -460,21 +492,18 @@ void CalcEWave(uint3 id : SV_DispatchThreadID) {
     }
 }
 
-Texture2D<float>       hbar        ;
-Texture2DArray<float2> qHat_x_array;
-Texture2DArray<float2> qHat_y_array;
-RWTexture2D<float>     qtilde_x    ;
-RWTexture2D<float>     qtilde_y    ;
 [numthreads(16, 16, 1)]
 void InterpQ(uint3 id : SV_DispatchThreadID) {
-    // Inputs: qtilde_x_array, qtilde_y_array, hbar, depth
-    // Outputs: qtilde_x, qtilde_y
+    // Inputs: qHat_x_array, qHat_y_array, hbarIn, depth
+    // Outputs: qtildeOut_x, qtildeOut_y
     if (id.x >= (uint)(gridSizeX) || id.y >= (uint)(gridSizeY)) return;
     uint2 right = uint2(min(id.x + 1, gridSizeX - 1), id.y);
     uint2 up    = uint2(id.x, min(id.y + 1, gridSizeY - 1));
 
-    float waterDepth_x = min(max(hbar[id.xy], hbar[right]), maxSafeDepth);
-    float waterDepth_y = min(max(hbar[id.xy], hbar[up]), maxSafeDepth);
+    // float waterDepth_x = min(max(hbarIn[id.xy], hbarIn[right]), maxSafeDepth);
+    // float waterDepth_y = min(max(hbarIn[id.xy], hbarIn[up]), maxSafeDepth);
+    float waterDepth_x = min(0.5f * (hbarIn[id.xy] + hbarIn[right]), maxSafeDepth);
+    float waterDepth_y = min(0.5f * (hbarIn[id.xy] + hbarIn[up]), maxSafeDepth);
     int d1_x = 0;
     int d1_y = 0;
     for (int d = 0; d < depthNum; d++) {
@@ -485,20 +514,32 @@ void InterpQ(uint3 id : SV_DispatchThreadID) {
     int d2_y = min(depthNum - 1, d1_y + 1);
     float sx = 0.f;
     float sy = 0.f;
-    if (d1_x != d2_x)
-        sx = (getDepthLevel(d2_x) - waterDepth_x) / (getDepthLevel(d2_x) - getDepthLevel(d1_x));
-    if (d1_y != d2_y)
-        sy = (getDepthLevel(d2_y) - waterDepth_y) / (getDepthLevel(d2_y) - getDepthLevel(d1_y));
-    qtilde_x[id.xy] = sx * qHat_x_array[uint3(id.x, id.y, d1_x)].x + (1.f - sx) * qHat_x_array[uint3(id.x, id.y, d2_x)].x;
-    qtilde_y[id.xy] = sy * qHat_y_array[uint3(id.x, id.y, d1_y)].x + (1.f - sy) * qHat_y_array[uint3(id.x, id.y, d2_y)].x;
+
+    if (waterDepth_x < getDepthLevel(0)) {
+        sx = waterDepth_x / getDepthLevel(0);
+        qtildeOut_x[id.xy] = sx * qHat_x_array[uint3(id.x, id.y, 0)].x;
+    } else {
+        if (d1_x != d2_x)
+            sx = (getDepthLevel(d2_x) - waterDepth_x) / (getDepthLevel(d2_x) - getDepthLevel(d1_x));
+        qtildeOut_x[id.xy] = sx * qHat_x_array[uint3(id.x, id.y, d1_x)].x + (1.f - sx) * qHat_x_array[uint3(id.x, id.y, d2_x)].x;
+    }
+
+    if (waterDepth_y < getDepthLevel(0)) {
+        sy = waterDepth_y / getDepthLevel(0);
+        qtildeOut_y[id.xy] = sy * qHat_y_array[uint3(id.x, id.y, 0)].x;
+    } else {
+        if (d1_y != d2_y)
+            sy = (getDepthLevel(d2_y) - waterDepth_y) / (getDepthLevel(d2_y) - getDepthLevel(d1_y));
+        qtildeOut_y[id.xy] = sy * qHat_y_array[uint3(id.x, id.y, d1_y)].x + (1.f - sy) * qHat_y_array[uint3(id.x, id.y, d2_y)].x;
+    }
 }
 
 /////////// SWE ///////////
 
 [numthreads(16, 16, 1)]
 void CalcUbar(uint3 id : SV_DispatchThreadID) {
-    // Inputs: in0 = qbar_x, in1 = qbar_y, in2 = hbarOld
-    // Outputs: out0 = ubar_x, out1 = ubar_y
+    // Inputs: qbarIn_x, qbarIn_y, hbarIn
+    // Outputs: ubarOut_x, ubarOut_y
     if (id.x >= (uint)(gridSizeX) || id.y >= (uint)(gridSizeY)) return;
 
     int2 curr = int2(id.xy);
@@ -506,24 +547,24 @@ void CalcUbar(uint3 id : SV_DispatchThreadID) {
     int2 right = clamp(curr + int2(1, 0), int2(0, 0), maxGrid);
     int2 up    = clamp(curr + int2(0, 1), int2(0, 0), maxGrid);
 
-    // First-Order Up-Winding
-    float hx = (in0[curr] >= 0.f || curr.x == gridSizeX-1) ? in2[curr] : in2[right];
-    float hy = (in1[curr] >= 0.f || curr.y == gridSizeY-1) ? in2[curr] : in2[up];
+    // First-Order Up-Winding with regularized division near zero depth
+    float hx = (qbarIn_x[curr] >= 0.f || curr.x == gridSizeX-1) ? hbarIn[curr] : hbarIn[right];
+    float hy = (qbarIn_y[curr] >= 0.f || curr.y == gridSizeY-1) ? hbarIn[curr] : hbarIn[up];
     hx = min(hx, maxSafeDepth);
     hy = min(hy, maxSafeDepth);
-    float ubar_x = in0[curr] * rcp(max(minWaterHeight, hx));
-    float ubar_y = in1[curr] * rcp(max(minWaterHeight, hy));
-
+    float localUbar_x = (hx <= minWaterHeight) ? 0.f : (qbarIn_x[curr] * rcp(hx));
+    float localUbar_y = (hy <= minWaterHeight) ? 0.f : (qbarIn_y[curr] * rcp(hy));
+    
     // Enforcing CFL condition for later surface waves advection
     float cflFactor = cflCondition * cellSize / timeStep;
-    out0[curr] = LimitVelocity(ubar_x, cflFactor);  
-    out1[curr] = LimitVelocity(ubar_y, cflFactor); 
+    ubarOut_x[curr] = clamp(localUbar_x, -cflFactor, cflFactor);  
+    ubarOut_y[curr] = clamp(localUbar_y, -cflFactor, cflFactor); 
 }
 
 [numthreads(16, 16, 1)]
 void CalcSWE(uint3 id : SV_DispatchThreadID) {
-    // Inputs: in0 = ubar_x, in1 = ubar_y, in2 = hbar, in3 = H, in4 = delHfft_x, delHfft_y
-    // Outputs: out0 = ubarNew_x, out1 = ubarNew_y, out2 = qbar_x, out3 = qbar_y
+    // Inputs: ubarIn_x, ubarIn_y, hbarIn, HIn, delH_x, delH_y (gradients of FFT wave height)
+    // Outputs: ubarNewOut_x, ubarNewOut_y, qbarOut_x, qbarOut_y
     if (id.x >= (uint)(gridSizeX) || id.y >= (uint)(gridSizeY)) return;
 
     int2 curr = int2(id.xy);
@@ -537,65 +578,66 @@ void CalcSWE(uint3 id : SV_DispatchThreadID) {
 
     // Use upwinding to evaluate q_(i-0.5,j), q_(i+0.5,j), q_(i+1.5,j) 
     // for x direction to get q_x_(i,j), q_x_(i+1,j)
-    float q_x_m05 = in0[left] * ((in0[left] >= 0.f) ? in2[left] : in2[curr]);
-    float q_x_p05 = in0[curr] * ((in0[curr] >= 0.f) ? in2[curr] : in2[right]);
-    float q_x_p15 = in0[right]* ((in0[right]>= 0.f) ? in2[right]: in2[r2]);
+    float q_x_m05 = ubarIn_x[left] * ((ubarIn_x[left] >= 0.f) ? hbarIn[left] : hbarIn[curr]);
+    float q_x_p05 = ubarIn_x[curr] * ((ubarIn_x[curr] >= 0.f) ? hbarIn[curr] : hbarIn[right]);
+    float q_x_p15 = ubarIn_x[right]* ((ubarIn_x[right]>= 0.f) ? hbarIn[right]: hbarIn[r2]);
     float q_x_0 = 0.5f * (q_x_m05 + q_x_p05);
     float q_x_1 = 0.5f * (q_x_p05 + q_x_p15);
-    float q_y_m05 = in1[down] * ((in1[down] >= 0.f) ? in2[down] : in2[curr]);
-    float q_y_p05 = in1[curr] * ((in1[curr] >= 0.f) ? in2[curr] : in2[up]);
-    float q_y_p15 = in1[up]   * ((in1[up]   >= 0.f) ? in2[up]   : in2[u2]);
+    float q_y_m05 = ubarIn_y[down] * ((ubarIn_y[down] >= 0.f) ? hbarIn[down] : hbarIn[curr]);
+    float q_y_p05 = ubarIn_y[curr] * ((ubarIn_y[curr] >= 0.f) ? hbarIn[curr] : hbarIn[up]);
+    float q_y_p15 = ubarIn_y[up]   * ((ubarIn_y[up]   >= 0.f) ? hbarIn[up]   : hbarIn[u2]);
     float q_y_0 = 0.5f * (q_y_m05 + q_y_p05);
     float q_y_1 = 0.5f * (q_y_p05 + q_y_p15);
     
     // Calculate h_(i+0.5,j)
-    // float h_x_p05 = (in2[curr] + in2[right]) * 0.5f;  
-    // float h_y_p05 = (in2[curr] + in2[up]) * 0.5f;
-    float h_x_p05 = (q_x_p05 >= 0.f) ? in2[curr] : in2[right];
-    float h_y_p05 = (q_y_p05 >= 0.f) ? in2[curr] : in2[up];
-    h_x_p05 = clamp(h_x_p05, minWaterHeight, maxSafeDepth);
-    h_y_p05 = clamp(h_y_p05, minWaterHeight, maxSafeDepth);
+    float h_x_p05 = clamp((hbarIn[curr] + hbarIn[right]) * 0.5f, 0.f, maxSafeDepth);  
+    float h_y_p05 = clamp((hbarIn[curr] + hbarIn[up]) * 0.5f, 0.f, maxSafeDepth);
 
     // Calculate corresponding values for u_x_(i,j) using upwinding
-    float u_x_0 = (q_x_0 >= 0.f) ? in0[left] : in0[curr];
-    float u_x_1 = (q_x_1 >= 0.f) ? in0[curr] : in0[right]; 
-    float u_y_0 = (q_y_0 >= 0.f) ? in1[down] : in1[curr];
-    float u_y_1 = (q_y_1 >= 0.f) ? in1[curr] : in1[up];       
+    float u_x_0 = (q_x_0 >= 0.f) ? ubarIn_x[left] : ubarIn_x[curr];
+    float u_x_1 = (q_x_1 >= 0.f) ? ubarIn_x[curr] : ubarIn_x[right]; 
+    float u_y_0 = (q_y_0 >= 0.f) ? ubarIn_y[down] : ubarIn_y[curr];
+    float u_y_1 = (q_y_1 >= 0.f) ? ubarIn_y[curr] : ubarIn_y[up];       
 
     // Compute dux_dt and duy_dt 
-    float invCellSize = 1.0f / cellSize;
-    float dux_dt = - (invCellSize * rcp(h_x_p05)) * ((q_x_1 * u_x_1 - q_x_0 * u_x_0) - in0[curr] * (q_x_1 - q_x_0));
-    float duy_dt = - (invCellSize * rcp(h_y_p05)) * ((q_y_1 * u_y_1 - q_y_0 * u_y_0) - in1[curr] * (q_y_1 - q_y_0));
+    float eps = minWaterHeight;
+    float invH_x = h_x_p05 / (h_x_p05 * h_x_p05 + eps * eps);
+    float invH_y = h_y_p05 / (h_y_p05 * h_y_p05 + eps * eps);
+    float dux_dt = (h_x_p05 <= minWaterHeight) ? 0.f : -rcp(cellSize * h_x_p05) * ((q_x_1 * u_x_1 - q_x_0 * u_x_0) - ubarIn_x[curr] * (q_x_1 - q_x_0));
+    float duy_dt = (h_y_p05 <= minWaterHeight) ? 0.f : -rcp(cellSize * h_y_p05) * ((q_y_1 * u_y_1 - q_y_0 * u_y_0) - ubarIn_y[curr] * (q_y_1 - q_y_0));
     
-    // Incorporate gravity force and limit steep waves
-    float gradh_x = (in3[right] - in3[curr]) * invCellSize;
-    float gradh_y = (in3[up] - in3[curr]) * invCellSize;
-    if (abs(gradh_x) > slopeLimit) gradh_x = sign(gradh_x) * slopeLimit; // When wave gets too steep, it "crashes"
-    if (abs(gradh_y) > slopeLimit) gradh_y = sign(gradh_y) * slopeLimit; 
-    dux_dt -= GRAVITY * gradh_x; // gravitational force
-    duy_dt -= GRAVITY * gradh_y;
+    // Calculate wave gradient
+    float gradh_x = (H_In[right] - H_In[curr]) * rcp(cellSize);
+    float gradh_y = (H_In[up]    - H_In[curr]) * rcp(cellSize);
 
     // Calculate FFT wave forcing
-    float invDepthCutoff = 1.0f / depthCutoff;
-    float depth_weight = SafeTanh(in2[curr] * invDepthCutoff); // scaling term to reduce FFT waves in shallow water
-    //dux_dt += depth_weight * GRAVITY * in4[curr]; // FFT wave pressure gradient 
-    //duy_dt += depth_weight * GRAVITY * in5[curr];
+    float depthWeight = SafeTanh(hbarIn[curr] * rcp(depthCutoff)); // scaling term to reduce FFT waves in shallow water
+    gradh_x += depthWeight * delH_x[curr]; // FFT wave pressure gradient 
+    gradh_y += depthWeight * delH_y[curr];
+ 
+    // Limit steep waves: when wave gets too steep, it "crashes"
+    gradh_x = clamp(gradh_x, -slopeLimit, slopeLimit);
+    gradh_y = clamp(gradh_y, -slopeLimit, slopeLimit);
 
-    // Damp grid-scale oscillations
-    float lap_u_x = (in0[left] - 2.f*in0[curr] + in0[right]) + (in0[down] - 2.f*in0[curr] + in0[up]); // laplacian
-    float lap_u_y = (in1[left] - 2.f*in1[curr] + in1[right]) + (in1[down] - 2.f*in1[curr] + in1[up]);
-    float nu = 0.1 / timeStep;
-    // dux_dt += nu * lap_u_x;
-    // duy_dt += nu * lap_u_y;
+    // Incorporate gravity force and bottom friction 
+    float bottomFriction = 0.05f; // subtle bottom drag to allow water to settle to rest
+    precise float dux_dt_total = dux_dt - (GRAVITY * gradh_x + bottomFriction * ubarIn_x[curr]);
+    precise float duy_dt_total = duy_dt - (GRAVITY * gradh_y + bottomFriction * ubarIn_y[curr]);
 
     // Integrate u, calculate q
     float cflFactor = cflCondition * cellSize / timeStep;
-    float ubarNew_x = LimitVelocity(in0[curr] + timeStep * dux_dt, cflFactor);
-    float ubarNew_y = LimitVelocity(in1[curr] + timeStep * duy_dt, cflFactor);
-    out0[curr] = ubarNew_x;
-    out1[curr] = ubarNew_y;
-    out2[curr] = ubarNew_x * ((ubarNew_x >= 0.f) ? in2[curr] : in2[right]);
-    out3[curr] = ubarNew_y * ((ubarNew_y >= 0.f) ? in2[curr] : in2[up]);
+    precise float localUbarNew_x = clamp(ubarIn_x[curr] + timeStep * dux_dt_total, -cflFactor, cflFactor);
+    precise float localUbarNew_y = clamp(ubarIn_y[curr] + timeStep * duy_dt_total, -cflFactor, cflFactor);
+
+    float h_x_face = (localUbarNew_x >= 0.f) ? hbarIn[curr] : hbarIn[right];
+    float h_y_face = (localUbarNew_y >= 0.f) ? hbarIn[curr] : hbarIn[up];
+    if (h_x_face <= minWaterHeight) localUbarNew_x = 0.f;
+    if (h_y_face <= minWaterHeight) localUbarNew_y = 0.f;
+
+    ubarNewOut_x[curr] = localUbarNew_x;
+    ubarNewOut_y[curr] = localUbarNew_y;
+    qbarOut_x[curr] = LimitFlowRate(localUbarNew_x * h_x_face, hbarIn[curr], terrain[curr], hbarIn[right], terrain[right], cflFactor);
+    qbarOut_y[curr] = LimitFlowRate(localUbarNew_y * h_y_face, hbarIn[curr], terrain[curr], hbarIn[up],    terrain[up],    cflFactor);
 }
 
 
@@ -603,9 +645,9 @@ void CalcSWE(uint3 id : SV_DispatchThreadID) {
 
 [numthreads(16, 16, 1)]
 void UpdateTilde(uint3 id : SV_DispatchThreadID) {
-    // Inputs: in0 = ubarNew_x, in1 = ubar_x, in2 = ubarNew_y, in3 = ubar_y, 
-    //         in4 = qtildePast_x, in5 = qtildePast_y, in6 = h, in7 = htilde
-    // Outputs: out0 = htilde, out1 = qtilde_x, out2 = qtilde_y
+    // Inputs: ubarNewIn_x, ubarIn_x, ubarNewIn_y, ubarIn_y, 
+    //         htildePast, qtildePast_x, qtildePast_y
+    // Outputs: htildeOut, qtildeOut_x, qtildeOut_y
     if (id.x >= (uint)(gridSizeX) || id.y >= (uint)(gridSizeY)) return;
 
     int2 curr = int2(id.xy);
@@ -617,74 +659,100 @@ void UpdateTilde(uint3 id : SV_DispatchThreadID) {
     int2 rdown = clamp(curr + int2(1, -1), int2(0, 0), maxGrid);
     int2 uleft = clamp(curr + int2(-1, 1), int2(0, 0), maxGrid);
 
+    ///// Q Update /////
+
     // integrate at midpoint of timestep 
-    float ubar_x_avg = 0.5f * (in0[curr] + in1[curr]); 
-    float ubar_y_avg = 0.5f * (in2[curr] + in3[curr]);
-    float ubar_x_left  = 0.5f * (in0[left] + in1[left]);
-    float ubar_x_right  = 0.5f * (in0[right] + in1[right]);
-    float ubar_y_right  = 0.5f * (in2[right] + in3[right]);
-    float ubar_y_down  = 0.5f * (in2[down] + in3[down]);
-    float ubar_x_up  = 0.5f * (in0[up] + in1[up]);
-    float ubar_y_up  = 0.5f * (in2[up] + in3[up]);
-    float ubar_y_rdown = 0.5f * (in2[rdown] + in3[rdown]);
-    float ubar_x_uleft = 0.5f * (in0[uleft] + in1[uleft]);
+    float ubar_x_avg = 0.5f * (ubarNewIn_x[curr] + ubarIn_x[curr]); 
+    float ubar_y_avg = 0.5f * (ubarNewIn_y[curr] + ubarIn_y[curr]);
+    float ubar_x_left  = 0.5f * (ubarNewIn_x[left] + ubarIn_x[left]);
+    float ubar_x_right  = 0.5f * (ubarNewIn_x[right] + ubarIn_x[right]);
+    float ubar_y_right  = 0.5f * (ubarNewIn_y[right] + ubarIn_y[right]);
+    float ubar_y_down  = 0.5f * (ubarNewIn_y[down] + ubarIn_y[down]);
+    float ubar_x_up  = 0.5f * (ubarNewIn_x[up] + ubarIn_x[up]);
+    float ubar_y_up  = 0.5f * (ubarNewIn_y[up] + ubarIn_y[up]);
+    float ubar_y_rdown = 0.5f * (ubarNewIn_y[rdown] + ubarIn_y[rdown]);
+    float ubar_x_uleft = 0.5f * (ubarNewIn_x[uleft] + ubarIn_x[uleft]);
 
     // ubar divergence
-    float invCellSize = 1.0f / cellSize;
-    float div_ubar  = (ubar_x_avg   - ubar_x_left  + ubar_y_avg   - ubar_y_down)  * invCellSize;  // at cell center
-    float div_right = (ubar_x_right - ubar_x_avg   + ubar_y_right - ubar_y_rdown) * invCellSize; // at center of right cell
-    float div_up    = (ubar_x_up    - ubar_x_uleft + ubar_y_up    - ubar_y_avg)   * invCellSize;  // at center of up cell
+    float div_ubar  = (ubar_x_avg   - ubar_x_left  + ubar_y_avg   - ubar_y_down)  * rcp(cellSize);  // at cell center
+    float div_right = (ubar_x_right - ubar_x_avg   + ubar_y_right - ubar_y_rdown) * rcp(cellSize); // at center of right cell
+    float div_up    = (ubar_x_up    - ubar_x_uleft + ubar_y_up    - ubar_y_avg)   * rcp(cellSize);  // at center of up cell
     float div_ux = 0.5f * (div_ubar + div_right); // at right boundary
     float div_uy = 0.5f * (div_ubar + div_up); // at up boundary
-    div_ubar *= (div_ubar < 0.f) ? gammaTransport : 1; // Dampen if converging to avoid breaking waves
+
+    // // Clamp divergence to prevent exponential growth during flow convergence
+    // float maxDivergence = 1.0f / max(1e-4f, timeStep);
+    // div_ubar = max(div_ubar, -maxDivergence);
+    // div_ux   = max(div_ux,   -maxDivergence);
+    // div_uy   = max(div_uy,   -maxDivergence);
+
+    // Dampen if converging to avoid breaking waves
+    div_ubar *= (div_ubar < 0.f) ? gammaTransport : 1; 
     div_ux   *= (div_ux   < 0.f) ? gammaTransport : 1;
     div_uy   *= (div_uy   < 0.f) ? gammaTransport : 1;
 
-    // Update qtilde using bulk flow and ubar divergence: dq/dt = -q * div(ubar)
-    float timeStepOverCellSize = timeStep * invCellSize;
-    float step_x = - ubar_x_avg * timeStepOverCellSize; // unitless (cells)
-    float step_y = - ubar_y_avg * timeStepOverCellSize; // unitless (cells)
-    float2 samplePos = float2(id.x + step_x, id.y + step_y);
-    out1[curr] = SampleCubicClamped2D(in4, samplePos) * exp(-div_ux * timeStep);
-    out2[curr] = SampleCubicClamped2D(in5, samplePos) * exp(-div_uy * timeStep);
+    // Update qtilde using exponential integration & semi-lagrangian advection
+    float ubar_x_at_yface = 0.25 * (ubar_x_left + ubar_x_avg + ubar_x_uleft + ubar_x_up); // at center of up face
+    float ubar_y_at_xface = 0.25 * (ubar_y_down + ubar_y_avg + ubar_y_rdown + ubar_y_right); // at center of right face
+    float timeStepOverCellSize = timeStep * rcp(cellSize);
+    float2 step_x = -float2(ubar_x_avg, ubar_y_at_xface) * timeStepOverCellSize; // unitless (cells)
+    float2 step_y = -float2(ubar_x_at_yface, ubar_y_avg) * timeStepOverCellSize; // unitless (cells)
+    qtildeOut_x[curr] = SampleCubicClamped2D(qtildePast_x, id.xy + step_x) * exp(-div_ux * timeStep);
+    qtildeOut_y[curr] = SampleCubicClamped2D(qtildePast_y, id.xy + step_y) * exp(-div_uy * timeStep);
 
-    // Limit flow to prevent negative water heights and enforce terrain boundaries
-    float cflFactor = cflCondition * cellSize / timeStep;
-    out1[curr] = LimitFlowRate(out1[curr], in6[curr], in6[right], cflFactor); 
-    out2[curr] = LimitFlowRate(out2[curr], in6[curr], in6[up], cflFactor); 
-    if (((ubar_x_avg >= 0.f) && (in6[curr] <= minWaterHeight)) ||
-        ((ubar_x_avg < 0.f)  && (in6[right] <= minWaterHeight)))
-        out1[curr] = 0.f;
-    if (((ubar_y_avg >= 0.f) && (in6[curr] <= minWaterHeight)) ||
-        ((ubar_y_avg < 0.f)  && (in6[up] <= minWaterHeight)))
-        out2[curr] = 0.f;   
-      
-    // Update htilde using ubar divergence (not at middle of timestep)
-    div_ubar  = (in0[curr] - in0[left] + in2[curr] - in2[down]) * invCellSize;
+    ///// H Update /////
+    // Update htildeOut using ubar divergence (not at middle of timestep)
+    div_ubar = (ubarNewIn_x[curr] - ubarNewIn_x[left] + ubarNewIn_y[curr] - ubarNewIn_y[down]) * rcp(cellSize);
+    // div_ubar = max(div_ubar, -maxDivergence);
     div_ubar *= (div_ubar < 0.f) ? gammaTransport : 1; // dampen if converging to avoid breaking waves
-    out0[curr] = in7[curr] * exp(-div_ubar * timeStep);
+    htildeOut[curr] = htildePast[curr] * exp(-div_ubar * timeStep);
 }
 
 [numthreads(16, 16, 1)]
 void CalcQAdvect(uint3 id : SV_DispatchThreadID) {
-    // Inputs: in0 = ubarNew_x, in1 = ubarNew_y, in2 = htilde
-    // Outputs: out0 = qAdvect_x, out1 = qAdvect_y
-    // cubic reconstruction: 1/2 cell accounts for staggered grid, 0.5 * dt accounts for h and u at different 1/2 times
+    // Inputs: ubarNewIn_x, ubarNewIn_y, htildeIn
+    // Outputs: qAdvect_x, qAdvect_y
     if (id.x >= (uint)(gridSizeX) || id.y >= (uint)(gridSizeY)) return;
+
+    int2 curr = int2(id.xy);
+    int2 maxGrid = int2(gridSizeX - 1, gridSizeY - 1);
+    int2 right = clamp(curr + int2(1, 0), int2(0, 0), maxGrid);
+    int2 left  = clamp(curr + int2(-1, 0), int2(0, 0), maxGrid);
+    int2 up    = clamp(curr + int2(0, 1), int2(0, 0), maxGrid);
+    int2 down  = clamp(curr + int2(0, -1), int2(0, 0), maxGrid);
+    int2 rdown = clamp(curr + int2(1, -1), int2(0, 0), maxGrid);
+    int2 uleft = clamp(curr + int2(-1, 1), int2(0, 0), maxGrid);
+
+    // cubic reconstruction: 1/2 cell accounts for staggered grid, 0.5 * dt accounts for h and u at different 1/2 times
     float halfTimeStepOverCellSize = (0.5f * timeStep) / cellSize;
-    float step_x = 0.5f - in0[id.xy] * halfTimeStepOverCellSize;
-    float step_y = 0.5f - in1[id.xy] * halfTimeStepOverCellSize;
-    float2 samplePos = float2(id.x + step_x, id.y + step_y);
-    float h_sample = SampleCubicClamped2D(in2, samplePos);
-    out0[id.xy] = in0[id.xy] * h_sample;
-    out1[id.xy] = in1[id.xy] * h_sample;
+    float ubar_avg_x = 0.25 * (ubarNewIn_x[left] + ubarNewIn_x[curr] + ubarNewIn_x[uleft] + ubarNewIn_x[up]); // average ubar_x centered at top face
+    float ubar_avg_y = 0.25 * (ubarNewIn_y[down] + ubarNewIn_y[curr] + ubarNewIn_y[rdown] + ubarNewIn_y[right]); // average ubar_y centered at right face
+    float2 step_x = float2(0.5f, 0.0f) - float2(ubarNewIn_x[id.xy], ubar_avg_y) * halfTimeStepOverCellSize;
+    float2 step_y = float2(0.0f, 0.5f) - float2(ubar_avg_x, ubarNewIn_y[id.xy]) * halfTimeStepOverCellSize;
+    float h_sample_x = SampleCubicClamped2D(htildeIn, id.xy + step_x);
+    float h_sample_y = SampleCubicClamped2D(htildeIn, id.xy + step_y);
+
+    // // High-order cubic reconstructed values
+    // float h_cubic_x = SampleCubicClamped2D(htildeIn, id.xy + step_x);
+    // float h_cubic_y = SampleCubicClamped2D(htildeIn, id.xy + step_y);
+    // // 1st-order upwind donor-cell values
+    // float h_upwind_x = (ubarNewIn_x[id.xy] >= 0.0f) ? htildeIn[curr] : htildeIn[right];
+    // float h_upwind_y = (ubarNewIn_y[id.xy] >= 0.0f) ? htildeIn[curr] : htildeIn[up];
+    // // TVD / Slope-limited blend: Use cubic where smooth, blend to upwind near sharp gradients
+    // float nu_x = abs(ubarNewIn_x[id.xy]) * halfTimeStepOverCellSize;
+    // float nu_y = abs(ubarNewIn_y[id.xy]) * halfTimeStepOverCellSize;
+    // float h_sample_x = lerp(h_upwind_x, h_cubic_x, clamp(1.0f - nu_x, 0.0f, 1.0f));
+    // float h_sample_y = lerp(h_upwind_y, h_cubic_y, clamp(1.0f - nu_y, 0.0f, 1.0f));
+
+    qAdvectOut_x[id.xy] = ubarNewIn_x[id.xy] * h_sample_x;
+    qAdvectOut_y[id.xy] = ubarNewIn_y[id.xy] * h_sample_y;
 }
 
 [numthreads(16, 16, 1)]
 void IntegrateH(uint3 id : SV_DispatchThreadID) {
-    // Inputs: in0 = qbar_x, in1 = qtilde_x, in2 = qAdvect_x, 
-    //         in3 = qbar_y, in4 = qtilde_y, in5 = qAdvect_y, in6 = hPast, in7 = terrain
-    // Outputs: out0 = h, out1 = q_x, out2 = q_y
+    // Inputs: qbarIn_x, qtildeIn_x, qAdvect_x, 
+    //         qbarIn_y, qtildeIn_y, qAdvect_y, hPast, terrain
+    // Outputs: hOut, qOut_x, qOut_y
     if (id.x >= (uint)(gridSizeX) || id.y >= (uint)(gridSizeY)) return;
 
     int2 curr  = int2(id.xy);
@@ -693,57 +761,52 @@ void IntegrateH(uint3 id : SV_DispatchThreadID) {
     int2 left  = clamp(curr + int2(-1, 0), int2(0, 0), maxGrid);
     int2 up    = clamp(curr + int2(0, 1), int2(0, 0), maxGrid);
     int2 down  = clamp(curr + int2(0, -1), int2(0, 0), maxGrid);
+    float h_curr  = hPast[curr];
+    float h_right = hPast[right];
+    float h_left  = hPast[left];
+    float h_up    = hPast[up];
+    float h_down  = hPast[down];
+    float t_curr  = terrain[curr];
+    float t_right = terrain[right];
+    float t_left  = terrain[left];
+    float t_up    = terrain[up];
+    float t_down  = terrain[down];
 
     // q = qbar + qtilde + qAdvect
-    float q_x  = in0[curr] + in1[curr] + in2[curr];
-    float q_y  = in3[curr] + in4[curr] + in5[curr];
-    float q_xm = in0[left] + in1[left] + in2[left];
-    float q_ym = in3[down] + in4[down] + in5[down];
-
     // sponge layer: damp q near edges to absorb waves, simulate an open boundary
-    float damping = SpongeDamping(id.xy);
-    q_x  *= damping;
-    q_xm *= damping;
-    q_y  *= damping;
-    q_ym *= damping;
+    float damping = SpongeDamping(curr);
+    float damping_xm = SpongeDamping(left);
+    float damping_ym = SpongeDamping(down);
+    float q_x  = (qbarIn_x[curr] + qtildeIn_x[curr] + qAdvectIn_x[curr]) * damping;
+    float q_y  = (qbarIn_y[curr] + qtildeIn_y[curr] + qAdvectIn_y[curr]) * damping;
+    float q_xm = (qbarIn_x[left] + qtildeIn_x[left] + qAdvectIn_x[left]) * damping_xm;
+    float q_ym = (qbarIn_y[down] + qtildeIn_y[down] + qAdvectIn_y[down]) * damping_ym;
 
-    float h_curr = in6[curr];
-    float t_curr = in7[curr];
-    float h_right = in6[right];
-    float t_right = in7[right];
-    float h_left = in6[left];
-    float t_left = in7[left];
-    float h_up = in6[up];
-    float t_up = in7[up];
-    float h_down = in6[down];
-    float t_down = in7[down];
-
+    // Limit flow to prevent negative water heights and enforce terrain boundaries
     float cflFactor = cflCondition * cellSize / timeStep;
-    q_x  = LimitFlowRate(q_x,  h_curr, h_right, cflFactor);
-    q_y  = LimitFlowRate(q_y,  h_curr, h_up, cflFactor);
-    q_xm = LimitFlowRate(q_xm, h_left, h_curr, cflFactor);
-    q_ym = LimitFlowRate(q_ym, h_down, h_curr, cflFactor);
+    q_x  = LimitFlowRate(q_x,  h_curr, t_curr, h_right, t_right, cflFactor);
+    q_y  = LimitFlowRate(q_y,  h_curr, t_curr, h_up,    t_up,    cflFactor);
+    q_xm = LimitFlowRate(q_xm, h_left, t_left, h_curr,  t_curr,  cflFactor);
+    q_ym = LimitFlowRate(q_ym, h_down, t_down, h_curr,  t_curr,  cflFactor);
 
-    if (StopFlowOnTerrainBoundary(h_curr, t_curr, h_right, t_right))
-        q_x = 0.f;
-    if (StopFlowOnTerrainBoundary(h_curr, t_curr, h_up, t_up))
-        q_y = 0.f;
-    if (StopFlowOnTerrainBoundary(h_left, t_left, h_curr, t_curr))
-        q_xm = 0.f;
-    if (StopFlowOnTerrainBoundary(h_down, t_down, h_curr, t_curr))
-        q_ym = 0.f;
+    precise float div_q = (q_x - q_xm + q_y - q_ym) * rcp(cellSize);
+    
+    // Final height integration
+    // Wetting-Aware Laplacian to reduce spikes and unstable grid-scale ripples
+    bool isFullyWet = (h_curr > minWaterHeight && h_left > minWaterHeight && 
+                    h_right > minWaterHeight && h_up > minWaterHeight && h_down > minWaterHeight);
+    if (isFullyWet) {
+        precise float laplacian_h = (h_right + h_left + h_up + h_down - 4.0f * h_curr);
+        hOut[curr] = clamp(h_curr - timeStep * div_q + laplacianDamping * laplacian_h, 0.f, maxSafeDepth);
+    } else {
+        hOut[curr] = clamp(h_curr - timeStep * div_q, 0.f, maxSafeDepth);
+    }
 
-    float invCellSize = 1.0f / cellSize;
-    float div_q = (q_x - q_xm + q_y - q_ym) * invCellSize;
-	out0[curr] = clamp(h_curr - timeStep * div_q, 0.f, maxSafeDepth);
-    out1[curr] = q_x - in2[curr]; // qbar + qtilde, removing qAdvect
-    out2[curr] = q_y - in5[curr];
-    out1[curr] = LimitFlowRate(out1[curr], h_curr, h_right, cflFactor);
-    out2[curr] = LimitFlowRate(out2[curr], h_curr, h_up, cflFactor);
-    if (StopFlowOnTerrainBoundary(h_curr, t_curr, h_right, t_right))
-        out1[curr] = 0.f;
-    if (StopFlowOnTerrainBoundary(h_curr, t_curr, h_up, t_up))
-        out2[curr] = 0.f;
+    // Flow rate output
+    float q_out_x = (qbarIn_x[curr] + qtildeIn_x[curr]) * damping; // qbar + qtilde, excluding qAdvect
+    float q_out_y = (qbarIn_y[curr] + qtildeIn_y[curr]) * damping;
+    qOut_x[curr] = LimitFlowRate(q_out_x, h_curr, t_curr, h_right, t_right, cflFactor);
+    qOut_y[curr] = LimitFlowRate(q_out_y, h_curr, t_curr, h_up,    t_up,    cflFactor);
 }
 
 
@@ -751,15 +814,11 @@ void IntegrateH(uint3 id : SV_DispatchThreadID) {
 
 [numthreads(16, 16, 1)]
 void RecomputeH(uint3 id : SV_DispatchThreadID) {
-    // Inputs: in0 = h, in3 = terrain
+    // Inputs: hIn, terrain
+    // Outputs H_Out
     if (id.x >= (uint)(gridSizeX) || id.y >= (uint)(gridSizeY)) return;
-    out0[id.xy] = in0[id.xy] + in3[id.xy];
+    H_Out[id.xy] = hIn[id.xy] + terrain[id.xy];
 }
-
-Texture2D<float> inDispX;
-Texture2D<float> inDispY;
-Texture2D<float> inHeight;
-RWTexture2D<float4> outDisp4;
 float ScaleFactor;
 [numthreads(16, 16, 1)]
 void ScaleCopyDisplacement(uint3 id : SV_DispatchThreadID) {
@@ -767,10 +826,6 @@ void ScaleCopyDisplacement(uint3 id : SV_DispatchThreadID) {
     outDisp4[id.xy] = float4(inDispX[id.xy] * ScaleFactor, inDispY[id.xy] * ScaleFactor, inHeight[id.xy] * ScaleFactor, 1.0f);
 }
 
-Texture2D<float> inPreviousFoam;
-RWTexture2D<float4> outNormal;
-RWTexture2D<float> outFoam;
-RWTexture2D<float> outJacobianDet;
 [numthreads(16, 16, 1)]
 void CalcSurfaceNormalAndFoam(uint3 id : SV_DispatchThreadID) {
     if (id.x >= (uint)(gridSizeX) || id.y >= (uint)(gridSizeY)) return;
@@ -841,10 +896,6 @@ void CalcSurfaceNormalAndFoam(uint3 id : SV_DispatchThreadID) {
     outFoam[curr] = Foam;
 }
 
-Texture2D<float4> inNormal;
-Texture2D<float> inPreviousRoughness;
-SamplerState BilinearWrapSampler;
-RWTexture2D<float> outRoughness;
 float IntegrationSamples;
 float RoughnessPower;
 [numthreads(16, 1, 1)]
@@ -899,5 +950,3 @@ void CalcRoughnessLUT(uint3 id : SV_DispatchThreadID) {
     NewRoughness = PrevRoughness * PrevSampleW + NewRoughness * SampleW;
     outRoughness[int2(id.x, 0)] = NewRoughness;
 }
-
-
