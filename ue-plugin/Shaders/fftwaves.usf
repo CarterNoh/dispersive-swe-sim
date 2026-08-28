@@ -475,7 +475,7 @@ void PropagateWaves(uint3 id : SV_DispatchThreadID) {
 
     // Filter frequencies: high frequency -> Flow, low frequency -> DelH
     // float currentDepth = getDepthLevel(id.z);
-    // if (k >= rcp(currentDepth)) { // cutoff wavelength = 2*pi*h -> k = 1/h
+    // if (k >= 1.0f / currentDepth) { // cutoff wavelength = 2*pi*h -> k = 1/h
     //     // High frequency
     //     DelHXOut[id] = float2(0.f, 0.f);
     //     DelHYOut[id] = float2(0.f, 0.f);

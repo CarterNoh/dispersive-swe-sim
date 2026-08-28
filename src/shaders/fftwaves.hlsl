@@ -472,7 +472,7 @@ void PropagateWaves(uint3 id : SV_DispatchThreadID) {
 
     // Filter frequencies: high frequency -> Flow, low frequency -> DelH
     // float currentDepth = depth[id.z];
-    // if (k >= rcp(currentDepth)) { // cutoff wavelength = 2*pi*h -> k = 1/h
+    // if (k >= 1.0f / currentDepth) { // cutoff wavelength = 2*pi*h -> k = 1/h
     //     // High frequency
     //     FlowXOut[id] = ComplexMul(Ux * currentDepth, e_ix);
     //     FlowYOut[id] = ComplexMul(Uy * currentDepth, e_iy);
