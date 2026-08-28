@@ -279,6 +279,8 @@ private:
 	TRefCountPtr<IPooledRenderTarget> TexDelH_y;
 	TRefCountPtr<IPooledRenderTarget> TexDisp_x;
 	TRefCountPtr<IPooledRenderTarget> TexDisp_y;
+	TRefCountPtr<IPooledRenderTarget> TexFlowX;
+	TRefCountPtr<IPooledRenderTarget> TexFlowY;
 	TRefCountPtr<IPooledRenderTarget> TexdelH_x;
 	TRefCountPtr<IPooledRenderTarget> TexdelH_y;
 	TRefCountPtr<IPooledRenderTarget> Texdisp_x;

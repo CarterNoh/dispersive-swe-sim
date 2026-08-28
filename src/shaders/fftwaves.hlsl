@@ -163,23 +163,24 @@ float2 ComplexMul(float2 a, float2 b) {
 
 ///////////////// Spectrum Functions /////////////////
 float2 Dispersion(float k, float h) {
-    h = min(h, maxSafeDepth);
+    // h = min(h, maxSafeDepth);
+
     // // Deep Water Dispersion
     // float omega = sqrt(G * k);
     // float dwdk = G / (2 * omega)
     
-    // // Depth-Limited Dispersion
-    // float kh = k * h;
-    // float tanh_kh = SafeTanh(kh)
-    // float omega = sqrt(G * k * tanh_kh);
-    // float dwdk = G * (tanh_kh + kh / (cosh(kh) * cosh(kh))) / (2 * omega);
-
-    // Capillary Dispersion
+    // Depth-Limited Dispersion
     float kh = k * h;
     float tanh_kh = SafeTanh(kh);
-    float term = G * k + pow(k, 3) * surfaceTension / density;
-    float omega = sqrt((term) * tanh_kh);
-    float dwdk = term * (h * pow(1.f / cosh(kh), 2) + tanh_kh) / (2 * omega);
+    float omega = sqrt(G * k * tanh_kh);
+    float dwdk = G * (tanh_kh + kh / (cosh(kh) * cosh(kh))) / (2 * omega);
+
+    // // Capillary Dispersion
+    // float kh = k * h;
+    // float tanh_kh = SafeTanh(kh);
+    // float term = G * k + pow(k, 3) * surfaceTension / density;
+    // float omega = sqrt((term) * tanh_kh);
+    // float dwdk = term * (h * pow(1.f / cosh(kh), 2) + tanh_kh) / (2 * omega);
 
     return float2(omega, dwdk);
 }
@@ -391,6 +392,8 @@ RWTexture2DArray<float2> DelHyOut : register(u1);
 RWTexture2DArray<float2> DispXOut : register(u2);
 RWTexture2DArray<float2> DispYOut : register(u3);
 RWTexture2DArray<float2> HPropOut : register(u4);
+RWTexture2DArray<float2> FlowXOut : register(u5);
+RWTexture2DArray<float2> FlowYOut : register(u6);
 [numthreads(16, 16, 1)]
 void PropagateWaves(uint3 id : SV_DispatchThreadID) {
     if (id.x >= (uint)(paddedGridSizeX) || id.y >= (uint)(paddedGridSizeY)) return;
@@ -401,6 +404,8 @@ void PropagateWaves(uint3 id : SV_DispatchThreadID) {
         DispXOut[id] = float2(0.f, 0.f);
         DispYOut[id] = float2(0.f, 0.f);
         HPropOut[id] = float2(0.f, 0.f);
+        FlowXOut[id] = float2(0.f, 0.f);
+        FlowYOut[id] = float2(0.f, 0.f);
         return;
     }
 
@@ -422,6 +427,8 @@ void PropagateWaves(uint3 id : SV_DispatchThreadID) {
         DispXOut[id] = float2(0.f, 0.f);
         DispYOut[id] = float2(0.f, 0.f);
         HPropOut[id] = float2(0.f, 0.f);
+        FlowXOut[id] = float2(0.f, 0.f);
+        FlowYOut[id] = float2(0.f, 0.f);
         return;
     }
     float invK = rsqrt(k2);
@@ -435,7 +442,7 @@ void PropagateWaves(uint3 id : SV_DispatchThreadID) {
     // w = floor() * w0; //modify w to be multiple of w0?
     float S = sin(w * time);
     float C = cos(w * time);
-    float2 fwd = float2(C, -S); // why is forward the negative one? Try switching if doesn't look right
+    float2 fwd = float2(C, -S);
     float2 bkwd = float2(C, S);
     float2 HPlus = ComplexMul(HPosIn[id], fwd);
     float2 HMin = ComplexMul(HNegIn[id], bkwd);
@@ -456,6 +463,15 @@ void PropagateWaves(uint3 id : SV_DispatchThreadID) {
     // Calculate Horizontal Displacement Dx, Dy
     DispXOut[id] = ComplexMul(HProp, float2(0.f, kx_ * choppiness));
     DispYOut[id] = ComplexMul(HProp, float2(0.f, ky_ * choppiness));
+
+    // Horizontal velocity = d/dt of displacement
+    float2 dHdt = ComplexMul(HMin - HPlus, float2(0.f, w));
+    float2 UxK = ComplexMul(dHdt, float2(0.f, kx_));
+    float2 UyK = ComplexMul(dHdt, float2(0.f, ky_));
+
+    // Q = U * depth, shifted to staggered cell faces
+    FlowXOut[id] = ComplexMul(UxK * depth[id.z], e_ix);
+    FlowYOut[id] = ComplexMul(UyK * depth[id.z], e_iy);
 }
 
 Texture2DArray<float2> HxIn: register(t0);

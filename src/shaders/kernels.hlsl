@@ -364,10 +364,10 @@ void CalcSWE(uint3 id : SV_DispatchThreadID) {
     float gradh_x = (in3[right] - in3[curr]) * rcp(cellSize);
     float gradh_y = (in3[up] - in3[curr]) * rcp(cellSize);
 
-    // Calculate FFT wave forcing
-    float depthWeight = SafeTanh(in2[curr] * rcp(depthCutoff)); // scaling term to reduce FFT waves in shallow water
-    gradh_x += depthWeight * in4[curr]; // FFT wave pressure gradient 
-    gradh_y += depthWeight * in5[curr];
+    // // Calculate FFT wave forcing
+    // float depthWeight = SafeTanh(in2[curr] * rcp(depthCutoff)); // scaling term to reduce FFT waves in shallow water
+    // gradh_x += depthWeight * in4[curr]; // FFT wave pressure gradient 
+    // gradh_y += depthWeight * in5[curr];
 
     // Limit steep waves: When wave gets too steep, it "crashes"
     gradh_x = clamp(gradh_x, -slopeLimit, slopeLimit);
@@ -595,8 +595,10 @@ void TransferToFFT(uint3 id : SV_DispatchThreadID) {
 Texture2D<float2> hhat   : register(t0);
 Texture2D<float2> qhat_x : register(t1);
 Texture2D<float2> qhat_y : register(t2);
-Texture2D<float2> qhatFFT_x : register(t3);
-Texture2D<float2> qhatFFT_y : register(t4);
+Texture2DArray<float2> DelH_x: register(t3);
+Texture2DArray<float2> DelH_y: register(t4);
+Texture2DArray<float2> FlowX: register(t5);
+Texture2DArray<float2> FlowY: register(t6);
 RWTexture2DArray<float2> qhat_x_array: register(u0);
 RWTexture2DArray<float2> qhat_y_array: register(u1);
 [numthreads(16, 16, 1)]
@@ -674,10 +676,14 @@ void CalcEWave(uint3 id : SV_DispatchThreadID) {
     // 1) Decompose q into parallel and perpendicular: q_|| = kx_*qx + ky_*qy, q_T = kx_*qy - ky_*qx
     // 2) Update in rotated basis: q_||+ = C*q_|| - S*dhdx (q_T unchanged bc Airy is irrotational)
     // 3) Recombine: qx = kx_*q_||+ - ky_*q_T, qy = ky_*q_||+ + kx_*q_T
-    qhat_x_array[id] = Cx * qhat_x[id.xy] + Ck * qy_shifted - kx_ * S * dhdx;
-    qhat_y_array[id] = Cy * qhat_y[id.xy] + Ck * qx_shifted - ky_ * S * dhdy;
-    // qhat_x_array[id] = C * qhat_x[id.xy] - S * dhdx; // Naive 1D translation, but does just as well?
-    // qhat_y_array[id] = C * qhat_y[id.xy] - S * dhdy;
+    float2 qtotal_x = Cx * qhat_x[id.xy] + Ck * qy_shifted - kx_ * S * dhdx;
+    float2 qtotal_y = Cy * qhat_y[id.xy] + Ck * qx_shifted - ky_ * S * dhdy;
+
+    // // Add FFT wave forcing
+    qhat_x_array[id] = qtotal_x + FlowX[id] * timeStep;
+    qhat_y_array[id] = qtotal_y + FlowY[id] * timeStep;
+    // qhat_x_array[id] = qtotal_x;
+    // qhat_y_array[id] = qtotal_y;
 
     if ((id.x == NXdiv2 && id.y == 0) || (id.x == 0 && id.y == NYdiv2) || (id.x == NXdiv2 && id.y == NYdiv2)) {
         qhat_x_array[id] = float2(qhat_x_array[id].x, 0.0f);

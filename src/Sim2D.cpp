@@ -85,8 +85,8 @@ std::vector<float> Sim::SetTerrain() {
             }
             else if (TERRAIN_TYPE == 4) { // Beach Scene
                 // Simple slope with some noise for "sand dunes"
-                float dunes = 0.05f * sin(20.f * yf); 
-                terrain[i] = TERRAIN_HEIGHT + TERRAIN_SCALE * (xf * (1 + dunes));
+                float dunes = 0.05f * sin(20.f * xf); 
+                terrain[i] = TERRAIN_HEIGHT + TERRAIN_SCALE * (yf * (1 + dunes));
             }
 			else if (TERRAIN_TYPE == 5) {// 1D Hill in center of scene
 				// Bumpy hill near middle of scene
@@ -290,17 +290,7 @@ void Sim::FFTStep() {
     // Propagate waves
 	gpu->DispatchPadded(PropagateWaves, 
 		{HPos.srv, HNeg.srv},
-		{DelH_x.uav, DelH_y.uav, Disp_x.uav, Disp_y.uav, HProp.uav}, DEPTH_NUM);
-	gpu->ExecuteFFT(DelH_x.uav,  paddedSizeX, paddedSizeY, true, DEPTH_NUM);
-	gpu->ExecuteFFT(DelH_y.uav,  paddedSizeX, paddedSizeY, true, DEPTH_NUM);
-	gpu->ExecuteFFT(Disp_x.uav,  paddedSizeX, paddedSizeY, true, DEPTH_NUM);
-	gpu->ExecuteFFT(Disp_y.uav,  paddedSizeX, paddedSizeY, true, DEPTH_NUM);
-	gpu->ExecuteFFT(HProp.uav,  paddedSizeX, paddedSizeY, true, DEPTH_NUM);
-
-	// Interpolate outputs between depths
-	gpu->Dispatch(Interp, 
-		{DelH_x.srv, DelH_y.srv, Disp_x.srv, Disp_y.srv, hbar.srv, HProp.srv}, 
-		{delH_x.uav, delH_y.uav, disp_x.uav, disp_y.uav, hFFT.uav});
+		{DelH_x.uav, DelH_y.uav, Disp_x.uav, Disp_y.uav, HProp.uav, FlowX.uav, FlowY.uav}, DEPTH_NUM);
 }
 
 void Sim::eWaveStep() {
@@ -316,7 +306,7 @@ void Sim::eWaveStep() {
 
 	// Compute eWave
 	gpu->DispatchPadded(CalcEWave, 
-		{hHat.srv, qHat_x.srv, qHat_y.srv},
+		{hHat.srv, qHat_x.srv, qHat_y.srv, DelH_x.srv, DelH_y.srv, FlowX.srv, FlowY.srv},
 		{qHat_x_array.uav, qHat_y_array.uav}, DEPTH_NUM);
 
 	// Inverse FFT fourier variables
@@ -331,6 +321,17 @@ void Sim::eWaveStep() {
 
 void Sim::SWEStep() {
 	// SWE bulk simulation using [Stelling03]
+
+	// gpu->ExecuteFFT(DelH_x.uav,  paddedSizeX, paddedSizeY, true, DEPTH_NUM);
+	// gpu->ExecuteFFT(DelH_y.uav,  paddedSizeX, paddedSizeY, true, DEPTH_NUM);
+	// gpu->ExecuteFFT(Disp_x.uav,  paddedSizeX, paddedSizeY, true, DEPTH_NUM);
+	// gpu->ExecuteFFT(Disp_y.uav,  paddedSizeX, paddedSizeY, true, DEPTH_NUM);
+	// gpu->ExecuteFFT(HProp.uav,  paddedSizeX, paddedSizeY, true, DEPTH_NUM);
+
+	// // Interpolate outputs between depths
+	// gpu->Dispatch(Interp, 
+	// 	{DelH_x.srv, DelH_y.srv, Disp_x.srv, Disp_y.srv, hbar.srv, HProp.srv}, 
+	// 	{delH_x.uav, delH_y.uav, disp_x.uav, disp_y.uav, hFFT.uav});
 
 	// qbar to ubar using hbar from last timestep	
 	gpu->Dispatch(CalcUbar, 

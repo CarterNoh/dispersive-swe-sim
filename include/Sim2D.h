@@ -22,7 +22,7 @@ public:
     static constexpr float DENSITY = 999.f;
 
 	// Terrain & Water Parameters
-	static constexpr int TERRAIN_TYPE = 7; 		   // 0 = flat, 1 = ramp, 2 = bumps, 3 = basins, 4 = beach, 5 = 1D hill, 6 = 2D hill
+	static constexpr int TERRAIN_TYPE = 4; 		   // 0 = flat, 1 = ramp, 2 = bumps, 3 = basins, 4 = beach, 5 = 1D hill, 6 = 2D hill
 	static constexpr int WATER_TYPE   = 1; 		   // 0 = flat, 1 = step/dam break, 2 = diagonal slope, 3 = splash, 4 = ripples, 5 = basin flood
 	static constexpr float TERRAIN_HEIGHT = -13.f; // base height of terrain features (meters)
 	static constexpr float TERRAIN_SCALE = 20.f;    // scale of terrain features (meters)
@@ -48,9 +48,9 @@ public:
     float time = 0.f;
     static constexpr float FETCH        = 200.f;    // kilometers
     static constexpr float WIND_SPEED   = 14.f;     // m/s, at 10 meters above surface
-    static constexpr float WIND_ANGLE   = 135.f;    // degrees from x-axis
+    static constexpr float WIND_ANGLE   = 45.f;    // degrees from x-axis
     static constexpr float SWELL        = 0.3f;     // [0, 1] // this has issues at 0 but it shouldn't, I can't find the bug, hunt down later
-    static constexpr float SWELL_ANGLE  = 135.f;    // degrees from x-axis
+    static constexpr float SWELL_ANGLE  = 45.f;    // degrees from x-axis
     static constexpr float CHOPPINESS   = 1.f;      // Amount of horizontal displacement in waves
     static constexpr float FILTER_SMALL = 0.f;      // Set to really wide, not really using this right now 
     static constexpr float FILTER_BIG   = 10000.f;  // 
@@ -68,7 +68,7 @@ public:
 			 hPast, hbarOld, htildeOld, htildeOldNext,
 			 hHat, qHat_x, qHat_y, qHat_x_array, qHat_y_array;
 	
-    GPUField HPos, HNeg, HProp, DelH_x, DelH_y, Disp_x, Disp_y, // Outputs of PopulateSpectrum, PropagateWaves (complex arrays)
+    GPUField HPos, HNeg, HProp, DelH_x, DelH_y, Disp_x, Disp_y, FlowX, FlowY, // Outputs of PopulateSpectrum, PropagateWaves (complex arrays)
              hFFT, delH_x, delH_y, disp_x, disp_y; // iFFT'd variables after interpolation
 	GPUField* fields[40] = {
 		&terrain, &H, &Q_x, &Q_y, &h, &q_x, &q_y,
@@ -81,8 +81,9 @@ public:
         &hFFT, &delH_x, &delH_y, &disp_x, &disp_y,
 	};
 	GPUField* fields_complex[3] = {&hHat, &qHat_x, &qHat_y};
-	GPUField* fields_arrays[9] = {&qHat_x_array, &qHat_y_array, 
-        &HPos, &HNeg, &HProp, &DelH_x, &DelH_y, &Disp_x, &Disp_y};
+	GPUField* fields_arrays[11] = {
+		&qHat_x_array, &qHat_y_array, &HPos, &HNeg, &HProp, 
+        &DelH_x, &DelH_y, &Disp_x, &Disp_y, &FlowX, &FlowY};
 	GPUBuffer depth;
 	GPU* gpu;
 

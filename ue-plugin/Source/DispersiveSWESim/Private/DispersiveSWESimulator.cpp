@@ -190,6 +190,8 @@ void UDispersiveSWESimulator::AllocatePersistentTargets(FRHICommandListImmediate
 	GRenderTargetPool.FindFreeElement(RHICmdList, ComplexArrayDesc, TexDelH_y, TEXT("DelH_y"));
 	GRenderTargetPool.FindFreeElement(RHICmdList, ComplexArrayDesc, TexDisp_x, TEXT("Disp_x"));
 	GRenderTargetPool.FindFreeElement(RHICmdList, ComplexArrayDesc, TexDisp_y, TEXT("Disp_y"));
+	GRenderTargetPool.FindFreeElement(RHICmdList, ComplexArrayDesc, TexFlowX, TEXT("FlowX"));
+	GRenderTargetPool.FindFreeElement(RHICmdList, ComplexArrayDesc, TexFlowY, TEXT("FlowY"));
 	GRenderTargetPool.FindFreeElement(RHICmdList, ComplexArrayDesc, TexqHat_x_array, TEXT("qHat_x_array"));
 	GRenderTargetPool.FindFreeElement(RHICmdList, ComplexArrayDesc, TexqHat_y_array, TEXT("qHat_y_array"));
 
@@ -328,6 +330,8 @@ void UDispersiveSWESimulator::SetupInitialStates(FRHICommandListImmediate& RHICm
 		if (TexDelH_y.IsValid()) AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(GraphBuilder.RegisterExternalTexture(TexDelH_y)), FLinearColor::Black);
 		if (TexDisp_x.IsValid()) AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(GraphBuilder.RegisterExternalTexture(TexDisp_x)), FLinearColor::Black);
 		if (TexDisp_y.IsValid()) AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(GraphBuilder.RegisterExternalTexture(TexDisp_y)), FLinearColor::Black);
+		if (TexFlowX.IsValid()) AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(GraphBuilder.RegisterExternalTexture(TexFlowX)), FLinearColor::Black);
+		if (TexFlowY.IsValid()) AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(GraphBuilder.RegisterExternalTexture(TexFlowY)), FLinearColor::Black);
 		if (TexqHat_x_array.IsValid()) AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(GraphBuilder.RegisterExternalTexture(TexqHat_x_array)), FLinearColor::Black);
 		if (TexqHat_y_array.IsValid()) AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(GraphBuilder.RegisterExternalTexture(TexqHat_y_array)), FLinearColor::Black);
 		if (TexHPos.IsValid()) AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(GraphBuilder.RegisterExternalTexture(TexHPos)), FLinearColor::Black);
@@ -606,6 +610,8 @@ void UDispersiveSWESimulator::ExecuteSimulation_RenderThread(
 	FRDGTextureRef DelH_y_RDG = GraphBuilder.RegisterExternalTexture(TexDelH_y);
 	FRDGTextureRef Disp_x_RDG = GraphBuilder.RegisterExternalTexture(TexDisp_x);
 	FRDGTextureRef Disp_y_RDG = GraphBuilder.RegisterExternalTexture(TexDisp_y);
+	FRDGTextureRef FlowX_RDG = GraphBuilder.RegisterExternalTexture(TexFlowX);
+	FRDGTextureRef FlowY_RDG = GraphBuilder.RegisterExternalTexture(TexFlowY);
 
 	// Wind wave outputs
 	FRDGTextureRef delH_x_RDG = GraphBuilder.RegisterExternalTexture(TexdelH_x);
@@ -765,32 +771,10 @@ void UDispersiveSWESimulator::ExecuteSimulation_RenderThread(
 		Params->DelHyOut = GraphBuilder.CreateUAV(DelH_y_RDG);
 		Params->DispXOut = GraphBuilder.CreateUAV(Disp_x_RDG);
 		Params->DispYOut = GraphBuilder.CreateUAV(Disp_y_RDG);
+		Params->FlowXOut = GraphBuilder.CreateUAV(FlowX_RDG);
+		Params->FlowYOut = GraphBuilder.CreateUAV(FlowY_RDG);
 
 		FComputeShaderUtils::AddPass(GraphBuilder, RDG_EVENT_NAME("SWE_FFTWaves_Propagate"), ERDGPassFlags::Compute, Shader, Params, ComplexArrayGroups);
-	}
-
-	// Run Inverse FFTs
-	DispatchFFT_RenderThread(GraphBuilder, DelH_x_RDG, PaddedSizeX, PaddedSizeY, true, Constants.depthNum);
-	DispatchFFT_RenderThread(GraphBuilder, DelH_y_RDG, PaddedSizeX, PaddedSizeY, true, Constants.depthNum);
-	DispatchFFT_RenderThread(GraphBuilder, Disp_x_RDG, PaddedSizeX, PaddedSizeY, true, Constants.depthNum);
-	DispatchFFT_RenderThread(GraphBuilder, Disp_y_RDG, PaddedSizeX, PaddedSizeY, true, Constants.depthNum);
-
-	// Interpolate outputs between depths
-	{
-		TShaderMapRef<FInterpCS> Shader(ShaderMap);
-		FInterpCS::FParameters* Params = GraphBuilder.AllocParameters<FInterpCS::FParameters>();
-		Params->SimConstants = ConstantBuffer;
-		Params->HxIn = GraphBuilder.CreateSRV(DelH_x_RDG);
-		Params->HyIn = GraphBuilder.CreateSRV(DelH_y_RDG);
-		Params->DxIn = GraphBuilder.CreateSRV(Disp_x_RDG);
-		Params->DyIn = GraphBuilder.CreateSRV(Disp_y_RDG);
-		Params->hbarIn = GraphBuilder.CreateSRV(hbar_RDG);
-		Params->HxOut = GraphBuilder.CreateUAV(delH_x_RDG);
-		Params->HyOut = GraphBuilder.CreateUAV(delH_y_RDG);
-		Params->DxOut = GraphBuilder.CreateUAV(disp_x_RDG);
-		Params->DyOut = GraphBuilder.CreateUAV(disp_y_RDG);
-
-		FComputeShaderUtils::AddPass(GraphBuilder, RDG_EVENT_NAME("SWE_FFTWaves_Interp"), ERDGPassFlags::Compute, Shader, Params, GridGroups);
 	}
 
 	// ----------------------------------------------------
@@ -831,6 +815,8 @@ void UDispersiveSWESimulator::ExecuteSimulation_RenderThread(
 		Params->hhat = GraphBuilder.CreateSRV(hHat_RDG);
 		Params->qhat_x = GraphBuilder.CreateSRV(qHat_x_RDG);
 		Params->qhat_y = GraphBuilder.CreateSRV(qHat_y_RDG);
+		Params->FlowX = GraphBuilder.CreateSRV(FlowX_RDG);
+		Params->FlowY = GraphBuilder.CreateSRV(FlowY_RDG);
 		Params->qhat_x_array = GraphBuilder.CreateUAV(qHat_x_array_RDG);
 		Params->qhat_y_array = GraphBuilder.CreateUAV(qHat_y_array_RDG);
 
