@@ -469,22 +469,6 @@ void PropagateWaves(uint3 id : SV_DispatchThreadID) {
     float2 Uy = -ky_ * w * (HMin - HPlus);
     FlowXOut[id] = ComplexMul(Ux * depth[id.z], e_ix);
     FlowYOut[id] = ComplexMul(Uy * depth[id.z], e_iy);
-
-    // Filter frequencies: high frequency -> Flow, low frequency -> DelH
-    // float currentDepth = depth[id.z];
-    // if (k >= 1.0f / currentDepth) { // cutoff wavelength = 2*pi*h -> k = 1/h
-    //     // High frequency
-    //     FlowXOut[id] = ComplexMul(Ux * currentDepth, e_ix);
-    //     FlowYOut[id] = ComplexMul(Uy * currentDepth, e_iy);
-    //     DelHXOut[id] = float2(0.f, 0.f);
-    //     DelHYOut[id] = float2(0.f, 0.f);
-    // } else {
-    //     // Low frequency
-    //     FlowXOut[id] = float2(0.f, 0.f);
-    //     FlowYOut[id] = float2(0.f, 0.f);
-    //     DelHXOut[id] = ComplexMul(dhdx, e_ix);
-    //     DelHYOut[id] = ComplexMul(dhdy, e_iy);
-    // }
 }
 
 Texture2DArray<float2> HxIn: register(t0);

@@ -268,9 +268,9 @@ void InitializeWater(uint3 id : SV_DispatchThreadID) {
     }
     float terrainHeight = (TerrainCaptureCameraZ - rawDepth) * 0.01f;
     float h_val = max(0.f, WaterLevel - terrainHeight);
-    if (id.y < 0.25f * gridSizeY) { // for testing: step function
-        h_val += 2.f;
-    }
+    // if (id.y < 0.25f * gridSizeY) { // for testing: step function
+    //     h_val += 2.f;
+    // }
     hOut[id.xy] = h_val;
     H_Out[id.xy] = terrainHeight + h_val;
     terrainOut[id.xy] = terrainHeight;
@@ -344,10 +344,10 @@ void DiffusionStep(uint3 id : SV_DispatchThreadID) {
 
     float invCellSizeSq = 1.0f / (cellSize * cellSize);
     precise float newH    = SolveJacobi(H_Orig[curr],   invCellSizeSq, H_Past[right],   H_Past[left],   H_Past[up],   H_Past[down],   alpha_QIn_x[curr], alpha_QIn_x[left], alpha_QIn_y[curr], alpha_QIn_y[down]);
-    H_Out[curr]   = max(terrain[curr], newH);
     precise float newQx   = SolveJacobi(Q_Orig_x[curr], invCellSizeSq, Q_Past_x[right], Q_Past_x[left], Q_Past_x[up], Q_Past_x[down], aH_right,   aH_curr,   a_topright, a_botright);
-    Q_Out_x[curr] = newQx;
     precise float newQy   = SolveJacobi(Q_Orig_y[curr], invCellSizeSq, Q_Past_y[right], Q_Past_y[left], Q_Past_y[up], Q_Past_y[down], a_topright, a_topleft, aH_up,      aH_curr);
+    H_Out[curr]   = max(terrain[curr], newH);
+    Q_Out_x[curr] = newQx;
     Q_Out_y[curr] = newQy;
 }
 
@@ -732,19 +732,6 @@ void CalcQAdvect(uint3 id : SV_DispatchThreadID) {
     float2 step_y = float2(0.0f, 0.5f) - float2(ubar_avg_x, ubarNewIn_y[id.xy]) * halfTimeStepOverCellSize;
     float h_sample_x = SampleCubicClamped2D(htildeIn, id.xy + step_x);
     float h_sample_y = SampleCubicClamped2D(htildeIn, id.xy + step_y);
-
-    // // High-order cubic reconstructed values
-    // float h_cubic_x = SampleCubicClamped2D(htildeIn, id.xy + step_x);
-    // float h_cubic_y = SampleCubicClamped2D(htildeIn, id.xy + step_y);
-    // // 1st-order upwind donor-cell values
-    // float h_upwind_x = (ubarNewIn_x[id.xy] >= 0.0f) ? htildeIn[curr] : htildeIn[right];
-    // float h_upwind_y = (ubarNewIn_y[id.xy] >= 0.0f) ? htildeIn[curr] : htildeIn[up];
-    // // TVD / Slope-limited blend: Use cubic where smooth, blend to upwind near sharp gradients
-    // float nu_x = abs(ubarNewIn_x[id.xy]) * halfTimeStepOverCellSize;
-    // float nu_y = abs(ubarNewIn_y[id.xy]) * halfTimeStepOverCellSize;
-    // float h_sample_x = lerp(h_upwind_x, h_cubic_x, clamp(1.0f - nu_x, 0.0f, 1.0f));
-    // float h_sample_y = lerp(h_upwind_y, h_cubic_y, clamp(1.0f - nu_y, 0.0f, 1.0f));
-
     qAdvectOut_x[id.xy] = ubarNewIn_x[id.xy] * h_sample_x;
     qAdvectOut_y[id.xy] = ubarNewIn_y[id.xy] * h_sample_y;
 }

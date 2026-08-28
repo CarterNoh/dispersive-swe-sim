@@ -249,11 +249,11 @@ void DiffusionStep(uint3 id : SV_DispatchThreadID) {
     float a_topleft  = 0.25f * (aH_curr + aH_up   + aH_left  + in7[lu]);
 
     float invCellSizeSq = 1.0f / (cellSize * cellSize);   
-    precise float newH = SolveJacobi(in1[curr], invCellSizeSq, in4[right], in4[left], in4[up], in4[down], in8[curr], in8[left], in9[curr], in9[down]);
-    out0[curr] = max(in0[curr], newH);
+    precise float newH = SolveJacobi(in1[curr], invCellSizeSq, in4[right], in4[left], in4[up], in4[down],  in8[curr],  in8[left], in9[curr],  in9[down]);
     precise float newQx = SolveJacobi(in2[curr], invCellSizeSq, in5[right], in5[left], in5[up], in5[down], aH_right,   aH_curr,   a_topright, a_botright);
-    out1[curr] = newQx;
     precise float newQy = SolveJacobi(in3[curr], invCellSizeSq, in6[right], in6[left], in6[up], in6[down], a_topright, a_topleft, aH_up,      aH_curr);
+    out0[curr] = max(in0[curr], newH);
+    out1[curr] = newQx;
     out2[curr] = newQy;
 }
 
@@ -434,12 +434,6 @@ void UpdateTilde(uint3 id : SV_DispatchThreadID) {
     float div_ux = 0.5f * (div_ubar + div_right); // at right boundary
     float div_uy = 0.5f * (div_ubar + div_up); // at up boundary
 
-    // // Clamp divergence to prevent exponential growth during flow convergence
-    // float maxDivergence = 1.0f / max(1e-4f, timeStep);
-    // div_ubar = max(div_ubar, -maxDivergence);
-    // div_ux   = max(div_ux,   -maxDivergence);
-    // div_uy   = max(div_uy,   -maxDivergence);
-
     // Dampen if converging to avoid breaking waves
     div_ubar *= (div_ubar < 0.f) ? gammaTransport : 1; 
     div_ux   *= (div_ux   < 0.f) ? gammaTransport : 1;
@@ -457,7 +451,6 @@ void UpdateTilde(uint3 id : SV_DispatchThreadID) {
     ///// H Update /////
     // Update htilde using ubar divergence (not at middle of timestep)
     div_ubar  = (in0[curr] - in0[left] + in2[curr] - in2[down]) / cellSize;
-    // div_ubar  = clamp(div_ubar, -maxDivergence, maxDivergence);
     div_ubar *= (div_ubar < 0.f) ? gammaTransport : 1; // dampen if converging to avoid breaking waves
     out0[curr] = in4[curr] * exp(-div_ubar * timeStep);
 }
@@ -485,19 +478,6 @@ void CalcQAdvect(uint3 id : SV_DispatchThreadID) {
     float2 step_y = float2(0.0f, 0.5f) - float2(ubar_avg_x, in1[id.xy]) * halfTimeStepOverCellSize;
     float h_sample_x = SampleCubicClamped2D(in2, id.xy + step_x);
     float h_sample_y = SampleCubicClamped2D(in2, id.xy + step_y);
-
-    // // High-order cubic reconstructed values
-    // float h_cubic_x = SampleCubicClamped2D(in2, id.xy + step_x);
-    // float h_cubic_y = SampleCubicClamped2D(in2, id.xy + step_y);
-    // // 1st-order upwind donor-cell values
-    // float h_upwind_x = (in0[id.xy] >= 0.0f) ? in2[curr] : in2[right];
-    // float h_upwind_y = (in1[id.xy] >= 0.0f) ? in2[curr] : in2[up];
-    // // TVD / Slope-limited blend: Use cubic where smooth, blend to upwind near sharp gradients
-    // float nu_x = abs(in0[id.xy]) * halfTimeStepOverCellSize;
-    // float nu_y = abs(in1[id.xy]) * halfTimeStepOverCellSize;
-    // float h_sample_x = lerp(h_upwind_x, h_cubic_x, clamp(1.0f - nu_x, 0.0f, 1.0f));
-    // float h_sample_y = lerp(h_upwind_y, h_cubic_y, clamp(1.0f - nu_y, 0.0f, 1.0f));
-
     out0[id.xy] = in0[id.xy] * h_sample_x;
     out1[id.xy] = in1[id.xy] * h_sample_y;
 }

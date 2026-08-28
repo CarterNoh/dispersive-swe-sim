@@ -71,7 +71,7 @@ public:
 
 	// Number of iterations for diffusion step; more iterations means more stable but also more expensive
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Sim|Decomposition")
-	int32 DiffusionIterations = 512;
+	int32 DiffusionIterations = 128;
 
 	// Maximum height of diffusion stencil in cells; higher means more diffusion in deep water
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Sim|Decomposition")
@@ -98,7 +98,7 @@ public:
 
 	// Damping factor for Laplacian smoothing to reduce spikes and unstable grid-scale ripples
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Sim|SWE & Transport")
-	float LaplacianDamping = 0.003f;
+	float LaplacianDamping = 0.01f;
 
 
 	//////// FFT Wave Parameters ////////
