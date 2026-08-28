@@ -22,17 +22,17 @@ public:
     static constexpr float DENSITY = 999.f;
 
 	// Terrain & Water Parameters
-	static constexpr int TERRAIN_TYPE = 4; 		   // 0 = flat, 1 = ramp, 2 = bumps, 3 = basins, 4 = beach, 5 = 1D hill, 6 = 2D hill
+	static constexpr int TERRAIN_TYPE = 7; 		   // 0 = flat, 1 = ramp, 2 = bumps, 3 = basins, 4 = beach, 5 = 1D hill, 6 = 2D hill
 	static constexpr int WATER_TYPE   = 1; 		   // 0 = flat, 1 = step/dam break, 2 = diagonal slope, 3 = splash, 4 = ripples, 5 = basin flood
 	static constexpr float TERRAIN_HEIGHT = -13.f; // base height of terrain features (meters)
 	static constexpr float TERRAIN_SCALE = 20.f;    // scale of terrain features (meters)
 	static constexpr float WATER_LEVEL = 0.f; 	   // level of water free surface at start (H)
-	static constexpr float WATER_SCALE = 0.f;     // scale of water height features
+	static constexpr float WATER_SCALE = 2.f;     // scale of water height features
 	
 	// Decomposition Parameters
-	static constexpr int DIFFUSION_ITERATIONS = 256;   // number of iterations for diffusion step, more iterations means more stable but also more expensive
+	static constexpr int DIFFUSION_ITERATIONS = 512;   // number of iterations for diffusion step, more iterations means more stable but also more expensive
 	static constexpr int MAX_DIFFUSION_CELLS = 8; 	  // maximum height of diffusion stencil in cells, higher means more diffusion in deep water
-	static constexpr float DIFFUSION_PENALTY = 0.001f; // penalty factor for diffusion, higher means more diffusion and more stability but also more damping of waves
+	static constexpr float DIFFUSION_PENALTY = 0.003f; // penalty factor for diffusion, higher means more diffusion and more stability but also more damping of waves
 	
 	// eWave Parameters
 	std::vector<float> depths = { 1.0f, 2.0f, 4.0f, 16.0f, 64.0f };
@@ -68,7 +68,8 @@ public:
 			 hPast, hbarOld, htildeOld, htildeOldNext,
 			 hHat, qHat_x, qHat_y, qHat_x_array, qHat_y_array;
 	
-    GPUField HPos, HNeg, HProp, DelH_x, DelH_y, Disp_x, Disp_y, FlowX, FlowY, // Outputs of PopulateSpectrum, PropagateWaves (complex arrays)
+    GPUField HPos, HNeg, // Outputs of PopulateSpectrum (complex arrays)
+             HProp, Disp_x, Disp_y, DelH_x, DelH_y, Flow_x, Flow_y, // Outputs of PropagateWaves (complex arrays)
              hFFT, delH_x, delH_y, disp_x, disp_y; // iFFT'd variables after interpolation
 	GPUField* fields[40] = {
 		&terrain, &H, &Q_x, &Q_y, &h, &q_x, &q_y,
@@ -82,8 +83,8 @@ public:
 	};
 	GPUField* fields_complex[3] = {&hHat, &qHat_x, &qHat_y};
 	GPUField* fields_arrays[11] = {
-		&qHat_x_array, &qHat_y_array, &HPos, &HNeg, &HProp, 
-        &DelH_x, &DelH_y, &Disp_x, &Disp_y, &FlowX, &FlowY};
+		&qHat_x_array, &qHat_y_array, &HPos, &HNeg, 
+		&HProp, &Disp_x, &Disp_y, &DelH_x, &DelH_y, &Flow_x, &Flow_y};
 	GPUBuffer depth;
 	GPU* gpu;
 

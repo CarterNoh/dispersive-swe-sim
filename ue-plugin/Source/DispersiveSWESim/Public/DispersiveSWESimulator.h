@@ -68,7 +68,7 @@ public:
 
 	// Iterations of the diffusion step per frame
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SWE Simulation|Decomposition")
-	int32 DiffusionIterations = 256;
+	int32 DiffusionIterations = 512;
 
 	// Total virtual time of the diffusion step
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SWE Simulation|Decomposition")
@@ -92,7 +92,7 @@ public:
 
 	// Damping factor for Laplacian smoothing to reduce spikes and unstable grid-scale ripples
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SWE Simulation|SWE")
-	float LaplacianDamping = 0.001f;
+	float LaplacianDamping = 0.003f;
 
 	// Fetch in kilometers for JONSWAP wave spectrum
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SWE Simulation|Wind Wave")
@@ -275,16 +275,16 @@ private:
 	// Stateful complex textures array for wave FFT propagation
 	TRefCountPtr<IPooledRenderTarget> TexHPos;
 	TRefCountPtr<IPooledRenderTarget> TexHNeg;
-	TRefCountPtr<IPooledRenderTarget> TexDelH_x;
-	TRefCountPtr<IPooledRenderTarget> TexDelH_y;
 	TRefCountPtr<IPooledRenderTarget> TexDisp_x;
 	TRefCountPtr<IPooledRenderTarget> TexDisp_y;
-	TRefCountPtr<IPooledRenderTarget> TexFlowX;
-	TRefCountPtr<IPooledRenderTarget> TexFlowY;
-	TRefCountPtr<IPooledRenderTarget> TexdelH_x;
-	TRefCountPtr<IPooledRenderTarget> TexdelH_y;
+	TRefCountPtr<IPooledRenderTarget> TexDelH_x;
+	TRefCountPtr<IPooledRenderTarget> TexDelH_y;
+	TRefCountPtr<IPooledRenderTarget> TexFlow_x;
+	TRefCountPtr<IPooledRenderTarget> TexFlow_y;
 	TRefCountPtr<IPooledRenderTarget> Texdisp_x;
 	TRefCountPtr<IPooledRenderTarget> Texdisp_y;
+	TRefCountPtr<IPooledRenderTarget> TexdelH_x;
+	TRefCountPtr<IPooledRenderTarget> TexdelH_y;
 
 	// Foam, roughness, and dummy export textures
 	TRefCountPtr<IPooledRenderTarget> TexFoam;

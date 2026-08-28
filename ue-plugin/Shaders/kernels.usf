@@ -84,8 +84,8 @@ Texture2D<float2>  qhat_x;
 Texture2D<float2>  qhat_y;
 Texture2DArray<float2> qHat_x_array;
 Texture2DArray<float2> qHat_y_array;
-Texture2DArray<float2> FlowX;
-Texture2DArray<float2> FlowY;
+Texture2DArray<float2> Flow_x;
+Texture2DArray<float2> Flow_y;
 Texture2D<float>   Q_In_x;
 Texture2D<float>   Q_In_y;
 
@@ -268,9 +268,9 @@ void InitializeWater(uint3 id : SV_DispatchThreadID) {
     }
     float terrainHeight = (TerrainCaptureCameraZ - rawDepth) * 0.01f;
     float h_val = max(0.f, WaterLevel - terrainHeight);
-    // if (id.y < 0.25f * gridSizeY) { // for testing: step function
-    //     h_val += 2.f;
-    // }
+    if (id.y < 0.25f * gridSizeY) { // for testing: step function
+        h_val += 2.f;
+    }
     hOut[id.xy] = h_val;
     H_Out[id.xy] = terrainHeight + h_val;
     terrainOut[id.xy] = terrainHeight;
@@ -486,9 +486,9 @@ void CalcEWave(uint3 id : SV_DispatchThreadID) {
     float2 qtotal_x = Cx * qhat_x[id.xy] + Ck * qy_shifted - kx_ * S * dhdx;
     float2 qtotal_y = Cy * qhat_y[id.xy] + Ck * qx_shifted - ky_ * S * dhdy;
 
-    // // Add FFT wave forcing
-    qhat_x_array[id] = qtotal_x + FlowX[id] * timeStep;
-    qhat_y_array[id] = qtotal_y + FlowY[id] * timeStep;
+    // Add FFT wave forcing for high frequencies
+    qhat_x_array[id] = qtotal_x + Flow_x[id] * timeStep;
+    qhat_y_array[id] = qtotal_y + Flow_y[id] * timeStep;
 
     if ((id.x == NXdiv2 && id.y == 0) || (id.x == 0 && id.y == NYdiv2) || (id.x == NXdiv2 && id.y == NYdiv2)) {
         qhat_x_array[id] = float2(qhat_x_array[id].x, 0.0f);
@@ -614,10 +614,10 @@ void CalcSWE(uint3 id : SV_DispatchThreadID) {
     float gradh_x = (H_In[right] - H_In[curr]) * rcp(cellSize);
     float gradh_y = (H_In[up]    - H_In[curr]) * rcp(cellSize);
 
-    // // Calculate FFT wave forcing
-    // float depthWeight = SafeTanh(hbarIn[curr] * rcp(depthCutoff)); // scaling term to reduce FFT waves in shallow water
-    // gradh_x += depthWeight * delH_x[curr]; // FFT wave pressure gradient 
-    // gradh_y += depthWeight * delH_y[curr];
+    // Calculate FFT wave forcing
+    float depthWeight = SafeTanh(hbarIn[curr] * rcp(depthCutoff)); // scaling term to reduce FFT waves in shallow water
+    gradh_x += depthWeight * delH_x[curr]; // FFT wave pressure gradient 
+    gradh_y += depthWeight * delH_y[curr];
  
     // Limit steep waves: when wave gets too steep, it "crashes"
     gradh_x = clamp(gradh_x, -slopeLimit, slopeLimit);

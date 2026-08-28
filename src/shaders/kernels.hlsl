@@ -365,9 +365,9 @@ void CalcSWE(uint3 id : SV_DispatchThreadID) {
     float gradh_y = (in3[up] - in3[curr]) * rcp(cellSize);
 
     // // Calculate FFT wave forcing
-    // float depthWeight = SafeTanh(in2[curr] * rcp(depthCutoff)); // scaling term to reduce FFT waves in shallow water
-    // gradh_x += depthWeight * in4[curr]; // FFT wave pressure gradient 
-    // gradh_y += depthWeight * in5[curr];
+    float depthWeight = SafeTanh(in2[curr] * rcp(depthCutoff)); // scaling term to reduce FFT waves in shallow water
+    gradh_x += depthWeight * in4[curr]; // FFT wave pressure gradient 
+    gradh_y += depthWeight * in5[curr];
 
     // Limit steep waves: When wave gets too steep, it "crashes"
     gradh_x = clamp(gradh_x, -slopeLimit, slopeLimit);
@@ -595,10 +595,8 @@ void TransferToFFT(uint3 id : SV_DispatchThreadID) {
 Texture2D<float2> hhat   : register(t0);
 Texture2D<float2> qhat_x : register(t1);
 Texture2D<float2> qhat_y : register(t2);
-Texture2DArray<float2> DelH_x: register(t3);
-Texture2DArray<float2> DelH_y: register(t4);
-Texture2DArray<float2> FlowX: register(t5);
-Texture2DArray<float2> FlowY: register(t6);
+Texture2DArray<float2> Flow_x: register(t3);
+Texture2DArray<float2> Flow_y: register(t4);
 RWTexture2DArray<float2> qhat_x_array: register(u0);
 RWTexture2DArray<float2> qhat_y_array: register(u1);
 [numthreads(16, 16, 1)]
@@ -679,11 +677,9 @@ void CalcEWave(uint3 id : SV_DispatchThreadID) {
     float2 qtotal_x = Cx * qhat_x[id.xy] + Ck * qy_shifted - kx_ * S * dhdx;
     float2 qtotal_y = Cy * qhat_y[id.xy] + Ck * qx_shifted - ky_ * S * dhdy;
 
-    // // Add FFT wave forcing
-    qhat_x_array[id] = qtotal_x + FlowX[id] * timeStep;
-    qhat_y_array[id] = qtotal_y + FlowY[id] * timeStep;
-    // qhat_x_array[id] = qtotal_x;
-    // qhat_y_array[id] = qtotal_y;
+    // Add FFT wave forcing for high frequencies
+    qhat_x_array[id] = qtotal_x + Flow_x[id] * timeStep;
+    qhat_y_array[id] = qtotal_y + Flow_y[id] * timeStep;
 
     if ((id.x == NXdiv2 && id.y == 0) || (id.x == 0 && id.y == NYdiv2) || (id.x == NXdiv2 && id.y == NYdiv2)) {
         qhat_x_array[id] = float2(qhat_x_array[id].x, 0.0f);
