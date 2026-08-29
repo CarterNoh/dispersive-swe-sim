@@ -16,18 +16,19 @@ struct alignas(16) SimConstants {
     int gridSizeY; 
     float cellSize;
     float timeStep;
-    int spongeThickness;
     float minWaterHeight;
     float surfaceTension;
     float density;
     // Decomposition Params
     int diffusionIterations;
-    float diffusionTime;
+    int maxDiffusionCells;
     float diffusionPenalty;
     // SWE & Transport Params
     float slopeLimit;
     float cflCondition;
     float gammaTransport;
+    int spongeThickness;
+    float laplacianDamping;
     // eWave Params
     int depthNum;
     // FFT wave params
@@ -45,7 +46,7 @@ struct alignas(16) SimConstants {
     int paddedGridSizeX;
     int paddedGridSizeY;
     float maxSafeDepth;
-    float simConstantPadding[2]; // Align to 16 bytes
+    float simConstantPadding[1]; // Align to 16 bytes
 };
 
 struct alignas(16) FFTConstants {

@@ -3,6 +3,7 @@
 #include "JsonObjectConverter.h"
 #include "Misc/FileHelper.h"
 #include "Misc/Paths.h"
+#include "HAL/FileManager.h"
 #include "Serialization/JsonReader.h"
 #include "Serialization/JsonSerializer.h"
 #include "RenderGraphBuilder.h"
@@ -10,6 +11,7 @@
 #include "RenderTargetPool.h"
 #include "RHI.h"
 #include "RHIResources.h"
+#include "RHIGPUReadback.h"
 #include "RHIStaticStates.h"
 #include "ShaderParameterUtils.h"
 #include "ShaderCompilerCore.h"
@@ -43,6 +45,21 @@ int32 NextPowerOf2(int32 n)
 void UDispersiveSWESimulator::InitializeSimulation() 
 {
 	UE_LOG(LogTemp, Warning, TEXT("InitializeSimulation() running: GridSizeX=%d, GridSizeY=%d, CellSize=%f, CapturedWorldWidth=%f"), GridSizeX, GridSizeY, CellSize, CapturedWorldWidth);
+
+	// // Disable RDG resource aliasing and extend lifetimes to ensure pooled persistent render targets remain stable
+	// auto SafeSetCVar = [](const TCHAR* Name, int32 Value) {
+	// 	if (IConsoleVariable* CVar = IConsoleManager::Get().FindConsoleVariable(Name))
+	// 	{
+	// 		CVar->Set(Value, ECVF_SetByCode);
+	// 	}
+	// };
+
+	// SafeSetCVar(TEXT("r.RDG.TransientAllocator"), 0);
+	// SafeSetCVar(TEXT("r.RDG.ResourceAliasing"), 0);
+	// SafeSetCVar(TEXT("r.RDG.Debug.ExtendResourceLifetimes"), 1);
+	// SafeSetCVar(TEXT("r.RDG.Debug.ResourceClobber"), 1);
+	// SafeSetCVar(TEXT("r.RDG.ClobberResources"), 1);
+	// SafeSetCVar(TEXT("r.RDG.ParallelExecute"), 0);
 
 	// Load configuration from JSON if path is provided
 	if (!JsonConfigFilePath.IsEmpty()) {
@@ -93,42 +110,46 @@ void UDispersiveSWESimulator::AllocatePersistentTargets(FRHICommandListImmediate
 		false
 	);
 
-	GRenderTargetPool.FindFreeElement(RHICmdList, Desc, TexTerrain, TEXT("SWE_Terrain"));
-	GRenderTargetPool.FindFreeElement(RHICmdList, Desc, TexH, TEXT("SWE_H"));
-	GRenderTargetPool.FindFreeElement(RHICmdList, Desc, TexQ_x, TEXT("SWE_Q_x"));
-	GRenderTargetPool.FindFreeElement(RHICmdList, Desc, TexQ_y, TEXT("SWE_Q_y"));
-	GRenderTargetPool.FindFreeElement(RHICmdList, Desc, Texh, TEXT("SWE_h"));
-	GRenderTargetPool.FindFreeElement(RHICmdList, Desc, Texq_x, TEXT("SWE_q_x"));
-	GRenderTargetPool.FindFreeElement(RHICmdList, Desc, Texq_y, TEXT("SWE_q_y"));
-	GRenderTargetPool.FindFreeElement(RHICmdList, Desc, Texhbar, TEXT("SWE_hbar"));
-	GRenderTargetPool.FindFreeElement(RHICmdList, Desc, TexhbarOld, TEXT("SWE_hbarOld"));
-	GRenderTargetPool.FindFreeElement(RHICmdList, Desc, Texqbar_x, TEXT("SWE_qbar_x"));
-	GRenderTargetPool.FindFreeElement(RHICmdList, Desc, Texqbar_y, TEXT("SWE_qbar_y"));
-	GRenderTargetPool.FindFreeElement(RHICmdList, Desc, Texhtilde, TEXT("SWE_htilde"));
-	GRenderTargetPool.FindFreeElement(RHICmdList, Desc, TexhtildeOld, TEXT("SWE_htildeOld"));
-	GRenderTargetPool.FindFreeElement(RHICmdList, Desc, Texqtilde_x, TEXT("SWE_qtilde_x"));
-	GRenderTargetPool.FindFreeElement(RHICmdList, Desc, Texqtilde_y, TEXT("SWE_qtilde_y"));
-	GRenderTargetPool.FindFreeElement(RHICmdList, Desc, Texubar_x, TEXT("SWE_ubar_x"));
-	GRenderTargetPool.FindFreeElement(RHICmdList, Desc, Texubar_y, TEXT("SWE_ubar_y"));
-	GRenderTargetPool.FindFreeElement(RHICmdList, Desc, TexAlpha_H, TEXT("SWE_alpha_H"));
-	GRenderTargetPool.FindFreeElement(RHICmdList, Desc, TexAlpha_Qx, TEXT("SWE_alpha_Qx"));
-	GRenderTargetPool.FindFreeElement(RHICmdList, Desc, TexAlpha_Qy, TEXT("SWE_alpha_Qy"));
-	GRenderTargetPool.FindFreeElement(RHICmdList, Desc, TexHNext, TEXT("SWE_HNext"));
-	GRenderTargetPool.FindFreeElement(RHICmdList, Desc, TexQNextX, TEXT("SWE_QNextX"));
-	GRenderTargetPool.FindFreeElement(RHICmdList, Desc, TexQNextY, TEXT("SWE_QNextY"));
-	GRenderTargetPool.FindFreeElement(RHICmdList, Desc, TexDelHx_Out, TEXT("SWE_delHx"));
-	GRenderTargetPool.FindFreeElement(RHICmdList, Desc, TexDelHy_Out, TEXT("SWE_delHy"));
-	GRenderTargetPool.FindFreeElement(RHICmdList, Desc, TexDispX_Out, TEXT("SWE_dispX"));
-	GRenderTargetPool.FindFreeElement(RHICmdList, Desc, TexDispY_Out, TEXT("SWE_dispY"));
-	GRenderTargetPool.FindFreeElement(RHICmdList, Desc, TexQTildePastX, TEXT("SWE_qtildePastX"));
-	GRenderTargetPool.FindFreeElement(RHICmdList, Desc, TexQTildePastY, TEXT("SWE_qtildePastY"));
-	GRenderTargetPool.FindFreeElement(RHICmdList, Desc, TexQAdvectX, TEXT("SWE_qAdvectX"));
-	GRenderTargetPool.FindFreeElement(RHICmdList, Desc, TexQAdvectY, TEXT("SWE_qAdvectY"));
-	GRenderTargetPool.FindFreeElement(RHICmdList, Desc, TexHPast_Transport, TEXT("SWE_hPast"));
-	GRenderTargetPool.FindFreeElement(RHICmdList, Desc, TexUbarNewX, TEXT("SWE_ubarNewX"));
-	GRenderTargetPool.FindFreeElement(RHICmdList, Desc, TexUbarNewY, TEXT("SWE_ubarNewY"));
-	GRenderTargetPool.FindFreeElement(RHICmdList, Desc, TexHtildeOldCopy, TEXT("SWE_htildeOld_ReadCopy"));
-	GRenderTargetPool.FindFreeElement(RHICmdList, Desc, TexHtildeCopy, TEXT("SWE_htilde_ReadCopy"));
+	GRenderTargetPool.FindFreeElement(RHICmdList, Desc, TexTerrain, TEXT("Terrain"));
+	GRenderTargetPool.FindFreeElement(RHICmdList, Desc, TexH, TEXT("H"));
+	GRenderTargetPool.FindFreeElement(RHICmdList, Desc, TexQ_x, TEXT("Q_x"));
+	GRenderTargetPool.FindFreeElement(RHICmdList, Desc, TexQ_y, TEXT("Q_y"));
+	GRenderTargetPool.FindFreeElement(RHICmdList, Desc, Texh, TEXT("h"));
+	GRenderTargetPool.FindFreeElement(RHICmdList, Desc, Texq_x, TEXT("q_x"));
+	GRenderTargetPool.FindFreeElement(RHICmdList, Desc, Texq_y, TEXT("q_y"));
+	GRenderTargetPool.FindFreeElement(RHICmdList, Desc, TexHOrig, TEXT("HOrig"));
+	GRenderTargetPool.FindFreeElement(RHICmdList, Desc, TexQOrig_x, TEXT("QOrig_x"));
+	GRenderTargetPool.FindFreeElement(RHICmdList, Desc, TexQOrig_y, TEXT("QOrig_y"));
+	GRenderTargetPool.FindFreeElement(RHICmdList, Desc, TexHPast, TEXT("HPast"));
+	GRenderTargetPool.FindFreeElement(RHICmdList, Desc, TexQPast_x, TEXT("QPast_x"));
+	GRenderTargetPool.FindFreeElement(RHICmdList, Desc, TexQPast_y, TEXT("QPast_y"));
+	GRenderTargetPool.FindFreeElement(RHICmdList, Desc, TexAlpha_H, TEXT("alpha_H"));
+	GRenderTargetPool.FindFreeElement(RHICmdList, Desc, TexAlpha_Q_x, TEXT("alpha_Q_x"));
+	GRenderTargetPool.FindFreeElement(RHICmdList, Desc, TexAlpha_Q_y, TEXT("alpha_Q_y"));
+	GRenderTargetPool.FindFreeElement(RHICmdList, Desc, Texhbar, TEXT("hbar"));
+	GRenderTargetPool.FindFreeElement(RHICmdList, Desc, TexhbarOld, TEXT("hbarOld"));
+	GRenderTargetPool.FindFreeElement(RHICmdList, Desc, Texqbar_x, TEXT("qbar_x"));
+	GRenderTargetPool.FindFreeElement(RHICmdList, Desc, Texqbar_y, TEXT("qbar_y"));
+	GRenderTargetPool.FindFreeElement(RHICmdList, Desc, Texhtilde, TEXT("htilde"));
+	GRenderTargetPool.FindFreeElement(RHICmdList, Desc, TexhtildePast, TEXT("htildePast"));
+	GRenderTargetPool.FindFreeElement(RHICmdList, Desc, TexhtildeOld, TEXT("htildeOld"));
+	GRenderTargetPool.FindFreeElement(RHICmdList, Desc, TexhtildeOldNext, TEXT("htildeOldNext"));
+	GRenderTargetPool.FindFreeElement(RHICmdList, Desc, Texqtilde_x, TEXT("qtilde_x"));
+	GRenderTargetPool.FindFreeElement(RHICmdList, Desc, Texqtilde_y, TEXT("qtilde_y"));
+	GRenderTargetPool.FindFreeElement(RHICmdList, Desc, Texubar_x, TEXT("ubar_x"));
+	GRenderTargetPool.FindFreeElement(RHICmdList, Desc, Texubar_y, TEXT("ubar_y"));
+	GRenderTargetPool.FindFreeElement(RHICmdList, Desc, TexubarNew_x, TEXT("ubarNew_x"));
+	GRenderTargetPool.FindFreeElement(RHICmdList, Desc, TexubarNew_y, TEXT("ubarNew_y"));
+	GRenderTargetPool.FindFreeElement(RHICmdList, Desc, TexqtildePast_x, TEXT("qtildePast_x"));
+	GRenderTargetPool.FindFreeElement(RHICmdList, Desc, TexqtildePast_y, TEXT("qtildePast_y"));
+	GRenderTargetPool.FindFreeElement(RHICmdList, Desc, TexqAdvect_x, TEXT("qAdvect_x"));
+	GRenderTargetPool.FindFreeElement(RHICmdList, Desc, TexqAdvect_y, TEXT("qAdvect_y"));
+	GRenderTargetPool.FindFreeElement(RHICmdList, Desc, TexhPast, TEXT("hPast"));
+	GRenderTargetPool.FindFreeElement(RHICmdList, Desc, TexdelH_x, TEXT("delH_x"));
+	GRenderTargetPool.FindFreeElement(RHICmdList, Desc, TexdelH_y, TEXT("delH_y"));
+	GRenderTargetPool.FindFreeElement(RHICmdList, Desc, Texdisp_x, TEXT("disp_x"));
+	GRenderTargetPool.FindFreeElement(RHICmdList, Desc, Texdisp_y, TEXT("disp_y"));
+	GRenderTargetPool.FindFreeElement(RHICmdList, Desc, TexTerrainExportDummy, TEXT("TerrainExportDummy"));
 
 	FPooledRenderTargetDesc FoamDesc = FPooledRenderTargetDesc::Create2DDesc(
 		FIntPoint(GridSizeX, GridSizeY),
@@ -138,8 +159,8 @@ void UDispersiveSWESimulator::AllocatePersistentTargets(FRHICommandListImmediate
 		TexCreate_ShaderResource | TexCreate_UAV,
 		false
 	);
-	GRenderTargetPool.FindFreeElement(RHICmdList, FoamDesc, TexFoam, TEXT("SWE_FoamState"));
-	GRenderTargetPool.FindFreeElement(RHICmdList, FoamDesc, TexNewFoam, TEXT("SWE_NewFoamState"));
+	GRenderTargetPool.FindFreeElement(RHICmdList, FoamDesc, TexFoam, TEXT("FoamState"));
+	GRenderTargetPool.FindFreeElement(RHICmdList, FoamDesc, TexNewFoam, TEXT("NewFoamState"));
 
 	FPooledRenderTargetDesc RoughnessDesc = FPooledRenderTargetDesc::Create2DDesc(
 		FIntPoint(GridSizeX, 1),
@@ -149,8 +170,8 @@ void UDispersiveSWESimulator::AllocatePersistentTargets(FRHICommandListImmediate
 		TexCreate_ShaderResource | TexCreate_UAV,
 		false
 	);
-	GRenderTargetPool.FindFreeElement(RHICmdList, RoughnessDesc, TexRoughness, TEXT("SWE_RoughnessState"));
-	GRenderTargetPool.FindFreeElement(RHICmdList, RoughnessDesc, TexNewRoughness, TEXT("SWE_NewRoughnessState"));
+	GRenderTargetPool.FindFreeElement(RHICmdList, RoughnessDesc, TexRoughness, TEXT("RoughnessState"));
+	GRenderTargetPool.FindFreeElement(RHICmdList, RoughnessDesc, TexNewRoughness, TEXT("NewRoughnessState"));
 
 	// Complex/array targets use padded sizes and PF_G32R32F format
 	FPooledRenderTargetDesc ComplexArrayDesc = FPooledRenderTargetDesc::Create2DArrayDesc(
@@ -163,14 +184,16 @@ void UDispersiveSWESimulator::AllocatePersistentTargets(FRHICommandListImmediate
 		DepthLevels.Num()
 	);
 
-	GRenderTargetPool.FindFreeElement(RHICmdList, ComplexArrayDesc, TexHPos, TEXT("SWE_HPos"));
-	GRenderTargetPool.FindFreeElement(RHICmdList, ComplexArrayDesc, TexHNeg, TEXT("SWE_HNeg"));
-	GRenderTargetPool.FindFreeElement(RHICmdList, ComplexArrayDesc, TexDelHx, TEXT("SWE_DelHx"));
-	GRenderTargetPool.FindFreeElement(RHICmdList, ComplexArrayDesc, TexDelHy, TEXT("SWE_DelHy"));
-	GRenderTargetPool.FindFreeElement(RHICmdList, ComplexArrayDesc, TexDispX, TEXT("SWE_DispX"));
-	GRenderTargetPool.FindFreeElement(RHICmdList, ComplexArrayDesc, TexDispY, TEXT("SWE_DispY"));
-	GRenderTargetPool.FindFreeElement(RHICmdList, ComplexArrayDesc, TexQHatXArray, TEXT("SWE_qHatXArray"));
-	GRenderTargetPool.FindFreeElement(RHICmdList, ComplexArrayDesc, TexQHatYArray, TEXT("SWE_qHatYArray"));
+	GRenderTargetPool.FindFreeElement(RHICmdList, ComplexArrayDesc, TexHPos, TEXT("HPos"));
+	GRenderTargetPool.FindFreeElement(RHICmdList, ComplexArrayDesc, TexHNeg, TEXT("HNeg"));
+	GRenderTargetPool.FindFreeElement(RHICmdList, ComplexArrayDesc, TexDisp_x, TEXT("Disp_x"));
+	GRenderTargetPool.FindFreeElement(RHICmdList, ComplexArrayDesc, TexDisp_y, TEXT("Disp_y"));
+	GRenderTargetPool.FindFreeElement(RHICmdList, ComplexArrayDesc, TexDelH_x, TEXT("DelH_x"));
+	GRenderTargetPool.FindFreeElement(RHICmdList, ComplexArrayDesc, TexDelH_y, TEXT("DelH_y"));
+	GRenderTargetPool.FindFreeElement(RHICmdList, ComplexArrayDesc, TexFlow_x, TEXT("Flow_x"));
+	GRenderTargetPool.FindFreeElement(RHICmdList, ComplexArrayDesc, TexFlow_y, TEXT("Flow_y"));
+	GRenderTargetPool.FindFreeElement(RHICmdList, ComplexArrayDesc, TexqHat_x_array, TEXT("qHat_x_array"));
+	GRenderTargetPool.FindFreeElement(RHICmdList, ComplexArrayDesc, TexqHat_y_array, TEXT("qHat_y_array"));
 
 	FPooledRenderTargetDesc ComplexPaddedDesc = FPooledRenderTargetDesc::Create2DDesc(
 		FIntPoint(PaddedSizeX, PaddedSizeY),
@@ -180,17 +203,17 @@ void UDispersiveSWESimulator::AllocatePersistentTargets(FRHICommandListImmediate
 		TexCreate_ShaderResource | TexCreate_UAV,
 		false
 	);
-	GRenderTargetPool.FindFreeElement(RHICmdList, ComplexPaddedDesc, TexHHat, TEXT("SWE_hHat"));
-	GRenderTargetPool.FindFreeElement(RHICmdList, ComplexPaddedDesc, TexQHatX, TEXT("SWE_qHatX"));
-	GRenderTargetPool.FindFreeElement(RHICmdList, ComplexPaddedDesc, TexQHatY, TEXT("SWE_qHatY"));
+	GRenderTargetPool.FindFreeElement(RHICmdList, ComplexPaddedDesc, TexhHat, TEXT("hHat"));
+	GRenderTargetPool.FindFreeElement(RHICmdList, ComplexPaddedDesc, TexqHat_x, TEXT("qHat_x"));
+	GRenderTargetPool.FindFreeElement(RHICmdList, ComplexPaddedDesc, TexqHat_y, TEXT("qHat_y"));
 
 	// Initialize staging textures for double-buffered async readback
-	FRHITextureCreateDesc Desc0 = FRHITextureCreateDesc::Create2D(TEXT("SWE_Staging0"), GridSizeX, GridSizeY, PF_R32_FLOAT)
+	FRHITextureCreateDesc Desc0 = FRHITextureCreateDesc::Create2D(TEXT("Staging0"), GridSizeX, GridSizeY, PF_R32_FLOAT)
 		.SetFlags(TexCreate_CPUReadback)
 		.SetNumMips(1);
 	StagingTextures[0] = RHICreateTexture(Desc0);
 
-	FRHITextureCreateDesc Desc1 = FRHITextureCreateDesc::Create2D(TEXT("SWE_Staging1"), GridSizeX, GridSizeY, PF_R32_FLOAT)
+	FRHITextureCreateDesc Desc1 = FRHITextureCreateDesc::Create2D(TEXT("Staging1"), GridSizeX, GridSizeY, PF_R32_FLOAT)
 		.SetFlags(TexCreate_CPUReadback)
 		.SetNumMips(1);
 	StagingTextures[1] = RHICreateTexture(Desc1);
@@ -211,17 +234,18 @@ void UDispersiveSWESimulator::AssignConstants(FSimConstants& Constants) const
 	Constants.gridSizeY = GridSizeY;
 	Constants.cellSize = CellSize * 0.01f; // Convert cm to meters
 	Constants.timeStep = TimeStep;
-	Constants.spongeThickness = SpongeThickness;
 	Constants.minWaterHeight = MinWaterHeight * 0.01f; // Convert cm to meters
 	Constants.maxSafeDepth = CalculatedMaxSafeDepth;
 	Constants.surfaceTension = SurfaceTension;
 	Constants.density = Density;
 	Constants.diffusionIterations = DiffusionIterations;
-	Constants.diffusionTime = DiffusionTime;
+	Constants.maxDiffusionCells = MaxDiffusionCells;
 	Constants.diffusionPenalty = DiffusionPenalty;
 	Constants.slopeLimit = SlopeLimit;
 	Constants.cflCondition = CFLCondition;
 	Constants.gammaTransport = GammaTransport;
+	Constants.spongeThickness = SpongeThickness;
+	Constants.laplacianDamping = LaplacianDamping;
 	Constants.depthNum = DepthLevels.Num();
 	Constants.fetch = Fetch;
 	Constants.windSpeed = WindSpeed;
@@ -255,21 +279,70 @@ void UDispersiveSWESimulator::SetupInitialStates(FRHICommandListImmediate& RHICm
 
 	TUniformBufferRef<FSimConstants> ConstantBuffer = CreateUniformBufferImmediate(CPUConstants, EUniformBufferUsage::UniformBuffer_SingleFrame);
 
-	// Clear all persistent simulation state textures to zero to avoid uninitialized GPU garbage
+	// Clear all persistent simulation state textures to zero to avoid uninitialized GPU garbage (matching Sim2D.cpp)
 	{
 		FRDGBuilder GraphBuilder(RHICmdList);
+
+		// 1. 2D Scalar simulation fields
 		if (TexQ_x.IsValid()) AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(GraphBuilder.RegisterExternalTexture(TexQ_x)), FLinearColor::Black);
 		if (TexQ_y.IsValid()) AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(GraphBuilder.RegisterExternalTexture(TexQ_y)), FLinearColor::Black);
 		if (Texq_x.IsValid()) AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(GraphBuilder.RegisterExternalTexture(Texq_x)), FLinearColor::Black);
 		if (Texq_y.IsValid()) AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(GraphBuilder.RegisterExternalTexture(Texq_y)), FLinearColor::Black);
+		if (TexHOrig.IsValid()) AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(GraphBuilder.RegisterExternalTexture(TexHOrig)), FLinearColor::Black);
+		if (TexQOrig_x.IsValid()) AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(GraphBuilder.RegisterExternalTexture(TexQOrig_x)), FLinearColor::Black);
+		if (TexQOrig_y.IsValid()) AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(GraphBuilder.RegisterExternalTexture(TexQOrig_y)), FLinearColor::Black);
+		if (TexHPast.IsValid()) AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(GraphBuilder.RegisterExternalTexture(TexHPast)), FLinearColor::Black);
+		if (TexQPast_x.IsValid()) AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(GraphBuilder.RegisterExternalTexture(TexQPast_x)), FLinearColor::Black);
+		if (TexQPast_y.IsValid()) AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(GraphBuilder.RegisterExternalTexture(TexQPast_y)), FLinearColor::Black);
+		if (TexAlpha_H.IsValid()) AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(GraphBuilder.RegisterExternalTexture(TexAlpha_H)), FLinearColor::Black);
+		if (TexAlpha_Q_x.IsValid()) AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(GraphBuilder.RegisterExternalTexture(TexAlpha_Q_x)), FLinearColor::Black);
+		if (TexAlpha_Q_y.IsValid()) AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(GraphBuilder.RegisterExternalTexture(TexAlpha_Q_y)), FLinearColor::Black);
 		if (Texqbar_x.IsValid()) AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(GraphBuilder.RegisterExternalTexture(Texqbar_x)), FLinearColor::Black);
 		if (Texqbar_y.IsValid()) AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(GraphBuilder.RegisterExternalTexture(Texqbar_y)), FLinearColor::Black);
 		if (Texhtilde.IsValid()) AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(GraphBuilder.RegisterExternalTexture(Texhtilde)), FLinearColor::Black);
+		if (TexhtildePast.IsValid()) AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(GraphBuilder.RegisterExternalTexture(TexhtildePast)), FLinearColor::Black);
 		if (TexhtildeOld.IsValid()) AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(GraphBuilder.RegisterExternalTexture(TexhtildeOld)), FLinearColor::Black);
+		if (TexhtildeOldNext.IsValid()) AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(GraphBuilder.RegisterExternalTexture(TexhtildeOldNext)), FLinearColor::Black);
 		if (Texqtilde_x.IsValid()) AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(GraphBuilder.RegisterExternalTexture(Texqtilde_x)), FLinearColor::Black);
 		if (Texqtilde_y.IsValid()) AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(GraphBuilder.RegisterExternalTexture(Texqtilde_y)), FLinearColor::Black);
+		if (TexqtildePast_x.IsValid()) AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(GraphBuilder.RegisterExternalTexture(TexqtildePast_x)), FLinearColor::Black);
+		if (TexqtildePast_y.IsValid()) AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(GraphBuilder.RegisterExternalTexture(TexqtildePast_y)), FLinearColor::Black);
 		if (Texubar_x.IsValid()) AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(GraphBuilder.RegisterExternalTexture(Texubar_x)), FLinearColor::Black);
 		if (Texubar_y.IsValid()) AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(GraphBuilder.RegisterExternalTexture(Texubar_y)), FLinearColor::Black);
+		if (TexubarNew_x.IsValid()) AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(GraphBuilder.RegisterExternalTexture(TexubarNew_x)), FLinearColor::Black);
+		if (TexubarNew_y.IsValid()) AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(GraphBuilder.RegisterExternalTexture(TexubarNew_y)), FLinearColor::Black);
+		if (TexqAdvect_x.IsValid()) AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(GraphBuilder.RegisterExternalTexture(TexqAdvect_x)), FLinearColor::Black);
+		if (TexqAdvect_y.IsValid()) AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(GraphBuilder.RegisterExternalTexture(TexqAdvect_y)), FLinearColor::Black);
+		if (TexhPast.IsValid()) AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(GraphBuilder.RegisterExternalTexture(TexhPast)), FLinearColor::Black);
+		if (TexdelH_x.IsValid()) AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(GraphBuilder.RegisterExternalTexture(TexdelH_x)), FLinearColor::Black);
+		if (TexdelH_y.IsValid()) AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(GraphBuilder.RegisterExternalTexture(TexdelH_y)), FLinearColor::Black);
+		if (Texdisp_x.IsValid()) AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(GraphBuilder.RegisterExternalTexture(Texdisp_x)), FLinearColor::Black);
+		if (Texdisp_y.IsValid()) AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(GraphBuilder.RegisterExternalTexture(Texdisp_y)), FLinearColor::Black);
+		if (TexTerrainExportDummy.IsValid()) AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(GraphBuilder.RegisterExternalTexture(TexTerrainExportDummy)), FLinearColor::Black);
+
+		// 2. 2D Complex float2 fields
+		if (TexhHat.IsValid()) AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(GraphBuilder.RegisterExternalTexture(TexhHat)), FLinearColor::Black);
+		if (TexqHat_x.IsValid()) AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(GraphBuilder.RegisterExternalTexture(TexqHat_x)), FLinearColor::Black);
+		if (TexqHat_y.IsValid()) AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(GraphBuilder.RegisterExternalTexture(TexqHat_y)), FLinearColor::Black);
+
+		// 3. 2D Complex float2 array fields
+		if (TexDisp_x.IsValid()) AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(GraphBuilder.RegisterExternalTexture(TexDisp_x)), FLinearColor::Black);
+		if (TexDisp_y.IsValid()) AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(GraphBuilder.RegisterExternalTexture(TexDisp_y)), FLinearColor::Black);
+		if (TexDelH_x.IsValid()) AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(GraphBuilder.RegisterExternalTexture(TexDelH_x)), FLinearColor::Black);
+		if (TexDelH_y.IsValid()) AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(GraphBuilder.RegisterExternalTexture(TexDelH_y)), FLinearColor::Black);
+		if (TexFlow_x.IsValid()) AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(GraphBuilder.RegisterExternalTexture(TexFlow_x)), FLinearColor::Black);
+		if (TexFlow_y.IsValid()) AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(GraphBuilder.RegisterExternalTexture(TexFlow_y)), FLinearColor::Black);
+		if (TexqHat_x_array.IsValid()) AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(GraphBuilder.RegisterExternalTexture(TexqHat_x_array)), FLinearColor::Black);
+		if (TexqHat_y_array.IsValid()) AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(GraphBuilder.RegisterExternalTexture(TexqHat_y_array)), FLinearColor::Black);
+		if (TexHPos.IsValid()) AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(GraphBuilder.RegisterExternalTexture(TexHPos)), FLinearColor::Black);
+		if (TexHNeg.IsValid()) AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(GraphBuilder.RegisterExternalTexture(TexHNeg)), FLinearColor::Black);
+
+		// 4. Foam & Roughness
+		if (TexFoam.IsValid()) AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(GraphBuilder.RegisterExternalTexture(TexFoam)), FLinearColor::Black);
+		if (TexNewFoam.IsValid()) AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(GraphBuilder.RegisterExternalTexture(TexNewFoam)), FLinearColor::Black);
+		if (TexRoughness.IsValid()) AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(GraphBuilder.RegisterExternalTexture(TexRoughness)), FLinearColor::Black);
+		if (TexNewRoughness.IsValid()) AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(GraphBuilder.RegisterExternalTexture(TexNewRoughness)), FLinearColor::Black);
+
 		GraphBuilder.Execute();
 	}
 
@@ -282,7 +355,7 @@ void UDispersiveSWESimulator::SetupInitialStates(FRHICommandListImmediate& RHICm
 
 		// Import the live terrain height input render target
 		FRDGTextureRef TerrainInput_RDG = GraphBuilder.RegisterExternalTexture(
-			CreateRenderTarget(TerrainHeightInputRT->GetRenderTargetResource()->GetTexture2DRHI(), TEXT("SWE_TerrainInput"))
+			CreateRenderTarget(TerrainHeightInputRT->GetRenderTargetResource()->GetTexture2DRHI(), TEXT("TerrainInput"))
 		);
 
 		// Import the persistent states
@@ -300,25 +373,19 @@ void UDispersiveSWESimulator::SetupInitialStates(FRHICommandListImmediate& RHICm
 		InitParams->TerrainCaptureCameraZ = TerrainCaptureCameraZ;
 		InitParams->terrain = GraphBuilder.CreateSRV(TerrainInput_RDG);
 		InitParams->hOut = GraphBuilder.CreateUAV(h_RDG);
-		InitParams->H_elevOut = GraphBuilder.CreateUAV(H_RDG);
+		InitParams->H_Out = GraphBuilder.CreateUAV(H_RDG);
 		InitParams->terrainOut = GraphBuilder.CreateUAV(Terrain_RDG);
 
 		FRDGTextureRef TerrainExportRDG;
 		if (TerrainRT && TerrainRT->GetRenderTargetResource())
 		{
 			TerrainExportRDG = GraphBuilder.RegisterExternalTexture(
-				CreateRenderTarget(TerrainRT->GetRenderTargetResource()->GetTexture2DRHI(), TEXT("SWE_TerrainExport"))
+				CreateRenderTarget(TerrainRT->GetRenderTargetResource()->GetTexture2DRHI(), TEXT("TerrainExport"))
 			);
 		}
 		else
 		{
-			FRDGTextureDesc DummyDesc = FRDGTextureDesc::Create2D(
-				FIntPoint(GridSizeX, GridSizeY),
-				PF_R32_FLOAT,
-				FClearValueBinding::None,
-				TexCreate_ShaderResource | TexCreate_UAV
-			);
-			TerrainExportRDG = GraphBuilder.CreateTexture(DummyDesc, TEXT("SWE_TerrainExportDummy"));
+			TerrainExportRDG = GraphBuilder.RegisterExternalTexture(TexTerrainExportDummy);
 		}
 		InitParams->terrainOutCM = GraphBuilder.CreateUAV(TerrainExportRDG);
 
@@ -423,6 +490,51 @@ void UDispersiveSWESimulator::SetupInitialStates(FRHICommandListImmediate& RHICm
 
 		GraphBuilder.Execute();
 	}
+
+	// Export the captured terrain to a raw float32 file for standalone simulation testing
+	if (TexTerrain.IsValid())
+	{
+		FRHITexture2D* TerrainRHI = static_cast<FRHITexture2D*>(TexTerrain->GetRHI());
+		
+		FRHIGPUTextureReadback* GPUReadback = new FRHIGPUTextureReadback(TEXT("TerrainExportReadback"));
+		GPUReadback->EnqueueCopy(RHICmdList, TerrainRHI);
+
+		// Force GPU to finish all work so we can read immediately (fine since this is one-time startup)
+		RHICmdList.BlockUntilGPUIdle();
+
+		if (GPUReadback->IsReady())
+		{
+			int32 OutWidth = 0;
+			int32 OutHeight = 0;
+			float* FloatData = static_cast<float*>(GPUReadback->Lock(OutWidth, &OutHeight));
+			if (FloatData)
+			{
+				TArray<float> RawFloatData;
+				RawFloatData.SetNumUninitialized(GridSizeX * GridSizeY);
+				// Stride / Row pitch can sometimes be larger than GridSizeX, so copy row by row
+				for (int32 y = 0; y < GridSizeY; ++y)
+				{
+					FMemory::Memcpy(&RawFloatData[y * GridSizeX], &FloatData[y * OutWidth], GridSizeX * sizeof(float));
+				}
+				
+				GPUReadback->Unlock();
+
+				FString ExportFilePath = FPaths::ProjectDir() / TEXT("terrain_captured.raw");
+				FArchive* Ar = IFileManager::Get().CreateFileWriter(*ExportFilePath);
+				if (Ar)
+				{
+					Ar->Serialize(RawFloatData.GetData(), RawFloatData.Num() * sizeof(float));
+					delete Ar;
+					UE_LOG(LogTemp, Warning, TEXT("DispersiveSWESim: Successfully exported captured terrain to %s"), *ExportFilePath);
+				}
+				else
+				{
+					UE_LOG(LogTemp, Error, TEXT("DispersiveSWESim: Failed to create export file for terrain!"));
+				}
+			}
+		}
+		delete GPUReadback;
+	}
 }
 
 void UDispersiveSWESimulator::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) 
@@ -449,10 +561,7 @@ void UDispersiveSWESimulator::ExecuteSimulation_RenderThread(
 {
 	FRDGBuilder GraphBuilder(RHICmdList);
 
-	// RDG_EVENT_SCOPE(GraphBuilder, "DispersiveSWESimulation");
-	// RDG_GPU_STAT_SCOPE(GraphBuilder, DispersiveSWESim);
-
-	// Import persistent buffers
+	// Import persistent buffers (matching Sim2D.h)
 	FRDGTextureRef Terrain_RDG = GraphBuilder.RegisterExternalTexture(TexTerrain);
 	FRDGTextureRef H_RDG = GraphBuilder.RegisterExternalTexture(TexH);
 	FRDGTextureRef Qx_RDG = GraphBuilder.RegisterExternalTexture(TexQ_x);
@@ -460,52 +569,55 @@ void UDispersiveSWESimulator::ExecuteSimulation_RenderThread(
 	FRDGTextureRef h_RDG = GraphBuilder.RegisterExternalTexture(Texh);
 	FRDGTextureRef qx_RDG = GraphBuilder.RegisterExternalTexture(Texq_x);
 	FRDGTextureRef qy_RDG = GraphBuilder.RegisterExternalTexture(Texq_y);
+	FRDGTextureRef HOrig_RDG = GraphBuilder.RegisterExternalTexture(TexHOrig);
+	FRDGTextureRef QOrig_x_RDG = GraphBuilder.RegisterExternalTexture(TexQOrig_x);
+	FRDGTextureRef QOrig_y_RDG = GraphBuilder.RegisterExternalTexture(TexQOrig_y);
+	FRDGTextureRef HPast_RDG = GraphBuilder.RegisterExternalTexture(TexHPast);
+	FRDGTextureRef QPast_x_RDG = GraphBuilder.RegisterExternalTexture(TexQPast_x);
+	FRDGTextureRef QPast_y_RDG = GraphBuilder.RegisterExternalTexture(TexQPast_y);
+	FRDGTextureRef alpha_H_RDG = GraphBuilder.RegisterExternalTexture(TexAlpha_H);
+	FRDGTextureRef alpha_Q_x_RDG = GraphBuilder.RegisterExternalTexture(TexAlpha_Q_x);
+	FRDGTextureRef alpha_Q_y_RDG = GraphBuilder.RegisterExternalTexture(TexAlpha_Q_y);
 	FRDGTextureRef hbar_RDG = GraphBuilder.RegisterExternalTexture(Texhbar);
 	FRDGTextureRef hbarOld_RDG = GraphBuilder.RegisterExternalTexture(TexhbarOld);
 	FRDGTextureRef qbarx_RDG = GraphBuilder.RegisterExternalTexture(Texqbar_x);
 	FRDGTextureRef qbary_RDG = GraphBuilder.RegisterExternalTexture(Texqbar_y);
 	FRDGTextureRef htilde_RDG = GraphBuilder.RegisterExternalTexture(Texhtilde);
+	FRDGTextureRef htildePast_RDG = GraphBuilder.RegisterExternalTexture(TexhtildePast);
 	FRDGTextureRef htildeOld_RDG = GraphBuilder.RegisterExternalTexture(TexhtildeOld);
+	FRDGTextureRef htildeOldNext_RDG = GraphBuilder.RegisterExternalTexture(TexhtildeOldNext);
 	FRDGTextureRef qtildex_RDG = GraphBuilder.RegisterExternalTexture(Texqtilde_x);
 	FRDGTextureRef qtildey_RDG = GraphBuilder.RegisterExternalTexture(Texqtilde_y);
 	FRDGTextureRef ubarx_RDG = GraphBuilder.RegisterExternalTexture(Texubar_x);
 	FRDGTextureRef ubary_RDG = GraphBuilder.RegisterExternalTexture(Texubar_y);
-	FRDGTextureRef HPos_RDG = GraphBuilder.RegisterExternalTexture(TexHPos);
-	FRDGTextureRef HNeg_RDG = GraphBuilder.RegisterExternalTexture(TexHNeg);
-	FRDGTextureRef alpha_H = GraphBuilder.RegisterExternalTexture(TexAlpha_H);
-	FRDGTextureRef alpha_Qx = GraphBuilder.RegisterExternalTexture(TexAlpha_Qx);
-	FRDGTextureRef alpha_Qy = GraphBuilder.RegisterExternalTexture(TexAlpha_Qy);
-	FRDGTextureRef HNext = GraphBuilder.RegisterExternalTexture(TexHNext);
-	FRDGTextureRef QNextX = GraphBuilder.RegisterExternalTexture(TexQNextX);
-	FRDGTextureRef QNextY = GraphBuilder.RegisterExternalTexture(TexQNextY);
+	FRDGTextureRef ubarNew_x_RDG = GraphBuilder.RegisterExternalTexture(TexubarNew_x);
+	FRDGTextureRef ubarNew_y_RDG = GraphBuilder.RegisterExternalTexture(TexubarNew_y);
+	FRDGTextureRef qtildePast_x_RDG = GraphBuilder.RegisterExternalTexture(TexqtildePast_x);
+	FRDGTextureRef qtildePast_y_RDG = GraphBuilder.RegisterExternalTexture(TexqtildePast_y);
+	FRDGTextureRef qAdvect_x_RDG = GraphBuilder.RegisterExternalTexture(TexqAdvect_x);
+	FRDGTextureRef qAdvect_y_RDG = GraphBuilder.RegisterExternalTexture(TexqAdvect_y);
+	FRDGTextureRef hPast_RDG = GraphBuilder.RegisterExternalTexture(TexhPast);
+	FRDGTextureRef hHat_RDG = GraphBuilder.RegisterExternalTexture(TexhHat);
+	FRDGTextureRef qHat_x_RDG = GraphBuilder.RegisterExternalTexture(TexqHat_x);
+	FRDGTextureRef qHat_y_RDG = GraphBuilder.RegisterExternalTexture(TexqHat_y);
+	FRDGTextureRef qHat_x_array_RDG = GraphBuilder.RegisterExternalTexture(TexqHat_x_array);
+	FRDGTextureRef qHat_y_array_RDG = GraphBuilder.RegisterExternalTexture(TexqHat_y_array);
 
 	// FFT Wave propagation outputs (DEPTH_NUM layers)
-	FRDGTextureRef DelHx = GraphBuilder.RegisterExternalTexture(TexDelHx);
-	FRDGTextureRef DelHy = GraphBuilder.RegisterExternalTexture(TexDelHy);
-	FRDGTextureRef DispX = GraphBuilder.RegisterExternalTexture(TexDispX);
-	FRDGTextureRef DispY = GraphBuilder.RegisterExternalTexture(TexDispY);
+	FRDGTextureRef HPos_RDG = GraphBuilder.RegisterExternalTexture(TexHPos);
+	FRDGTextureRef HNeg_RDG = GraphBuilder.RegisterExternalTexture(TexHNeg);
+	FRDGTextureRef Disp_x_RDG = GraphBuilder.RegisterExternalTexture(TexDisp_x);
+	FRDGTextureRef Disp_y_RDG = GraphBuilder.RegisterExternalTexture(TexDisp_y);
+	FRDGTextureRef DelH_x_RDG = GraphBuilder.RegisterExternalTexture(TexDelH_x);
+	FRDGTextureRef DelH_y_RDG = GraphBuilder.RegisterExternalTexture(TexDelH_y);
+	FRDGTextureRef Flow_x_RDG = GraphBuilder.RegisterExternalTexture(TexFlow_x);
+	FRDGTextureRef Flow_y_RDG = GraphBuilder.RegisterExternalTexture(TexFlow_y);
 
 	// Wind wave outputs
-	FRDGTextureRef delHx = GraphBuilder.RegisterExternalTexture(TexDelHx_Out);
-	FRDGTextureRef delHy = GraphBuilder.RegisterExternalTexture(TexDelHy_Out);
-	FRDGTextureRef dispX = GraphBuilder.RegisterExternalTexture(TexDispX_Out);
-	FRDGTextureRef dispY = GraphBuilder.RegisterExternalTexture(TexDispY_Out);
-
-	// eWave outputs
-	FRDGTextureRef hHat = GraphBuilder.RegisterExternalTexture(TexHHat);
-	FRDGTextureRef qHatX = GraphBuilder.RegisterExternalTexture(TexQHatX);
-	FRDGTextureRef qHatY = GraphBuilder.RegisterExternalTexture(TexQHatY);
-	FRDGTextureRef qHatXArray = GraphBuilder.RegisterExternalTexture(TexQHatXArray);
-	FRDGTextureRef qHatYArray = GraphBuilder.RegisterExternalTexture(TexQHatYArray);
-
-	// Transport outputs
-	FRDGTextureRef qtildePastX = GraphBuilder.RegisterExternalTexture(TexQTildePastX);
-	FRDGTextureRef qtildePastY = GraphBuilder.RegisterExternalTexture(TexQTildePastY);
-	FRDGTextureRef qAdvectX = GraphBuilder.RegisterExternalTexture(TexQAdvectX);
-	FRDGTextureRef qAdvectY = GraphBuilder.RegisterExternalTexture(TexQAdvectY);
-	FRDGTextureRef hPast = GraphBuilder.RegisterExternalTexture(TexHPast_Transport);
-	FRDGTextureRef ubarNewX = GraphBuilder.RegisterExternalTexture(TexUbarNewX);
-	FRDGTextureRef ubarNewY = GraphBuilder.RegisterExternalTexture(TexUbarNewY);
+	FRDGTextureRef delH_x_RDG = GraphBuilder.RegisterExternalTexture(TexdelH_x);
+	FRDGTextureRef delH_y_RDG = GraphBuilder.RegisterExternalTexture(TexdelH_y);
+	FRDGTextureRef disp_x_RDG = GraphBuilder.RegisterExternalTexture(Texdisp_x);
+	FRDGTextureRef disp_y_RDG = GraphBuilder.RegisterExternalTexture(Texdisp_y);
 
 	// 3. Create Uniform Buffer
 	TUniformBufferRef<FSimConstants> ConstantBuffer = CreateUniformBufferImmediate(Constants, EUniformBufferUsage::UniformBuffer_SingleFrame);
@@ -530,42 +642,40 @@ void UDispersiveSWESimulator::ExecuteSimulation_RenderThread(
 		Params->qIn_x = GraphBuilder.CreateSRV(qx_RDG);
 		Params->qIn_y = GraphBuilder.CreateSRV(qy_RDG);
 		Params->terrain = GraphBuilder.CreateSRV(Terrain_RDG);
-		Params->H_elevOut = GraphBuilder.CreateUAV(H_RDG);
-		Params->Q_bulkOut_x = GraphBuilder.CreateUAV(Qx_RDG);
-		Params->Q_bulkOut_y = GraphBuilder.CreateUAV(Qy_RDG);
+		Params->H_Out = GraphBuilder.CreateUAV(H_RDG);
+		Params->Q_Out_x = GraphBuilder.CreateUAV(Qx_RDG);
+		Params->Q_Out_y = GraphBuilder.CreateUAV(Qy_RDG);
 
 		FComputeShaderUtils::AddPass(GraphBuilder, RDG_EVENT_NAME("SWE_Decomp_Init"), ERDGPassFlags::Compute, Shader, Params, GridGroups);
 	}
+
+	// Copy initial fields to Orig fields before starting Jacobi solver (matching Sim2D.cpp CopyField)
+	AddCopyTexturePass(GraphBuilder, H_RDG, HOrig_RDG);
+	AddCopyTexturePass(GraphBuilder, Qx_RDG, QOrig_x_RDG);
+	AddCopyTexturePass(GraphBuilder, Qy_RDG, QOrig_y_RDG);
 
 	// CalcDiffusionCoeffs
 	{
 		TShaderMapRef<FCalcDiffusionCoeffsCS> Shader(ShaderMap);
 		FCalcDiffusionCoeffsCS::FParameters* Params = GraphBuilder.AllocParameters<FCalcDiffusionCoeffsCS::FParameters>();
 		Params->SimConstants = ConstantBuffer;
-		Params->H_elevIn = GraphBuilder.CreateSRV(H_RDG);
+		Params->H_In = GraphBuilder.CreateSRV(H_RDG);
 		Params->terrain = GraphBuilder.CreateSRV(Terrain_RDG);
-		Params->alpha_HOut = GraphBuilder.CreateUAV(alpha_H);
-		Params->alpha_QOut_x = GraphBuilder.CreateUAV(alpha_Qx);
-		Params->alpha_QOut_y = GraphBuilder.CreateUAV(alpha_Qy);
+		Params->alpha_HOut = GraphBuilder.CreateUAV(alpha_H_RDG);
+		Params->alpha_QOut_x = GraphBuilder.CreateUAV(alpha_Q_x_RDG);
+		Params->alpha_QOut_y = GraphBuilder.CreateUAV(alpha_Q_y_RDG);
 
 		FComputeShaderUtils::AddPass(GraphBuilder, RDG_EVENT_NAME("SWE_Decomp_Coeffs"), ERDGPassFlags::Compute, Shader, Params, GridGroups);
 	}
 
-	// Diffusion loop - low pass filter H and Q using implicit Jacobi solver
+	// Diffusion loop - low pass filter H and Q using implicit Jacobi solver (ping-ponging H/HPast, Q_x/QPast_x, Q_y/QPast_y)
 	{
-		FRDGTextureRef H_Orig = GraphBuilder.CreateTexture(H_RDG->Desc, TEXT("SWE_H_Orig"));
-		AddCopyTexturePass(GraphBuilder, H_RDG, H_Orig);
-		FRDGTextureRef Qx_Orig = GraphBuilder.CreateTexture(Qx_RDG->Desc, TEXT("SWE_Qx_Orig"));
-		AddCopyTexturePass(GraphBuilder, Qx_RDG, Qx_Orig);
-		FRDGTextureRef Qy_Orig = GraphBuilder.CreateTexture(Qy_RDG->Desc, TEXT("SWE_Qy_Orig"));
-		AddCopyTexturePass(GraphBuilder, Qy_RDG, Qy_Orig);
-
 		FRDGTextureRef H_Src = H_RDG;
-		FRDGTextureRef H_Dst = HNext;
+		FRDGTextureRef H_Dst = HPast_RDG;
 		FRDGTextureRef Qx_Src = Qx_RDG;
-		FRDGTextureRef Qx_Dst = QNextX;
+		FRDGTextureRef Qx_Dst = QPast_x_RDG;
 		FRDGTextureRef Qy_Src = Qy_RDG;
-		FRDGTextureRef Qy_Dst = QNextY;
+		FRDGTextureRef Qy_Dst = QPast_y_RDG;
 
 		TShaderMapRef<FDiffusionStepCS> Shader(ShaderMap);
 		for (int32 j = 0; j < Constants.diffusionIterations; j++)
@@ -573,18 +683,18 @@ void UDispersiveSWESimulator::ExecuteSimulation_RenderThread(
 			FDiffusionStepCS::FParameters* Params = GraphBuilder.AllocParameters<FDiffusionStepCS::FParameters>();
 			Params->SimConstants = ConstantBuffer;
 			Params->terrain = GraphBuilder.CreateSRV(Terrain_RDG);
-			Params->H_elevOrig = GraphBuilder.CreateSRV(H_Orig);
-			Params->Q_bulkOrig_x = GraphBuilder.CreateSRV(Qx_Orig);
-			Params->Q_bulkOrig_y = GraphBuilder.CreateSRV(Qy_Orig);
-			Params->H_elevPast = GraphBuilder.CreateSRV(H_Src);
-			Params->Q_bulkPast_x = GraphBuilder.CreateSRV(Qx_Src);
-			Params->Q_bulkPast_y = GraphBuilder.CreateSRV(Qy_Src);
-			Params->alpha_HIn = GraphBuilder.CreateSRV(alpha_H);
-			Params->alpha_QIn_x = GraphBuilder.CreateSRV(alpha_Qx);
-			Params->alpha_QIn_y = GraphBuilder.CreateSRV(alpha_Qy);
-			Params->H_elevOut = GraphBuilder.CreateUAV(H_Dst);
-			Params->Q_bulkOut_x = GraphBuilder.CreateUAV(Qx_Dst);
-			Params->Q_bulkOut_y = GraphBuilder.CreateUAV(Qy_Dst);
+			Params->H_Orig = GraphBuilder.CreateSRV(HOrig_RDG);
+			Params->Q_Orig_x = GraphBuilder.CreateSRV(QOrig_x_RDG);
+			Params->Q_Orig_y = GraphBuilder.CreateSRV(QOrig_y_RDG);
+			Params->H_Past = GraphBuilder.CreateSRV(H_Src);
+			Params->Q_Past_x = GraphBuilder.CreateSRV(Qx_Src);
+			Params->Q_Past_y = GraphBuilder.CreateSRV(Qy_Src);
+			Params->alpha_HIn = GraphBuilder.CreateSRV(alpha_H_RDG);
+			Params->alpha_QIn_x = GraphBuilder.CreateSRV(alpha_Q_x_RDG);
+			Params->alpha_QIn_y = GraphBuilder.CreateSRV(alpha_Q_y_RDG);
+			Params->H_Out = GraphBuilder.CreateUAV(H_Dst);
+			Params->Q_Out_x = GraphBuilder.CreateUAV(Qx_Dst);
+			Params->Q_Out_y = GraphBuilder.CreateUAV(Qy_Dst);
 
 			FComputeShaderUtils::AddPass(GraphBuilder, RDG_EVENT_NAME("SWE_Decomp_Diffusion"), ERDGPassFlags::Compute, Shader, Params, GridGroups);
 
@@ -594,19 +704,22 @@ void UDispersiveSWESimulator::ExecuteSimulation_RenderThread(
 			Swap(Qy_Src, Qy_Dst);
 		}
 
-		// Ensure final result is back in H_RDG, Qx_RDG, Qy_RDG (only copy if it ended up in the temporary buffers)
+		// If Jacobi loop ended on Past buffer (odd iteration count), swap persistent pointers without copying
 		if (H_Src != H_RDG)
 		{
-			AddCopyTexturePass(GraphBuilder, H_Src, H_RDG);
+			Swap(TexH, TexHPast);
 		}
 		if (Qx_Src != Qx_RDG)
 		{
-			AddCopyTexturePass(GraphBuilder, Qx_Src, Qx_RDG);
+			Swap(TexQ_x, TexQPast_x);
 		}
 		if (Qy_Src != Qy_RDG)
 		{
-			AddCopyTexturePass(GraphBuilder, Qy_Src, Qy_RDG);
+			Swap(TexQ_y, TexQPast_y);
 		}
+		H_RDG = H_Src;
+		Qx_RDG = Qx_Src;
+		Qy_RDG = Qy_Src;
 	}
 
 	// DecomposeFields
@@ -614,9 +727,9 @@ void UDispersiveSWESimulator::ExecuteSimulation_RenderThread(
 		TShaderMapRef<FDecomposeFieldsCS> Shader(ShaderMap);
 		FDecomposeFieldsCS::FParameters* Params = GraphBuilder.AllocParameters<FDecomposeFieldsCS::FParameters>();
 		Params->SimConstants = ConstantBuffer;
-		Params->H_elevIn = GraphBuilder.CreateSRV(H_RDG);
-		Params->Q_bulkIn_x = GraphBuilder.CreateSRV(Qx_RDG);
-		Params->Q_bulkIn_y = GraphBuilder.CreateSRV(Qy_RDG);
+		Params->H_In = GraphBuilder.CreateSRV(H_RDG);
+		Params->Q_In_x = GraphBuilder.CreateSRV(Qx_RDG);
+		Params->Q_In_y = GraphBuilder.CreateSRV(Qy_RDG);
 		Params->hIn = GraphBuilder.CreateSRV(h_RDG);
 		Params->qIn_x = GraphBuilder.CreateSRV(qx_RDG);
 		Params->qIn_y = GraphBuilder.CreateSRV(qy_RDG);
@@ -638,7 +751,7 @@ void UDispersiveSWESimulator::ExecuteSimulation_RenderThread(
 		Params->SimConstants = ConstantBuffer;
 		Params->hIn = GraphBuilder.CreateSRV(h_RDG);
 		Params->terrain = GraphBuilder.CreateSRV(Terrain_RDG);
-		Params->H_elevOut = GraphBuilder.CreateUAV(H_RDG);
+		Params->H_Out = GraphBuilder.CreateUAV(H_RDG);
 
 		FComputeShaderUtils::AddPass(GraphBuilder, RDG_EVENT_NAME("SWE_Decomp_ReH"), ERDGPassFlags::Compute, Shader, Params, GridGroups);
 	}
@@ -654,85 +767,65 @@ void UDispersiveSWESimulator::ExecuteSimulation_RenderThread(
 		Params->SimConstants = ConstantBuffer;
 		Params->HPosIn = GraphBuilder.CreateSRV(HPos_RDG);
 		Params->HNegIn = GraphBuilder.CreateSRV(HNeg_RDG);
-		Params->DelHxOut = GraphBuilder.CreateUAV(DelHx);
-		Params->DelHyOut = GraphBuilder.CreateUAV(DelHy);
-		Params->DispXOut = GraphBuilder.CreateUAV(DispX);
-		Params->DispYOut = GraphBuilder.CreateUAV(DispY);
+		Params->DispXOut = GraphBuilder.CreateUAV(Disp_x_RDG);
+		Params->DispYOut = GraphBuilder.CreateUAV(Disp_y_RDG);
+		Params->DelHXOut = GraphBuilder.CreateUAV(DelH_x_RDG);
+		Params->DelHYOut = GraphBuilder.CreateUAV(DelH_y_RDG);
+		Params->FlowXOut = GraphBuilder.CreateUAV(Flow_x_RDG);
+		Params->FlowYOut = GraphBuilder.CreateUAV(Flow_y_RDG);
 
 		FComputeShaderUtils::AddPass(GraphBuilder, RDG_EVENT_NAME("SWE_FFTWaves_Propagate"), ERDGPassFlags::Compute, Shader, Params, ComplexArrayGroups);
-	}
-
-	// Run Inverse FFTs
-	DispatchFFT_RenderThread(GraphBuilder, DelHx, PaddedSizeX, PaddedSizeY, true, Constants.depthNum);
-	DispatchFFT_RenderThread(GraphBuilder, DelHy, PaddedSizeX, PaddedSizeY, true, Constants.depthNum);
-	DispatchFFT_RenderThread(GraphBuilder, DispX, PaddedSizeX, PaddedSizeY, true, Constants.depthNum);
-	DispatchFFT_RenderThread(GraphBuilder, DispY, PaddedSizeX, PaddedSizeY, true, Constants.depthNum);
-
-	// Interpolate outputs between depths
-	{
-		TShaderMapRef<FInterpCS> Shader(ShaderMap);
-		FInterpCS::FParameters* Params = GraphBuilder.AllocParameters<FInterpCS::FParameters>();
-		Params->SimConstants = ConstantBuffer;
-		Params->HxIn = GraphBuilder.CreateSRV(DelHx);
-		Params->HyIn = GraphBuilder.CreateSRV(DelHy);
-		Params->DxIn = GraphBuilder.CreateSRV(DispX);
-		Params->DyIn = GraphBuilder.CreateSRV(DispY);
-		Params->hbarIn = GraphBuilder.CreateSRV(hbar_RDG);
-		Params->HxOut = GraphBuilder.CreateUAV(delHx);
-		Params->HyOut = GraphBuilder.CreateUAV(delHy);
-		Params->DxOut = GraphBuilder.CreateUAV(dispX);
-		Params->DyOut = GraphBuilder.CreateUAV(dispY);
-
-		FComputeShaderUtils::AddPass(GraphBuilder, RDG_EVENT_NAME("SWE_FFTWaves_Interp"), ERDGPassFlags::Compute, Shader, Params, GridGroups);
 	}
 
 	// ----------------------------------------------------
 	// EWAVE DISPERSION STEP
 	// ----------------------------------------------------
 
-	// Transfer variables to fourier domain
+	// Transfer variables to fourier domain (reading htildeOld as SRV, writing htildeOldNext as UAV)
 	{
-		// Copy htildeOld to read-only copy
-		FRDGTextureRef htildeOldCopy = GraphBuilder.RegisterExternalTexture(TexHtildeOldCopy);
-		AddCopyTexturePass(GraphBuilder, htildeOld_RDG, htildeOldCopy);
-
 		TShaderMapRef<FTransferToFFTCS> Shader(ShaderMap);
 		FTransferToFFTCS::FParameters* Params = GraphBuilder.AllocParameters<FTransferToFFTCS::FParameters>();
 		Params->SimConstants = ConstantBuffer;
 		Params->htildeIn = GraphBuilder.CreateSRV(htilde_RDG);
+		Params->htildeOldIn = GraphBuilder.CreateSRV(htildeOld_RDG);
 		Params->qtildeIn_x = GraphBuilder.CreateSRV(qtildex_RDG);
 		Params->qtildeIn_y = GraphBuilder.CreateSRV(qtildey_RDG);
-		Params->htildeOldCopy = GraphBuilder.CreateSRV(htildeOldCopy);   // Read-only copy of previous htildeOld
-		Params->htildeOldOut = GraphBuilder.CreateUAV(htildeOld_RDG);  // Write the new htildeOld value
-		Params->hHat = GraphBuilder.CreateUAV(hHat);
-		Params->qHat_x = GraphBuilder.CreateUAV(qHatX);
-		Params->qHat_y = GraphBuilder.CreateUAV(qHatY);
+		Params->htildeOldNext = GraphBuilder.CreateUAV(htildeOldNext_RDG);
+		Params->hHat = GraphBuilder.CreateUAV(hHat_RDG);
+		Params->qHat_x = GraphBuilder.CreateUAV(qHat_x_RDG);
+		Params->qHat_y = GraphBuilder.CreateUAV(qHat_y_RDG);
 
 		FComputeShaderUtils::AddPass(GraphBuilder, RDG_EVENT_NAME("SWE_eWave_Transfer"), ERDGPassFlags::Compute, Shader, Params, PaddedGroups);
+
+		// Ping-pong swap persistent pointers for htildeOld
+		Swap(TexhtildeOld, TexhtildeOldNext);
+		Swap(htildeOld_RDG, htildeOldNext_RDG);
 	}
 
 	// Run Forward FFTs
-	DispatchFFT_RenderThread(GraphBuilder, hHat, PaddedSizeX, PaddedSizeY, false, 1);
-	DispatchFFT_RenderThread(GraphBuilder, qHatX, PaddedSizeX, PaddedSizeY, false, 1);
-	DispatchFFT_RenderThread(GraphBuilder, qHatY, PaddedSizeX, PaddedSizeY, false, 1);
+	DispatchFFT_RenderThread(GraphBuilder, hHat_RDG, PaddedSizeX, PaddedSizeY, false, 1);
+	DispatchFFT_RenderThread(GraphBuilder, qHat_x_RDG, PaddedSizeX, PaddedSizeY, false, 1);
+	DispatchFFT_RenderThread(GraphBuilder, qHat_y_RDG, PaddedSizeX, PaddedSizeY, false, 1);
 
 	// Compute eWave dispersion updates
 	{
 		TShaderMapRef<FCalcEWaveCS> Shader(ShaderMap);
 		FCalcEWaveCS::FParameters* Params = GraphBuilder.AllocParameters<FCalcEWaveCS::FParameters>();
 		Params->SimConstants = ConstantBuffer;
-		Params->hhat = GraphBuilder.CreateSRV(hHat);
-		Params->qhat_x = GraphBuilder.CreateSRV(qHatX);
-		Params->qhat_y = GraphBuilder.CreateSRV(qHatY);
-		Params->qhat_x_array = GraphBuilder.CreateUAV(qHatXArray);
-		Params->qhat_y_array = GraphBuilder.CreateUAV(qHatYArray);
+		Params->hhat = GraphBuilder.CreateSRV(hHat_RDG);
+		Params->qhat_x = GraphBuilder.CreateSRV(qHat_x_RDG);
+		Params->qhat_y = GraphBuilder.CreateSRV(qHat_y_RDG);
+		Params->Flow_x = GraphBuilder.CreateSRV(Flow_x_RDG);
+		Params->Flow_y = GraphBuilder.CreateSRV(Flow_y_RDG);
+		Params->qhat_x_array = GraphBuilder.CreateUAV(qHat_x_array_RDG);
+		Params->qhat_y_array = GraphBuilder.CreateUAV(qHat_y_array_RDG);
 
 		FComputeShaderUtils::AddPass(GraphBuilder, RDG_EVENT_NAME("SWE_eWave_Calc"), ERDGPassFlags::Compute, Shader, Params, ComplexArrayGroups);
 	}
 
 	// Run Inverse FFTs
-	DispatchFFT_RenderThread(GraphBuilder, qHatXArray, PaddedSizeX, PaddedSizeY, true, Constants.depthNum);
-	DispatchFFT_RenderThread(GraphBuilder, qHatYArray, PaddedSizeX, PaddedSizeY, true, Constants.depthNum);
+	DispatchFFT_RenderThread(GraphBuilder, qHat_x_array_RDG, PaddedSizeX, PaddedSizeY, true, Constants.depthNum);
+	DispatchFFT_RenderThread(GraphBuilder, qHat_y_array_RDG, PaddedSizeX, PaddedSizeY, true, Constants.depthNum);
 
 	// Interpolate between depths to get new qtilde
 	{
@@ -740,8 +833,8 @@ void UDispersiveSWESimulator::ExecuteSimulation_RenderThread(
 		FInterpQCS::FParameters* Params = GraphBuilder.AllocParameters<FInterpQCS::FParameters>();
 		Params->SimConstants = ConstantBuffer;
 		Params->hbarIn = GraphBuilder.CreateSRV(hbar_RDG);
-		Params->qHat_x_array = GraphBuilder.CreateSRV(qHatXArray);
-		Params->qHat_y_array = GraphBuilder.CreateSRV(qHatYArray);
+		Params->qHat_x_array = GraphBuilder.CreateSRV(qHat_x_array_RDG);
+		Params->qHat_y_array = GraphBuilder.CreateSRV(qHat_y_array_RDG);
 		Params->qtildeOut_x = GraphBuilder.CreateUAV(qtildex_RDG);
 		Params->qtildeOut_y = GraphBuilder.CreateUAV(qtildey_RDG);
 
@@ -751,6 +844,30 @@ void UDispersiveSWESimulator::ExecuteSimulation_RenderThread(
 	// ----------------------------------------------------
 	// SWE BULK STEP
 	// ----------------------------------------------------
+
+	// Run Inverse FFTs on Disp and DelH fields
+	DispatchFFT_RenderThread(GraphBuilder, Disp_x_RDG, PaddedSizeX, PaddedSizeY, true, Constants.depthNum);
+	DispatchFFT_RenderThread(GraphBuilder, Disp_y_RDG, PaddedSizeX, PaddedSizeY, true, Constants.depthNum);
+	DispatchFFT_RenderThread(GraphBuilder, DelH_x_RDG, PaddedSizeX, PaddedSizeY, true, Constants.depthNum);
+	DispatchFFT_RenderThread(GraphBuilder, DelH_y_RDG, PaddedSizeX, PaddedSizeY, true, Constants.depthNum);
+
+	// Interpolate wind wave outputs (Disp -> disp, DelH -> delH) between depths
+	{
+		TShaderMapRef<FInterpCS> Shader(ShaderMap);
+		FInterpCS::FParameters* Params = GraphBuilder.AllocParameters<FInterpCS::FParameters>();
+		Params->SimConstants = ConstantBuffer;
+		Params->HxIn = GraphBuilder.CreateSRV(DelH_x_RDG);
+		Params->HyIn = GraphBuilder.CreateSRV(DelH_y_RDG);
+		Params->DxIn = GraphBuilder.CreateSRV(Disp_x_RDG);
+		Params->DyIn = GraphBuilder.CreateSRV(Disp_y_RDG);
+		Params->hbarIn = GraphBuilder.CreateSRV(hbar_RDG);
+		Params->HxOut = GraphBuilder.CreateUAV(delH_x_RDG);
+		Params->HyOut = GraphBuilder.CreateUAV(delH_y_RDG);
+		Params->DxOut = GraphBuilder.CreateUAV(disp_x_RDG);
+		Params->DyOut = GraphBuilder.CreateUAV(disp_y_RDG);
+
+		FComputeShaderUtils::AddPass(GraphBuilder, RDG_EVENT_NAME("SWE_FFTWaves_Interp"), ERDGPassFlags::Compute, Shader, Params, GridGroups);
+	}
 
 	// CalcUbar
 	{
@@ -774,46 +891,48 @@ void UDispersiveSWESimulator::ExecuteSimulation_RenderThread(
 		Params->ubarIn_x = GraphBuilder.CreateSRV(ubarx_RDG);
 		Params->ubarIn_y = GraphBuilder.CreateSRV(ubary_RDG);
 		Params->hbarIn = GraphBuilder.CreateSRV(hbar_RDG);
-		Params->H_elevIn = GraphBuilder.CreateSRV(H_RDG);
-		Params->delH_x = GraphBuilder.CreateSRV(delHx);
-		Params->delH_y = GraphBuilder.CreateSRV(delHy);
-		Params->ubarNewOut_x = GraphBuilder.CreateUAV(ubarNewX);
-		Params->ubarNewOut_y = GraphBuilder.CreateUAV(ubarNewY);
+		Params->H_In = GraphBuilder.CreateSRV(H_RDG);
+		Params->delH_x = GraphBuilder.CreateSRV(delH_x_RDG);
+		Params->delH_y = GraphBuilder.CreateSRV(delH_y_RDG);
+		Params->terrain = GraphBuilder.CreateSRV(Terrain_RDG);
+		Params->ubarNewOut_x = GraphBuilder.CreateUAV(ubarNew_x_RDG);
+		Params->ubarNewOut_y = GraphBuilder.CreateUAV(ubarNew_y_RDG);
 		Params->qbarOut_x = GraphBuilder.CreateUAV(qbarx_RDG);
 		Params->qbarOut_y = GraphBuilder.CreateUAV(qbary_RDG);
 
 		FComputeShaderUtils::AddPass(GraphBuilder, RDG_EVENT_NAME("SWE_CalcSWE"), ERDGPassFlags::Compute, Shader, Params, GridGroups);
 	}
 
-	// Swap hbar and hbarOld
-	AddCopyTexturePass(GraphBuilder, hbar_RDG, hbarOld_RDG);
+	// Ping-pong swap hbar and hbarOld pointers (matching Sim2D.cpp std::swap(hbar, hbarOld))
+	Swap(Texhbar, TexhbarOld);
+	Swap(hbar_RDG, hbarOld_RDG);
 
 	// ----------------------------------------------------
 	// TRANSPORT & COMBINE STEP
 	// ----------------------------------------------------
 
+	// Ping-pong swap pointers for qtilde and htilde before UpdateTilde (matching Sim2D.cpp std::swap(qtilde_x, qtildePast_x), etc.)
+	Swap(Texqtilde_x, TexqtildePast_x);
+	Swap(qtildex_RDG, qtildePast_x_RDG);
+	Swap(Texqtilde_y, TexqtildePast_y);
+	Swap(qtildey_RDG, qtildePast_y_RDG);
+	Swap(Texhtilde, TexhtildePast);
+	Swap(htilde_RDG, htildePast_RDG);
+
 	// UpdateTilde (Advect wave height and flow rate)
 	{
-		AddCopyTexturePass(GraphBuilder, qtildex_RDG, qtildePastX);
-		AddCopyTexturePass(GraphBuilder, qtildey_RDG, qtildePastY);
-
-		// Copy htilde to read-only copy
-		FRDGTextureRef htildeCopy = GraphBuilder.RegisterExternalTexture(TexHtildeCopy);
-		AddCopyTexturePass(GraphBuilder, htilde_RDG, htildeCopy);
-
 		TShaderMapRef<FUpdateTildeCS> Shader(ShaderMap);
 		FUpdateTildeCS::FParameters* Params = GraphBuilder.AllocParameters<FUpdateTildeCS::FParameters>();
 		Params->SimConstants = ConstantBuffer;
-		Params->ubarNewIn_x = GraphBuilder.CreateSRV(ubarNewX);
+		Params->ubarNewIn_x = GraphBuilder.CreateSRV(ubarNew_x_RDG);
 		Params->ubarIn_x = GraphBuilder.CreateSRV(ubarx_RDG);
-		Params->ubarNewIn_y = GraphBuilder.CreateSRV(ubarNewY);
+		Params->ubarNewIn_y = GraphBuilder.CreateSRV(ubarNew_y_RDG);
 		Params->ubarIn_y = GraphBuilder.CreateSRV(ubary_RDG);
-		Params->qtildePast_x = GraphBuilder.CreateSRV(qtildePastX);
-		Params->qtildePast_y = GraphBuilder.CreateSRV(qtildePastY);
+		Params->qtildePast_x = GraphBuilder.CreateSRV(qtildePast_x_RDG);
+		Params->qtildePast_y = GraphBuilder.CreateSRV(qtildePast_y_RDG);
 		Params->hIn = GraphBuilder.CreateSRV(h_RDG);
-		Params->htildeCopy = GraphBuilder.CreateSRV(htildeCopy);     // Read-only copy of previous htilde
-		Params->terrain = GraphBuilder.CreateSRV(Terrain_RDG);
-		Params->htildeOut = GraphBuilder.CreateUAV(htilde_RDG);    // Write the new htilde value
+		Params->htildePast = GraphBuilder.CreateSRV(htildePast_RDG);
+		Params->htildeOut = GraphBuilder.CreateUAV(htilde_RDG);
 		Params->qtildeOut_x = GraphBuilder.CreateUAV(qtildex_RDG);
 		Params->qtildeOut_y = GraphBuilder.CreateUAV(qtildey_RDG);
 
@@ -825,17 +944,18 @@ void UDispersiveSWESimulator::ExecuteSimulation_RenderThread(
 		TShaderMapRef<FCalcQAdvectCS> Shader(ShaderMap);
 		FCalcQAdvectCS::FParameters* Params = GraphBuilder.AllocParameters<FCalcQAdvectCS::FParameters>();
 		Params->SimConstants = ConstantBuffer;
-		Params->ubarNewIn_x = GraphBuilder.CreateSRV(ubarNewX);
-		Params->ubarNewIn_y = GraphBuilder.CreateSRV(ubarNewY);
+		Params->ubarNewIn_x = GraphBuilder.CreateSRV(ubarNew_x_RDG);
+		Params->ubarNewIn_y = GraphBuilder.CreateSRV(ubarNew_y_RDG);
 		Params->htildeIn = GraphBuilder.CreateSRV(htilde_RDG);
-		Params->qAdvectOut_x = GraphBuilder.CreateUAV(qAdvectX);
-		Params->qAdvectOut_y = GraphBuilder.CreateUAV(qAdvectY);
+		Params->qAdvectOut_x = GraphBuilder.CreateUAV(qAdvect_x_RDG);
+		Params->qAdvectOut_y = GraphBuilder.CreateUAV(qAdvect_y_RDG);
 
 		FComputeShaderUtils::AddPass(GraphBuilder, RDG_EVENT_NAME("SWE_CalcQAdvect"), ERDGPassFlags::Compute, Shader, Params, GridGroups);
 	}
 
-	// Save past height
-	AddCopyTexturePass(GraphBuilder, h_RDG, hPast);
+	// Ping-pong swap h and hPast pointers before IntegrateH (matching Sim2D.cpp std::swap(h, hPast))
+	Swap(Texh, TexhPast);
+	Swap(h_RDG, hPast_RDG);
 
 	// IntegrateH
 	{
@@ -844,11 +964,11 @@ void UDispersiveSWESimulator::ExecuteSimulation_RenderThread(
 		Params->SimConstants = ConstantBuffer;
 		Params->qbarIn_x = GraphBuilder.CreateSRV(qbarx_RDG);
 		Params->qtildeIn_x = GraphBuilder.CreateSRV(qtildex_RDG);
-		Params->qAdvectIn_x = GraphBuilder.CreateSRV(qAdvectX);
+		Params->qAdvectIn_x = GraphBuilder.CreateSRV(qAdvect_x_RDG);
 		Params->qbarIn_y = GraphBuilder.CreateSRV(qbary_RDG);
 		Params->qtildeIn_y = GraphBuilder.CreateSRV(qtildey_RDG);
-		Params->qAdvectIn_y = GraphBuilder.CreateSRV(qAdvectY);
-		Params->hPast = GraphBuilder.CreateSRV(hPast);
+		Params->qAdvectIn_y = GraphBuilder.CreateSRV(qAdvect_y_RDG);
+		Params->hPast = GraphBuilder.CreateSRV(hPast_RDG);
 		Params->terrain = GraphBuilder.CreateSRV(Terrain_RDG);
 		Params->hOut = GraphBuilder.CreateUAV(h_RDG);
 		Params->qOut_x = GraphBuilder.CreateUAV(qx_RDG);
@@ -868,7 +988,7 @@ void UDispersiveSWESimulator::ExecuteSimulation_RenderThread(
 		Params->SimConstants = ConstantBuffer;
 		Params->hIn = GraphBuilder.CreateSRV(h_RDG);
 		Params->terrain = GraphBuilder.CreateSRV(Terrain_RDG);
-		Params->H_elevOut = GraphBuilder.CreateUAV(H_RDG);
+		Params->H_Out = GraphBuilder.CreateUAV(H_RDG);
 
 		FComputeShaderUtils::AddPass(GraphBuilder, RDG_EVENT_NAME("SWE_Final_ReH"), ERDGPassFlags::Compute, Shader, Params, GridGroups);
 	}
@@ -877,22 +997,22 @@ void UDispersiveSWESimulator::ExecuteSimulation_RenderThread(
 	if (DisplacementPastRT && DisplacementPastRT->GetRenderTargetResource() &&
 		DisplacementRT && DisplacementRT->GetRenderTargetResource())
 	{
-		FRDGTextureRef SrcRDG = GraphBuilder.RegisterExternalTexture(CreateRenderTarget(DisplacementRT->GetRenderTargetResource()->GetTexture2DRHI(), TEXT("SWE_DispCurrent_CopySrc")));
-		FRDGTextureRef DestRDG = GraphBuilder.RegisterExternalTexture(CreateRenderTarget(DisplacementPastRT->GetRenderTargetResource()->GetTexture2DRHI(), TEXT("SWE_DispPast_CopyDest")));
+		FRDGTextureRef SrcRDG = GraphBuilder.RegisterExternalTexture(CreateRenderTarget(DisplacementRT->GetRenderTargetResource()->GetTexture2DRHI(), TEXT("DispCurrent_CopySrc")));
+		FRDGTextureRef DestRDG = GraphBuilder.RegisterExternalTexture(CreateRenderTarget(DisplacementPastRT->GetRenderTargetResource()->GetTexture2DRHI(), TEXT("DispPast_CopyDest")));
 		AddCopyTexturePass(GraphBuilder, SrcRDG, DestRDG);
 	}
 
 	// Export Displacement: Combine dispX, dispY, and height H_RDG into a single PF_FloatRGBA Render Target
 	if (DisplacementRT && DisplacementRT->GetRenderTargetResource() && H_RDG)
 	{
-		FRDGTextureRef ExportDispDest = GraphBuilder.RegisterExternalTexture(CreateRenderTarget(DisplacementRT->GetRenderTargetResource()->GetTexture2DRHI(), TEXT("SWE_DispExport")));
+		FRDGTextureRef ExportDispDest = GraphBuilder.RegisterExternalTexture(CreateRenderTarget(DisplacementRT->GetRenderTargetResource()->GetTexture2DRHI(), TEXT("DispExport")));
 
 		TShaderMapRef<FScaleCopyDisplacementCS> ScaleCopyCS(GetGlobalShaderMap(GMaxRHIFeatureLevel));
 		FScaleCopyDisplacementCS::FParameters* PassParams = GraphBuilder.AllocParameters<FScaleCopyDisplacementCS::FParameters>();
 		PassParams->SimConstants = ConstantBuffer;
 		PassParams->ScaleFactor = 100.0f; // m to cm
-		PassParams->inDispX = GraphBuilder.CreateSRV(dispX);
-		PassParams->inDispY = GraphBuilder.CreateSRV(dispY);
+		PassParams->inDispX = GraphBuilder.CreateSRV(disp_x_RDG);
+		PassParams->inDispY = GraphBuilder.CreateSRV(disp_y_RDG);
 		PassParams->inHeight = GraphBuilder.CreateSRV(H_RDG);
 		PassParams->outDisp4 = GraphBuilder.CreateUAV(ExportDispDest);
 
@@ -906,29 +1026,24 @@ void UDispersiveSWESimulator::ExecuteSimulation_RenderThread(
 		);
 	}
 
-	// Import persistent foam texture state
+	// Import persistent foam texture states
 	FRDGTextureRef PreviousFoam_RDG = GraphBuilder.RegisterExternalTexture(TexFoam);
-
-	// Import persistent foam update target
 	FRDGTextureRef NewFoamRDG = GraphBuilder.RegisterExternalTexture(TexNewFoam);
-
-	// Initialize NewFoamRDG with previous foam by default
-	AddCopyTexturePass(GraphBuilder, PreviousFoam_RDG, NewFoamRDG);
 
 	// Export Surface Normal, Foam & JacobianDet: Calculate combined fields using unified compute shader
 	if (NormalRT && NormalRT->GetRenderTargetResource() &&
 		FoamRT && FoamRT->GetRenderTargetResource() &&
 		JacobianDetRT && JacobianDetRT->GetRenderTargetResource())
 	{
-		FRDGTextureRef ExportNormalDest = GraphBuilder.RegisterExternalTexture(CreateRenderTarget(NormalRT->GetRenderTargetResource()->GetTexture2DRHI(), TEXT("SWE_NormalExport")));
-		FRDGTextureRef ExportFoamDest = GraphBuilder.RegisterExternalTexture(CreateRenderTarget(FoamRT->GetRenderTargetResource()->GetTexture2DRHI(), TEXT("SWE_FoamExport")));
-		FRDGTextureRef ExportJacobianDest = GraphBuilder.RegisterExternalTexture(CreateRenderTarget(JacobianDetRT->GetRenderTargetResource()->GetTexture2DRHI(), TEXT("SWE_JacobianExport")));
+		FRDGTextureRef ExportNormalDest = GraphBuilder.RegisterExternalTexture(CreateRenderTarget(NormalRT->GetRenderTargetResource()->GetTexture2DRHI(), TEXT("NormalExport")));
+		FRDGTextureRef ExportFoamDest = GraphBuilder.RegisterExternalTexture(CreateRenderTarget(FoamRT->GetRenderTargetResource()->GetTexture2DRHI(), TEXT("FoamExport")));
+		FRDGTextureRef ExportJacobianDest = GraphBuilder.RegisterExternalTexture(CreateRenderTarget(JacobianDetRT->GetRenderTargetResource()->GetTexture2DRHI(), TEXT("JacobianExport")));
 
 		TShaderMapRef<FCalcSurfaceNormalAndFoamCS> NormalAndFoamCS(GetGlobalShaderMap(GMaxRHIFeatureLevel));
 		FCalcSurfaceNormalAndFoamCS::FParameters* PassParams = GraphBuilder.AllocParameters<FCalcSurfaceNormalAndFoamCS::FParameters>();
 		PassParams->SimConstants = ConstantBuffer;
-		PassParams->inDispX = GraphBuilder.CreateSRV(dispX);
-		PassParams->inDispY = GraphBuilder.CreateSRV(dispY);
+		PassParams->inDispX = GraphBuilder.CreateSRV(disp_x_RDG);
+		PassParams->inDispY = GraphBuilder.CreateSRV(disp_y_RDG);
 		PassParams->inHeight = GraphBuilder.CreateSRV(H_RDG);
 		PassParams->inPreviousFoam = GraphBuilder.CreateSRV(PreviousFoam_RDG);
 		PassParams->outNormal = GraphBuilder.CreateUAV(ExportNormalDest);
@@ -946,10 +1061,10 @@ void UDispersiveSWESimulator::ExecuteSimulation_RenderThread(
 
 		// Copy the updated foam values to the user-facing FoamRT Render Target
 		AddCopyTexturePass(GraphBuilder, NewFoamRDG, ExportFoamDest);
-	}
 
-	// Copy the new foam state back to the persistent TexFoam for next frame
-	AddCopyTexturePass(GraphBuilder, NewFoamRDG, PreviousFoam_RDG);
+		// Ping-pong swap persistent foam textures for next frame
+		Swap(TexFoam, TexNewFoam);
+	}
 
 	// ----------------------------------------------------
 	// CALCULATE ROUGHNESS LOOK-UP TABLE (LUT)
@@ -957,15 +1072,12 @@ void UDispersiveSWESimulator::ExecuteSimulation_RenderThread(
 	if (TexRoughness.IsValid())
 	{
 		FRDGTextureRef PreviousRoughness_RDG = GraphBuilder.RegisterExternalTexture(TexRoughness);
-
 		FRDGTextureRef NewRoughnessRDG = GraphBuilder.RegisterExternalTexture(TexNewRoughness);
-
-		AddCopyTexturePass(GraphBuilder, PreviousRoughness_RDG, NewRoughnessRDG);
 
 		if (RoughnessRT && RoughnessRT->GetRenderTargetResource() && NormalRT && NormalRT->GetRenderTargetResource())
 		{
-			FRDGTextureRef ExportRoughnessDest = GraphBuilder.RegisterExternalTexture(CreateRenderTarget(RoughnessRT->GetRenderTargetResource()->GetTexture2DRHI(), TEXT("SWE_RoughnessExport")));
-			FRDGTextureRef CurrentNormal_RDG = GraphBuilder.RegisterExternalTexture(CreateRenderTarget(NormalRT->GetRenderTargetResource()->GetTexture2DRHI(), TEXT("SWE_NormalForRoughness")));
+			FRDGTextureRef ExportRoughnessDest = GraphBuilder.RegisterExternalTexture(CreateRenderTarget(RoughnessRT->GetRenderTargetResource()->GetTexture2DRHI(), TEXT("RoughnessExport")));
+			FRDGTextureRef CurrentNormal_RDG = GraphBuilder.RegisterExternalTexture(CreateRenderTarget(NormalRT->GetRenderTargetResource()->GetTexture2DRHI(), TEXT("NormalForRoughness")));
 
 			TShaderMapRef<FCalcRoughnessLUTCS> RoughnessCS(GetGlobalShaderMap(GMaxRHIFeatureLevel));
 			FCalcRoughnessLUTCS::FParameters* PassParams = GraphBuilder.AllocParameters<FCalcRoughnessLUTCS::FParameters>();
@@ -987,9 +1099,10 @@ void UDispersiveSWESimulator::ExecuteSimulation_RenderThread(
 			);
 
 			AddCopyTexturePass(GraphBuilder, NewRoughnessRDG, ExportRoughnessDest);
-		}
 
-		AddCopyTexturePass(GraphBuilder, NewRoughnessRDG, PreviousRoughness_RDG);
+			// Ping-pong swap persistent roughness textures for next frame
+			Swap(TexRoughness, TexNewRoughness);
+		}
 	}
 
 	// ----------------------------------------------------
@@ -999,7 +1112,7 @@ void UDispersiveSWESimulator::ExecuteSimulation_RenderThread(
 	{
 		FTextureRHIRef CurrentStagingTexture = StagingTextures[StagingWriteIndex];
 		
-		TRefCountPtr<IPooledRenderTarget> StagingPooled = CreateRenderTarget(CurrentStagingTexture, TEXT("SWE_StagingTexture"));
+		TRefCountPtr<IPooledRenderTarget> StagingPooled = CreateRenderTarget(CurrentStagingTexture, TEXT("StagingTexture"));
 		FRDGTextureRef StagingRDG = GraphBuilder.RegisterExternalTexture(StagingPooled);
 		AddCopyTexturePass(GraphBuilder, H_RDG, StagingRDG);
 	}

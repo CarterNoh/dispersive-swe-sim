@@ -9,18 +9,9 @@
 #include "TextureResource.h"
 
 
-#if WITH_EDITOR
-#include "LandscapeProxy.h"
-#include "LandscapeInfo.h"
-#endif
-
 ASWESimulatorActor::ASWESimulatorActor()
 {
     PrimaryActorTick.bCanEverTick = false;
-
-#if WITH_EDITORONLY_DATA
-    bIsSpatiallyLoaded = false;
-#endif
 
     // 1. Root Component
     USceneComponent* Root = CreateDefaultSubobject<USceneComponent>(TEXT("Root"));
@@ -327,23 +318,6 @@ void ASWESimulatorActor::FitToTerrain()
         FVector Origin = FVector::ZeroVector;
         FVector BoxExtent = FVector::ZeroVector;
         bool bBoundsFound = false;
-
-#if WITH_EDITOR
-        if (ALandscapeProxy* LandscapeProxy = Cast<ALandscapeProxy>(TerrainActor))
-        {
-            if (ULandscapeInfo* LandscapeInfo = LandscapeProxy->GetLandscapeInfo())
-            {
-                FBox CompleteBounds = LandscapeInfo->GetCompleteBounds();
-                if (CompleteBounds.IsValid)
-                {
-                    Origin = CompleteBounds.GetCenter();
-                    BoxExtent = CompleteBounds.GetExtent();
-                    CapturedWorldWidth = FMath::Max(BoxExtent.X, BoxExtent.Y) * 2.0f;
-                    bBoundsFound = true;
-                }
-            }
-        }
-#endif
 
         if (!bBoundsFound)
         {

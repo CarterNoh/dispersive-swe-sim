@@ -1,5 +1,8 @@
 #define NOMINMAX
 #include <windows.h>
+#include <fstream>
+#include <iostream>
+#include <algorithm>
 #include "Sim2D.h"
 
 // ********************************************************************************************************************
@@ -9,6 +12,55 @@
 std::vector<float> Sim::SetTerrain() {
 	std::vector<float> terrain(GRIDSIZE_X * GRIDSIZE_Y, 0.0f);
 	float boundary = 2.f * abs(TERRAIN_HEIGHT);
+
+	if (TERRAIN_TYPE == 7) { // Load from terrain_captured.raw and resample
+		// Size to resample from (should match the exported file's resolution)
+		const int rawWidth = 512;
+		const int rawHeight = 512;
+
+		std::ifstream file("terrain_captured.raw", std::ios::binary);
+		if (file.is_open()) {
+			std::vector<float> rawData(rawWidth * rawHeight);
+			file.read(reinterpret_cast<char*>(rawData.data()), rawData.size() * sizeof(float));
+			file.close();
+
+			for (int y = 0; y < GRIDSIZE_Y; y++) {
+				for (int x = 0; x < GRIDSIZE_X; x++) {
+					// Map coordinates from [0, GRIDSIZE - 1] to [0, rawSize - 1]
+					float rx = (float)(GRIDSIZE_X - x - 1) / (GRIDSIZE_X - 1) * (rawWidth - 1);
+					float ry = (float)y / (GRIDSIZE_Y - 1) * (rawHeight - 1);
+
+					int x0 = (int)rx;
+					int y0 = (int)ry;
+					int x1 = std::min(x0 + 1, rawWidth - 1);
+					int y1 = std::min(y0 + 1, rawHeight - 1);
+
+					float tx = rx - x0;
+					float ty = ry - y0;
+
+					float h00 = rawData[y0 * rawWidth + x0];
+					float h10 = rawData[y0 * rawWidth + x1];
+					float h01 = rawData[y1 * rawWidth + x0];
+					float h11 = rawData[y1 * rawWidth + x1];
+
+					float height = (1.f - tx) * (1.f - ty) * h00 +
+					               tx * (1.f - ty) * h10 +
+					               (1.f - tx) * ty * h01 +
+					               tx * ty * h11;
+
+					int i = idx(x, y);
+					terrain[i] = height; // Already scaled and in meters
+				}
+			}
+			std::cout << "Successfully loaded and resampled terrain_captured.raw float32 heightmap!" << std::endl;
+		}
+		else {
+			std::cerr << "Failed to open terrain_captured.raw! Defaulting to flat terrain." << std::endl;
+			std::fill(terrain.begin(), terrain.end(), TERRAIN_HEIGHT);
+		}
+		return terrain;
+	}
+
     for (int y = 0; y < GRIDSIZE_Y; y++) {
         for (int x = 0; x < GRIDSIZE_X; x++) {
             float xf = (float)x / (GRIDSIZE_X - 1);
@@ -33,8 +85,8 @@ std::vector<float> Sim::SetTerrain() {
             }
             else if (TERRAIN_TYPE == 4) { // Beach Scene
                 // Simple slope with some noise for "sand dunes"
-                float dunes = 0.05f * sin(20.f * yf); 
-                terrain[i] = TERRAIN_HEIGHT + TERRAIN_SCALE * (xf * (1 + dunes));
+                float dunes = 0.05f * sin(20.f * xf); 
+                terrain[i] = TERRAIN_HEIGHT + TERRAIN_SCALE * (yf * (1 + dunes));
             }
 			else if (TERRAIN_TYPE == 5) {// 1D Hill in center of scene
 				// Bumpy hill near middle of scene
@@ -67,7 +119,7 @@ std::vector<float> Sim::SetWater(std::vector<float>& terrain) {
 				// do nothing
 			}
 			else if (WATER_TYPE == 1) { // Step/Dam Break
-                if (xf < 0.3f) 
+                if (yf < 0.3f) 
 					waterSurface += WATER_SCALE;
             }
 			else if (WATER_TYPE == 2) { // Diagonal slope on 1st half
@@ -75,8 +127,8 @@ std::vector<float> Sim::SetWater(std::vector<float>& terrain) {
 			}
             else if (WATER_TYPE == 3) { // Localized splash (Gaussian)
                 float dist = sqrt(pow(xf - 0.5f, 2) + pow(yf - 0.5f, 2));
-                if (dist < 0.1f) 
-					waterSurface += WATER_SCALE * cos(dist * PI * 5.0f);
+                if (dist < 0.05f) 
+					waterSurface += WATER_SCALE; // * cos(dist * PI * 5.0f);
             }
 			else if (WATER_TYPE == 4) { // Surface Ripples
 				waterSurface += 0.5f * WATER_SCALE * (cos(2.f * PI * x / 37.f) + cos(2.f * PI * y / 49.f)); // this needs some work
@@ -238,30 +290,23 @@ void Sim::FFTStep() {
     // Propagate waves
 	gpu->DispatchPadded(PropagateWaves, 
 		{HPos.srv, HNeg.srv},
-		{DelH_x.uav, DelH_y.uav, Disp_x.uav, Disp_y.uav}, DEPTH_NUM);
-	gpu->ExecuteFFT(DelH_x.uav,  paddedSizeX, paddedSizeY, true, DEPTH_NUM);
-	gpu->ExecuteFFT(DelH_y.uav,  paddedSizeX, paddedSizeY, true, DEPTH_NUM);
-	gpu->ExecuteFFT(Disp_x.uav,  paddedSizeX, paddedSizeY, true, DEPTH_NUM);
-	gpu->ExecuteFFT(Disp_y.uav,  paddedSizeX, paddedSizeY, true, DEPTH_NUM);
-
-	// Interpolate outputs between depths
-	gpu->Dispatch(Interp, 
-		{DelH_x.srv, DelH_y.srv, Disp_x.srv, Disp_y.srv, hbar.srv}, 
-		{delH_x.uav, delH_y.uav, disp_x.uav, disp_y.uav});
+		{HProp.uav, Disp_x.uav, Disp_y.uav, DelH_x.uav, DelH_y.uav, Flow_x.uav, Flow_y.uav}, DEPTH_NUM);
 }
 
 void Sim::eWaveStep() {
 	// Copy variables to fourier domain & perform FFT
 	gpu->DispatchPadded(TransferToFFT, 
-		{htilde.srv, qtilde_x.srv, qtilde_y.srv},
-		{htildeOld.uav, hHat.uav, qHat_x.uav, qHat_y.uav});
+		{htilde.srv, htildeOld.srv, qtilde_x.srv, qtilde_y.srv},
+		{htildeOldNext.uav, hHat.uav, qHat_x.uav, qHat_y.uav});
 	gpu->ExecuteFFT(hHat.uav, paddedSizeX, paddedSizeY, false);
 	gpu->ExecuteFFT(qHat_x.uav, paddedSizeX, paddedSizeY, false);
 	gpu->ExecuteFFT(qHat_y.uav, paddedSizeX, paddedSizeY, false);
 
+	std::swap(htildeOldNext, htildeOld);
+
 	// Compute eWave
 	gpu->DispatchPadded(CalcEWave, 
-		{hHat.srv, qHat_x.srv, qHat_y.srv},
+		{hHat.srv, qHat_x.srv, qHat_y.srv, Flow_x.srv, Flow_y.srv},
 		{qHat_x_array.uav, qHat_y_array.uav}, DEPTH_NUM);
 
 	// Inverse FFT fourier variables
@@ -277,6 +322,17 @@ void Sim::eWaveStep() {
 void Sim::SWEStep() {
 	// SWE bulk simulation using [Stelling03]
 
+	gpu->ExecuteFFT(HProp.uav,  paddedSizeX, paddedSizeY, true, DEPTH_NUM);
+	gpu->ExecuteFFT(Disp_x.uav,  paddedSizeX, paddedSizeY, true, DEPTH_NUM);
+	gpu->ExecuteFFT(Disp_y.uav,  paddedSizeX, paddedSizeY, true, DEPTH_NUM);
+	gpu->ExecuteFFT(DelH_x.uav,  paddedSizeX, paddedSizeY, true, DEPTH_NUM);
+	gpu->ExecuteFFT(DelH_y.uav,  paddedSizeX, paddedSizeY, true, DEPTH_NUM);
+
+	// Interpolate outputs between depths
+	gpu->Dispatch(Interp, 
+		{DelH_x.srv, DelH_y.srv, Disp_x.srv, Disp_y.srv, hbar.srv, HProp.srv}, 
+		{delH_x.uav, delH_y.uav, disp_x.uav, disp_y.uav, hFFT.uav});
+
 	// qbar to ubar using hbar from last timestep	
 	gpu->Dispatch(CalcUbar, 
 		{qbar_x.srv, qbar_y.srv, hbarOld.srv,}, 
@@ -285,7 +341,7 @@ void Sim::SWEStep() {
 	// Compute time derivative of u_bar and integrate to get new u_bar, then 
 	// transfer back to flow rate using upwinding on most recent hbar
 	gpu->Dispatch(CalcSWE,
-		{ubar_x.srv, ubar_y.srv, hbar.srv, H.srv, delH_x.srv, delH_y.srv}, 
+		{ubar_x.srv, ubar_y.srv, hbar.srv, H.srv, delH_x.srv, delH_y.srv, terrain.srv}, 
 		{ubarNew_x.uav, ubarNew_y.uav, qbar_x.uav, qbar_y.uav});
 
 	// store current hbar for next timestep
@@ -298,9 +354,11 @@ void Sim::TransportStep() {
 	// Adjust qtilde to account for advection by ubar, using cubic sampling to get better accuracy.
 	std::swap(qtilde_x, qtildePast_x);
 	std::swap(qtilde_y, qtildePast_y);
+	std::swap(htilde, htildePast);
+
 	gpu->Dispatch(UpdateTilde, 
 		{ubarNew_x.srv, ubar_x.srv, ubarNew_y.srv, ubar_y.srv, 
-			qtildePast_x.srv, qtildePast_y.srv, h.srv, htilde.srv},
+			htildePast.srv, qtildePast_x.srv, qtildePast_y.srv},
 		{htilde.uav, qtilde_x.uav, qtilde_y.uav});	
 	
 	// Advection of h through ubar:

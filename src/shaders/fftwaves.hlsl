@@ -10,18 +10,19 @@ cbuffer Constants : register(b0) {
     int gridSizeY; 
     float cellSize;
     float timeStep;
-    int spongeThickness;
     float minWaterHeight;
     float surfaceTension;
     float density;
     // Decomposition Params
     int diffusionIterations;
-    float diffusionTime;
+    int maxDiffusionCells;
     float diffusionPenalty;
     // SWE & Transport Params
     float slopeLimit;
     float cflCondition;
     float gammaTransport;
+    int spongeThickness;
+    float laplacianDamping;
     // eWave Params
     int depthNum;
     // FFT Wave Params
@@ -39,7 +40,7 @@ cbuffer Constants : register(b0) {
     int paddedGridSizeX;
     int paddedGridSizeY;
     float maxSafeDepth;
-    float simConstantPadding[2];
+    float simConstantPadding[1];
 };
 
 #define G 9.80665f
@@ -162,23 +163,24 @@ float2 ComplexMul(float2 a, float2 b) {
 
 ///////////////// Spectrum Functions /////////////////
 float2 Dispersion(float k, float h) {
-    h = min(h, maxSafeDepth);
+    // h = min(h, maxSafeDepth);
+
     // // Deep Water Dispersion
     // float omega = sqrt(G * k);
     // float dwdk = G / (2 * omega)
     
-    // // Depth-Limited Dispersion
-    // float kh = k * h;
-    // float tanh_kh = SafeTanh(kh)
-    // float omega = sqrt(G * k * tanh_kh);
-    // float dwdk = G * (tanh_kh + kh / (cosh(kh) * cosh(kh))) / (2 * omega);
-
-    // Capillary Dispersion
+    // Depth-Limited Dispersion
     float kh = k * h;
     float tanh_kh = SafeTanh(kh);
-    float term = G * k + pow(k, 3) * surfaceTension / density;
-    float omega = sqrt((term) * tanh_kh);
-    float dwdk = term * (h * pow(1.f / cosh(kh), 2) + tanh_kh) / (2 * omega);
+    float omega = sqrt(G * k * tanh_kh);
+    float dwdk = G * (tanh_kh + kh / (cosh(kh) * cosh(kh))) / (2 * omega);
+
+    // // Capillary Dispersion
+    // float kh = k * h;
+    // float tanh_kh = SafeTanh(kh);
+    // float term = G * k + pow(k, 3) * surfaceTension / density;
+    // float omega = sqrt((term) * tanh_kh);
+    // float dwdk = term * (h * pow(1.f / cosh(kh), 2) + tanh_kh) / (2 * omega);
 
     return float2(omega, dwdk);
 }
@@ -385,19 +387,25 @@ void PopulateSpectrum(uint3 id : SV_DispatchThreadID) {
 
 Texture2DArray<float2>   HPosIn : register(t0);
 Texture2DArray<float2>   HNegIn : register(t1);
-RWTexture2DArray<float2> DelHxOut : register(u0);
-RWTexture2DArray<float2> DelHyOut : register(u1);
-RWTexture2DArray<float2> DispXOut : register(u2);
-RWTexture2DArray<float2> DispYOut : register(u3);
+RWTexture2DArray<float2> HPropOut : register(u0);
+RWTexture2DArray<float2> DispXOut : register(u1);
+RWTexture2DArray<float2> DispYOut : register(u2);
+RWTexture2DArray<float2> DelHXOut : register(u3);
+RWTexture2DArray<float2> DelHYOut : register(u4);
+RWTexture2DArray<float2> FlowXOut : register(u5);
+RWTexture2DArray<float2> FlowYOut : register(u6);
 [numthreads(16, 16, 1)]
 void PropagateWaves(uint3 id : SV_DispatchThreadID) {
     if (id.x >= (uint)(paddedGridSizeX) || id.y >= (uint)(paddedGridSizeY)) return;
 
     if (id.x == 0 && id.y == 0) {
-        DelHxOut[id] = float2(0.f, 0.f);
-        DelHyOut[id] = float2(0.f, 0.f);
+        HPropOut[id] = float2(0.f, 0.f);
         DispXOut[id] = float2(0.f, 0.f);
         DispYOut[id] = float2(0.f, 0.f);
+        DelHXOut[id] = float2(0.f, 0.f);
+        DelHYOut[id] = float2(0.f, 0.f);
+        FlowXOut[id] = float2(0.f, 0.f);
+        FlowYOut[id] = float2(0.f, 0.f);
         return;
     }
 
@@ -414,10 +422,13 @@ void PropagateWaves(uint3 id : SV_DispatchThreadID) {
     float ky = (float)freqY * dKy;
     float k2 = kx * kx + ky * ky;
     if (k2 < 1e-12) {
-        DelHxOut[id] = float2(0.f, 0.f);
-        DelHyOut[id] = float2(0.f, 0.f);
+        HPropOut[id] = float2(0.f, 0.f);
         DispXOut[id] = float2(0.f, 0.f);
         DispYOut[id] = float2(0.f, 0.f);
+        DelHXOut[id] = float2(0.f, 0.f);
+        DelHYOut[id] = float2(0.f, 0.f);
+        FlowXOut[id] = float2(0.f, 0.f);
+        FlowYOut[id] = float2(0.f, 0.f);
         return;
     }
     float invK = rsqrt(k2);
@@ -431,11 +442,16 @@ void PropagateWaves(uint3 id : SV_DispatchThreadID) {
     // w = floor() * w0; //modify w to be multiple of w0?
     float S = sin(w * time);
     float C = cos(w * time);
-    float2 fwd = float2(C, -S); // why is forward the negative one? Try switching if doesn't look right
+    float2 fwd = float2(C, -S);
     float2 bkwd = float2(C, S);
     float2 HPlus = ComplexMul(HPosIn[id], fwd);
     float2 HMin = ComplexMul(HNegIn[id], bkwd);
     float2 HProp = HPlus + HMin;
+    HPropOut[id] = HProp;
+
+    // Calculate Horizontal Displacement Dx, Dy
+    DispXOut[id] = ComplexMul(HProp, float2(0.f, kx_ * choppiness));
+    DispYOut[id] = ComplexMul(HProp, float2(0.f, ky_ * choppiness));
 
     // Calculate spatial derivative of H, shifted to cell faces
     float2 dhdx = ComplexMul(HProp, float2(0, kx));
@@ -445,12 +461,14 @@ void PropagateWaves(uint3 id : SV_DispatchThreadID) {
     float shiftY = 0.5f * cellSize * ky;
     float2 e_ix = float2(cos(shiftX), sin(shiftX));
     float2 e_iy = float2(cos(shiftY), sin(shiftY));
-    DelHxOut[id] = ComplexMul(dhdx, e_ix);
-    DelHyOut[id] = ComplexMul(dhdy, e_iy);
 
-    // Calculate Horizontal Displacement Dx, Dy
-    DispXOut[id] = ComplexMul(HProp, float2(0.f, kx_ * choppiness));
-    DispYOut[id] = ComplexMul(HProp, float2(0.f, ky_ * choppiness));
+    // Output gradient and flow rate
+    DelHXOut[id] = ComplexMul(dhdx, e_ix);
+    DelHYOut[id] = ComplexMul(dhdy, e_iy);
+    float2 Ux = -kx_ * w * (HMin - HPlus);
+    float2 Uy = -ky_ * w * (HMin - HPlus);
+    FlowXOut[id] = ComplexMul(Ux * depth[id.z], e_ix);
+    FlowYOut[id] = ComplexMul(Uy * depth[id.z], e_iy);
 }
 
 Texture2DArray<float2> HxIn: register(t0);
@@ -458,10 +476,12 @@ Texture2DArray<float2> HyIn: register(t1);
 Texture2DArray<float2> DxIn: register(t2);
 Texture2DArray<float2> DyIn: register(t3);
 Texture2D<float>       hbar: register(t4);
+Texture2DArray<float2> HIn: register(t5);
 RWTexture2D<float> HxOut: register(u0);
 RWTexture2D<float> HyOut: register(u1);
 RWTexture2D<float> DxOut: register(u2);
 RWTexture2D<float> DyOut: register(u3);
+RWTexture2D<float> HOut: register(u4);
 [numthreads(16, 16, 1)]
 void Interp(uint3 id : SV_DispatchThreadID) {
     if (id.x >= (uint)(gridSizeX) || id.y >= (uint)(gridSizeY)) return;
@@ -472,6 +492,7 @@ void Interp(uint3 id : SV_DispatchThreadID) {
         HyOut[id.xy] = 0.f;
         DxOut[id.xy] = 0.f;
         DyOut[id.xy] = 0.f;
+        HOut[id.xy] = 0.f;
         return;
     }
     int d1 = 0;
@@ -486,6 +507,7 @@ void Interp(uint3 id : SV_DispatchThreadID) {
         HyOut[id.xy] = s * HyIn[uint3(id.x, id.y, 0)].x;
         DxOut[id.xy] = s * DxIn[uint3(id.x, id.y, 0)].x;
         DyOut[id.xy] = s * DyIn[uint3(id.x, id.y, 0)].x;
+        HOut[id.xy]  = s * HIn[uint3(id.x, id.y, 0)].x;
     } else {
         // Interpolate between depths
         float s = 0.f;
@@ -497,5 +519,6 @@ void Interp(uint3 id : SV_DispatchThreadID) {
         HyOut[id.xy] = s * HyIn[id1].x + (1.f - s) * HyIn[id2].x;
         DxOut[id.xy] = s * DxIn[id1].x + (1.f - s) * DxIn[id2].x;
         DyOut[id.xy] = s * DyIn[id1].x + (1.f - s) * DyIn[id2].x;
+        HOut[id.xy]  = s * HIn[id1].x  + (1.f - s) * HIn[id2].x;
     }
 }
