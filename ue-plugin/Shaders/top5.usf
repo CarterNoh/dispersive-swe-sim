@@ -1,0 +1,224 @@
+// Top5.usf
+// Finds the 5 largest-magnitude complex values in a Texture2D<float2> spectrum
+// and isolates each into its own slice of a texture array.
+
+#include "/Engine/Public/Platform.ush"
+
+// GROUP_SIZE_X / GROUP_SIZE_Y are set via ModifyCompilationEnvironment (16x16 = 256 threads)
+#define GROUP_THREADS (GROUP_SIZE_X * GROUP_SIZE_Y)
+
+// ------------------------------------------------------------------
+// Shared helpers
+// ------------------------------------------------------------------
+
+float MagSq(float2 c) {
+    return c.x * c.x + c.y * c.y;
+}
+
+// Inserts (v, ix) into a caller's local top-5 arrays if it beats the current worst.
+// Arrays are kept sorted descending, index 0 = largest.
+void InsertTop5(inout float Vals[5], inout uint2 Idxs[5], float v, uint2 ix) {
+    if (v <= Vals[4])
+        return;
+
+    Vals[4] = v;
+    Idxs[4] = ix;
+
+    UNROLL
+    for (int j = 4; j > 0; j--)
+    {
+        if (Vals[j] > Vals[j - 1])
+        {
+            float tv = Vals[j];     Vals[j]     = Vals[j - 1]; Vals[j - 1] = tv;
+            uint2 ti = Idxs[j];     Idxs[j]     = Idxs[j - 1]; Idxs[j - 1] = ti;
+        }
+        else
+        {
+            break;
+        }
+    }
+}
+
+// Merges two sorted-descending top-5 lists (10 candidates total) into one top-5,
+// written back into A's slots.
+void MergeTop5(inout float AVals[5], inout uint2 AIdxs[5], float BVals[5], uint2 BIdxs[5]) {
+    float Vals[10];
+    uint2 Idxs[10];
+
+    UNROLL
+    for (int i = 0; i < 5; i++) { Vals[i]     = AVals[i]; Idxs[i]     = AIdxs[i]; }
+    UNROLL
+    for (int i = 0; i < 5; i++) { Vals[5 + i] = BVals[i]; Idxs[5 + i] = BIdxs[i]; }
+
+    // Fixed-size insertion sort over 10 elements, descending.
+    UNROLL
+    for (int i = 1; i < 10; i++)
+    {
+        float v = Vals[i];
+        uint2 ix = Idxs[i];
+        int j = i - 1;
+        LOOP
+        while (j >= 0 && Vals[j] < v)
+        {
+            Vals[j + 1] = Vals[j];
+            Idxs[j + 1] = Idxs[j];
+            j--;
+        }
+        Vals[j + 1] = v;
+        Idxs[j + 1] = ix;
+    }
+
+    UNROLL
+    for (int i = 0; i < 5; i++) { AVals[i] = Vals[i]; AIdxs[i] = Idxs[i]; }
+}
+
+// ------------------------------------------------------------------
+// Pass 1: CSGroupTop5
+// Each threadgroup reduces its tile of the texture down to its own top-5
+// (value, index) pairs and writes them to CandidateVal / CandidateIdx.
+// ------------------------------------------------------------------
+
+Texture2D<float2> InputTexture;
+RWStructuredBuffer<float> CandidateVal;
+RWStructuredBuffer<uint2> CandidateIdx;
+int2 TextureSize;
+uint GroupsPerRow;
+
+groupshared float GS_Val[GROUP_THREADS * 5];
+groupshared uint2 GS_Idx[GROUP_THREADS * 5];
+
+[numthreads(GROUP_SIZE_X, GROUP_SIZE_Y, 1)]
+void CSGroupTop5(uint3 DispatchThreadId : SV_DispatchThreadID,
+                  uint3 GroupThreadId   : SV_GroupThreadID,
+                  uint3 GroupId         : SV_GroupID)
+{
+    uint tid  = GroupThreadId.y * GROUP_SIZE_X + GroupThreadId.x;
+    uint base = tid * 5;
+
+    float Vals[5] = { -1.0f, -1.0f, -1.0f, -1.0f, -1.0f };
+    uint2 Idxs[5] = { uint2(0,0), uint2(0,0), uint2(0,0), uint2(0,0), uint2(0,0) };
+
+    if (DispatchThreadId.x < (uint)TextureSize.x && DispatchThreadId.y < (uint)TextureSize.y) {
+        float2 c = InputTexture[DispatchThreadId.xy];
+        Vals[0] = MagSq(c);
+        Idxs[0] = DispatchThreadId.xy;
+    }
+
+    UNROLL
+    for (int i = 0; i < 5; i++) { GS_Val[base + i] = Vals[i]; GS_Idx[base + i] = Idxs[i]; }
+
+    GroupMemoryBarrierWithGroupSync();
+
+    // Tree reduction: each surviving thread merges its list with a partner's.
+    LOOP
+    for (uint stride = GROUP_THREADS / 2; stride > 0; stride >>= 1) {
+        if (tid < stride) {
+            uint otherBase = (tid + stride) * 5;
+
+            float AVals[5], BVals[5];
+            uint2 AIdxs[5], BIdxs[5];
+            UNROLL
+            for (int i = 0; i < 5; i++) {
+                AVals[i] = GS_Val[base + i];       AIdxs[i] = GS_Idx[base + i];
+                BVals[i] = GS_Val[otherBase + i];  BIdxs[i] = GS_Idx[otherBase + i];
+            }
+
+            MergeTop5(AVals, AIdxs, BVals, BIdxs);
+
+            UNROLL
+            for (int i = 0; i < 5; i++) { GS_Val[base + i] = AVals[i]; GS_Idx[base + i] = AIdxs[i]; }
+        }
+        GroupMemoryBarrierWithGroupSync();
+    }
+
+    if (tid == 0) {
+        uint groupIndex = GroupId.y * GroupsPerRow + GroupId.x;
+        uint outBase = groupIndex * 5;
+        UNROLL
+        for (int i = 0; i < 5; i++) {
+            CandidateVal[outBase + i] = GS_Val[i];
+            CandidateIdx[outBase + i] = GS_Idx[i];
+        }
+    }
+}
+
+// ------------------------------------------------------------------
+// Pass 2: CSFinalTop5
+// Single threadgroup of 256 threads reduces all candidates (numGroups*5
+// from Pass 1) down to the final top-5. No CPU readback required.
+// ------------------------------------------------------------------
+
+StructuredBuffer<float> CandidateValIn;
+StructuredBuffer<uint2> CandidateIdxIn;
+uint NumCandidates;
+RWStructuredBuffer<float> FinalVal;
+RWStructuredBuffer<uint2> FinalIdx;
+
+groupshared float GS_FVal[256 * 5];
+groupshared uint2 GS_FIdx[256 * 5];
+
+[numthreads(256, 1, 1)]
+void CSFinalTop5(uint3 GroupThreadId : SV_GroupThreadID) {
+    uint tid  = GroupThreadId.x;
+    uint base = tid * 5;
+
+    float Vals[5] = { -1.0f, -1.0f, -1.0f, -1.0f, -1.0f };
+    uint2 Idxs[5] = { uint2(0,0), uint2(0,0), uint2(0,0), uint2(0,0), uint2(0,0) };
+
+    LOOP
+    for (uint i = tid; i < NumCandidates; i += 256) {
+        InsertTop5(Vals, Idxs, CandidateValIn[i], CandidateIdxIn[i]);
+    }
+
+    UNROLL
+    for (int i = 0; i < 5; i++) { GS_FVal[base + i] = Vals[i]; GS_FIdx[base + i] = Idxs[i]; }
+
+    GroupMemoryBarrierWithGroupSync();
+
+    LOOP
+    for (uint stride = 128; stride > 0; stride >>= 1) {
+        if (tid < stride) {
+            uint otherBase = (tid + stride) * 5;
+
+            float AVals[5], BVals[5];
+            uint2 AIdxs[5], BIdxs[5];
+            UNROLL
+            for (int i = 0; i < 5; i++) {
+                AVals[i] = GS_FVal[base + i];       AIdxs[i] = GS_FIdx[base + i];
+                BVals[i] = GS_FVal[otherBase + i];  BIdxs[i] = GS_FIdx[otherBase + i];
+            }
+
+            MergeTop5(AVals, AIdxs, BVals, BIdxs);
+
+            UNROLL
+            for (int i = 0; i < 5; i++) { GS_FVal[base + i] = AVals[i]; GS_FIdx[base + i] = AIdxs[i]; }
+        }
+        GroupMemoryBarrierWithGroupSync();
+    }
+
+    if (tid == 0) {
+        UNROLL
+        for (int i = 0; i < 5; i++) {
+            FinalVal[i] = GS_FVal[i];
+            FinalIdx[i] = GS_FIdx[i];
+        }
+    }
+}
+
+// ------------------------------------------------------------------
+// Pass 3: CSIsolate
+// Scatter-writes each of the 5 known winning texels into its own slice
+// of an output texture array. Array must already be cleared to zero
+// (via AddClearUAVPass) before this pass runs.
+// ------------------------------------------------------------------
+
+Texture2D<float2> IsolateInputTexture;
+StructuredBuffer<uint2> IsolateFinalIdx;
+RWTexture2DArray<float2> OutputArray;
+
+[numthreads(5, 1, 1)]
+void CSIsolate(uint3 DispatchThreadId : SV_DispatchThreadID) {
+    uint2 idx = IsolateFinalIdx[DispatchThreadId.x];
+    float2 c = IsolateInputTexture[idx];
+    OutputArray[uint3(idx, DispatchThreadId.x)] = c;
+}

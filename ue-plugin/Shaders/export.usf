@@ -1,0 +1,166 @@
+#include "/Engine/Public/Platform.ush"
+#include "/Engine/Generated/UniformBuffers/ExportConstants.ush"
+
+// Shaders executing steps of algorithm outlined in "Generalizing Shallow Water Simulations with Dispersive Surface Waves"
+
+// Simulation parameters redirected to the ExportConstants constant buffer
+#define time ExportConstants.time
+#define gridSizeX ExportConstants.gridSizeX
+#define gridSizeY ExportConstants.gridSizeY
+#define cellSize ExportConstants.cellSize
+#define timeStep ExportConstants.timeStep
+#define foamThreshold ExportConstants.foamThreshold
+#define foamMultiplier ExportConstants.foamMultiplier
+#define foamFade ExportConstants.foamFade
+#define foamBlur ExportConstants.foamBlur
+
+#define PI 3.14159265358979323846f
+
+// Texture Declarations
+Texture2D<float>   inDispX;
+Texture2D<float>   inDispY;
+Texture2D<float>   inHeight;
+Texture2D<float>   inPreviousFoam;
+Texture2D<float4>  inNormal;
+Texture2D<float>   inPreviousRoughness;
+SamplerState BilinearWrapSampler;
+RWTexture2D<float4> outDisp4;
+RWTexture2D<float4> outNormal;
+RWTexture2D<float>  outFoam;
+RWTexture2D<float>  outJacobianDet;
+RWTexture2D<float>  outRoughness;
+
+
+///// SHADERS /////
+
+float ScaleFactor;
+[numthreads(16, 16, 1)]
+void ScaleCopyDisplacement(uint3 id : SV_DispatchThreadID) {
+    if (id.x >= (uint)(gridSizeX) || id.y >= (uint)(gridSizeY)) return;
+    outDisp4[id.xy] = float4(inDispX[id.xy] * ScaleFactor, inDispY[id.xy] * ScaleFactor, inHeight[id.xy] * ScaleFactor, 1.0f);
+}
+
+[numthreads(16, 16, 1)]
+void CalcSurfaceNormalAndFoam(uint3 id : SV_DispatchThreadID) {
+    if (id.x >= (uint)(gridSizeX) || id.y >= (uint)(gridSizeY)) return;
+
+    int2 curr = int2(id.xy);
+    int2 right = clamp(curr + int2(1, 0), int2(0, 0), gridSizeX - 1);
+    int2 left  = clamp(curr + int2(-1, 0), int2(0, 0), gridSizeX - 1);
+    int2 up    = clamp(curr + int2(0, 1), int2(0, 0), gridSizeY - 1);
+    int2 down  = clamp(curr + int2(0, -1), int2(0, 0), gridSizeY - 1);
+
+    // --- NORMAL CALCULATION ---
+    float invTwoCellSize = 1.0f / max(1e-5f, 2.0f * cellSize);
+
+    // Derivatives with respect to X
+    float dDx_dx = (inDispX[right] - inDispX[left]) * invTwoCellSize;
+    float dDy_dx = (inDispY[right] - inDispY[left]) * invTwoCellSize;
+    float dDz_dx = (inHeight[right] - inHeight[left]) * invTwoCellSize;
+
+    // Derivatives with respect to Y
+    float dDx_dy = (inDispX[up] - inDispX[down]) * invTwoCellSize;
+    float dDy_dy = (inDispY[up] - inDispY[down]) * invTwoCellSize;
+    float dDz_dy = (inHeight[up] - inHeight[down]) * invTwoCellSize;
+
+    // Tangent vectors along X and Y
+    float3 Tx = float3(1.0f + dDx_dx, dDy_dx, dDz_dx);
+    float3 Ty = float3(dDx_dy, 1.0f + dDy_dy, dDz_dy);
+
+    // Cross product gives normal
+    float3 N = cross(Tx, Ty);
+
+    // Invert normal if it points down (Z < 0)
+    if (N.z < 0.0f) {
+        N = -N;
+    }
+    N = normalize(N);
+    outNormal[curr] = float4(N, 1.0f);
+
+    // --- FOAM AND JACOBIAN CALCULATION ---
+    float invCellSize = 1.0f / max(1e-5f, cellSize);
+
+    // Jacobian elements (forward difference)
+    float Jxx = 1.0f + (inDispX[right] - inDispX[curr]) * invCellSize;
+    float Jyy = 1.0f + (inDispY[up] - inDispY[curr]) * invCellSize;
+    float Jyx = (inDispY[right] - inDispY[curr]) * invCellSize;
+    float Jxy = (inDispX[up] - inDispX[curr]) * invCellSize;
+
+    // Determinant of Jacobian
+    float JacobianDeterminant = Jxx * Jyy - Jxy * Jyx;
+    outJacobianDet[curr] = JacobianDeterminant;
+
+    // Minimum Eigenvalue calculation of Jacobian
+    float trace = Jxx + Jyy;
+    float diff = Jxx - Jyy;
+    float term = sqrt(max(0.0f, diff * diff + 4.0f * Jxy * Jyx));
+    float EigenValue_ = trace * 0.5f - term * 0.5f;
+
+    // Foam injection
+    float Foam = foamMultiplier * saturate(1.0f - EigenValue_ + foamThreshold);
+
+    // Sample previous foam values for blurring and decay
+    float PreviousFoamCenter = inPreviousFoam[curr];
+    float AccumulatedFoam = inPreviousFoam[up] + inPreviousFoam[down] + inPreviousFoam[right] + inPreviousFoam[left];
+
+    float PreviousFoam = lerp(PreviousFoamCenter, AccumulatedFoam * 0.25f, saturate(timeStep * foamBlur));
+    float FadedPreviousFoam = saturate(PreviousFoam - foamFade * timeStep);
+
+    Foam = max(Foam, FadedPreviousFoam);
+    outFoam[curr] = Foam;
+}
+
+float IntegrationSamples;
+float RoughnessPower;
+[numthreads(16, 1, 1)]
+void CalcRoughnessLUT(uint3 id : SV_DispatchThreadID) {
+    if (id.x >= (uint)gridSizeX) return;
+
+    // Seed for LCG random generator
+    uint Seed = id.x + uint(time * 1337.0f);
+    // Simple LCG random function (returns uniform float in [0, 1])
+    #define RAND_FLOAT() (Seed = Seed * 1103515245U + 12345U, float(Seed) / 4294967296.0f)
+
+    float MaxRange = (float(id.x) / max(1.0f, float(gridSizeX - 1))) * 20.48f; // 20.48 to match 2048 in Roughness material function
+    float RoughnessSum = 0.0f;
+    float GridWorldWidth = float(gridSizeX) * cellSize; // Total size of our grid in meters
+
+    for (int SampleIdx = 0; SampleIdx < 16; ++SampleIdx) {
+        // Generate random position A in world space (in meters)
+        // Limit to GridWorldWidth to wrap correctly in texture space [0, 1]
+        float2 PosA = float2(RAND_FLOAT() * GridWorldWidth, RAND_FLOAT() * GridWorldWidth);
+
+        // Generate second position B uniformly distributed on a circle within MaxRange
+        float sin_theta, cos_theta;
+        sincos(RAND_FLOAT() * 2.0f * PI, sin_theta, cos_theta);
+        float Radius = sqrt(RAND_FLOAT()) * MaxRange;
+        float2 PosB = PosA + float2(cos_theta, sin_theta) * Radius;
+
+        // Convert world space to normalized texture coordinates
+        float2 uvA = PosA / GridWorldWidth;
+        float2 uvB = PosB / GridWorldWidth;
+
+        // Sample normals from the normal map (which is periodic/wrapped)
+        float3 NormalA = inNormal.SampleLevel(BilinearWrapSampler, uvA, 0).xyz;
+        float3 NormalB = inNormal.SampleLevel(BilinearWrapSampler, uvB, 0).xyz;
+
+        // Express roughness as angle between pair of normals
+        float Roughness = dot(NormalA, NormalB);
+        Roughness = Roughness * 0.5f + 0.5f;
+
+        RoughnessSum += Roughness;
+    }
+    #undef RAND_FLOAT
+    RoughnessSum /= 16.0f;
+
+    // Load roughness values to combine
+    float PrevRoughness = inPreviousRoughness[int2(id.x, 0)]; 
+    float NewRoughness = 1.0f - saturate(RoughnessSum); // Invert roughness
+    NewRoughness = pow(max(0.0f, NewRoughness), RoughnessPower); // Adjust by user power
+
+    // Weight and combine roughness
+    float SampleW = 1.0f / max(1.0f, IntegrationSamples);
+    float PrevSampleW = 1.0f - SampleW;
+    NewRoughness = PrevRoughness * PrevSampleW + NewRoughness * SampleW;
+    outRoughness[int2(id.x, 0)] = NewRoughness;
+}

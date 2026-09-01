@@ -3,18 +3,19 @@
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
 #include "Engine/TextureRenderTarget2D.h"
-#include "RenderGraphResources.h"
-#include "DispersiveSWEShaders.h"
+#include "MainSimShaders.h"
+#include "FFTWaveShaders.h"
+#include "ExportShaders.h"
 #include <atomic>
-#include "DispersiveSWESimulator.generated.h"
+#include "Simulator.generated.h"
 
 UCLASS(ClassGroup=(Custom), meta=(BlueprintSpawnableComponent))
-class DISPERSIVESWESIM_API UDispersiveSWESimulator : public UActorComponent
+class DISPERSIVESWESIM_API USimulator : public UActorComponent
 {
 	GENERATED_BODY()
 
 public:
-	UDispersiveSWESimulator();
+	USimulator();
 	virtual void BeginPlay() override;
 	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
 
@@ -197,6 +198,10 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "UE|Configuration")
 	FString JsonConfigFilePath = "";
 
+	// If true, exports the captured terrain height map to terrain_captured.raw upon initialization. Defaults to false.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "UE|Debug")
+	bool bExportCapturedTerrain = false;
+
 	// Output target textures containing wave fields
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "UE|Outputs")
 	UTextureRenderTarget2D* TerrainRT = nullptr;
@@ -314,8 +319,13 @@ private:
 	void InitializeSimulation();
 	void AllocatePersistentTargets(FRHICommandListImmediate& RHICmdList);
 	void SetupInitialStates(FRHICommandListImmediate& RHICmdList);
-	void AssignConstants(FSimConstants& OutConstants) const;
+	void AssignSimulationConstants(FSimConstants& OutConstants) const;
+	void AssignFFTWaveConstants(FFFTWaveConstants& OutConstants) const;
+	void AssignExportConstants(FExportConstants& OutConstants) const;
 	
-	void ExecuteSimulation_RenderThread(FRHICommandListImmediate& RHICmdList, const FSimConstants& Constants);
-	void DispatchFFT_RenderThread(FRDGBuilder& GraphBuilder, FRDGTextureRef TargetTexture, int32 SizeX, int32 SizeY, bool bInverse, int32 NumLayers);
+	void ExecuteSimulation_RenderThread(
+		FRHICommandListImmediate& RHICmdList,
+		const FSimConstants& SimConstants,
+		const FFFTWaveConstants& FFTWaveConstants,
+		const FExportConstants& ExportConstants);
 };

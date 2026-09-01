@@ -1,4 +1,4 @@
-#include "SWESimulatorActor.h"
+#include "SimActor.h"
 #include "Materials/MaterialInstanceDynamic.h"
 #include "ProceduralMeshComponent.h"
 #include "Components/SceneComponent.h"
@@ -9,7 +9,7 @@
 #include "TextureResource.h"
 
 
-ASWESimulatorActor::ASWESimulatorActor()
+ASimActor::ASimActor()
 {
     PrimaryActorTick.bCanEverTick = false;
 
@@ -31,7 +31,7 @@ ASWESimulatorActor::ASWESimulatorActor()
     WaterMeshComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 
     // 4. Attach SWE Simulation orchestrator
-    SimComponent = CreateDefaultSubobject<UDispersiveSWESimulator>(TEXT("SWESimulator"));
+    SimComponent = CreateDefaultSubobject<USimulator>(TEXT("SWESimulator"));
 
     // Set defaults
     GridResolution = 512;
@@ -57,7 +57,7 @@ ASWESimulatorActor::ASWESimulatorActor()
     }
 }
 
-void ASWESimulatorActor::OnConstruction(const FTransform& Transform)
+void ASimActor::OnConstruction(const FTransform& Transform)
 {
     Super::OnConstruction(Transform);
 
@@ -92,9 +92,9 @@ void ASWESimulatorActor::OnConstruction(const FTransform& Transform)
     }
 }
 
-void ASWESimulatorActor::BeginPlay()
+void ASimActor::BeginPlay()
 {
-    UE_LOG(LogTemp, Warning, TEXT("ASWESimulatorActor::BeginPlay() started"));
+    UE_LOG(LogTemp, Warning, TEXT("ASimActor::BeginPlay() started"));
 
     // 1. Re-run bounds calculation to ensure runtime matches any runtime changes
     FitToTerrain();
@@ -249,6 +249,7 @@ void ASWESimulatorActor::BeginPlay()
         SimComponent->FoamRT = FoamRT;
         SimComponent->JacobianDetRT = JacobianDetRT;
         SimComponent->RoughnessRT = RoughnessRT;
+        SimComponent->bExportCapturedTerrain = bExportCapturedTerrain;
     }
 
     // Call Super::BeginPlay() after components are fully configured to trigger correct InitializeSimulation grid sizes
@@ -302,7 +303,7 @@ void ASWESimulatorActor::BeginPlay()
     }
 }
 
-float ASWESimulatorActor::GetWaterHeightAtLocation(const FVector& WorldLocation) const
+float ASimActor::GetWaterHeightAtLocation(const FVector& WorldLocation) const
 {
     if (SimComponent)
     {
@@ -311,7 +312,7 @@ float ASWESimulatorActor::GetWaterHeightAtLocation(const FVector& WorldLocation)
     return WaterLevel;
 }
 
-void ASWESimulatorActor::FitToTerrain()
+void ASimActor::FitToTerrain()
 {
     if (bAutoFitToTerrain && TerrainActor)
     {
