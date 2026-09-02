@@ -1,7 +1,7 @@
 #include "FFTShaders.h"
 #include "RenderGraphBuilder.h"
 
-IMPLEMENT_GLOBAL_SHADER(FFFTKernel1DCS, "/Plugin/DispersiveSWESim/fft.usf", "FFTKernel_1D", SF_Compute);
+IMPLEMENT_GLOBAL_SHADER(FFFTKernel1DCS, "/Plugin/DispersiveSWEWaves/fft.usf", "FFTKernel_1D", SF_Compute);
 
 void Add2DFFTPasses(
 	FRDGBuilder& GraphBuilder,

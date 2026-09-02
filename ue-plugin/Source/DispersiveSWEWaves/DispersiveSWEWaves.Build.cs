@@ -1,8 +1,8 @@
 using UnrealBuildTool;
 
-public class DispersiveSWESim : ModuleRules
+public class DispersiveSWEWaves : ModuleRules
 {
-	public DispersiveSWESim(ReadOnlyTargetRules Target) : base(Target)
+	public DispersiveSWEWaves(ReadOnlyTargetRules Target) : base(Target)
 	{
 		PCHUsage = ModuleRules.PCHUsageMode.UseExplicitOrSharedPCHs;
 		

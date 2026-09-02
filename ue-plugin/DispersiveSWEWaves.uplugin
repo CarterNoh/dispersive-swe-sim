@@ -2,7 +2,7 @@
 	"FileVersion": 3,
 	"Version": 1,
 	"VersionName": "1.0",
-	"FriendlyName": "DispersiveSWESim",
+	"FriendlyName": "DispersiveSWEWaves",
 	"Description": "Dispersive Shallow Water Equation Fluid Simulation using Compute Shaders and RDG.",
 	"Category": "Rendering",
 	"CreatedBy": "",
@@ -16,7 +16,7 @@
 	"Installed": false,
 	"Modules": [
 		{
-			"Name": "DispersiveSWESim",
+			"Name": "DispersiveSWEWaves",
 			"Type": "Runtime",
 			"LoadingPhase": "PostConfigInit"
 		}

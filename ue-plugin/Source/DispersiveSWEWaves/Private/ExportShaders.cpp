@@ -3,11 +3,11 @@
 
 IMPLEMENT_GLOBAL_SHADER_PARAMETER_STRUCT(FExportConstants, "ExportConstants");
 
-IMPLEMENT_GLOBAL_SHADER(FScaleCopyDisplacementCS,    "/Plugin/DispersiveSWESim/export.usf", "ScaleCopyDisplacement",    SF_Compute);
-IMPLEMENT_GLOBAL_SHADER(FScaleCopyVelocityCS,        "/Plugin/DispersiveSWESim/export.usf", "ScaleCopyVelocity",        SF_Compute);
-IMPLEMENT_GLOBAL_SHADER(FCalcAccelerationCS,        "/Plugin/DispersiveSWESim/export.usf", "CalcAcceleration",        SF_Compute);
-IMPLEMENT_GLOBAL_SHADER(FCalcSurfaceNormalAndFoamCS, "/Plugin/DispersiveSWESim/export.usf", "CalcSurfaceNormalAndFoam", SF_Compute);
-IMPLEMENT_GLOBAL_SHADER(FCalcRoughnessLUTCS,         "/Plugin/DispersiveSWESim/export.usf", "CalcRoughnessLUT",         SF_Compute);
+IMPLEMENT_GLOBAL_SHADER(FScaleCopyDisplacementCS,    "/Plugin/DispersiveSWEWaves/export.usf", "ScaleCopyDisplacement",    SF_Compute);
+IMPLEMENT_GLOBAL_SHADER(FScaleCopyVelocityCS,        "/Plugin/DispersiveSWEWaves/export.usf", "ScaleCopyVelocity",        SF_Compute);
+IMPLEMENT_GLOBAL_SHADER(FCalcAccelerationCS,        "/Plugin/DispersiveSWEWaves/export.usf", "CalcAcceleration",        SF_Compute);
+IMPLEMENT_GLOBAL_SHADER(FCalcSurfaceNormalAndFoamCS, "/Plugin/DispersiveSWEWaves/export.usf", "CalcSurfaceNormalAndFoam", SF_Compute);
+IMPLEMENT_GLOBAL_SHADER(FCalcRoughnessLUTCS,         "/Plugin/DispersiveSWEWaves/export.usf", "CalcRoughnessLUT",         SF_Compute);
 
 void AddVisualExportPasses(
 	FRDGBuilder& GraphBuilder,

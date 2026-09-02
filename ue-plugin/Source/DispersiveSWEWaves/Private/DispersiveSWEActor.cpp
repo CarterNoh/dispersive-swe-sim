@@ -1,4 +1,4 @@
-#include "SimActor.h"
+#include "DispersiveSWEActor.h"
 #include "Materials/MaterialInstanceDynamic.h"
 #include "ProceduralMeshComponent.h"
 #include "Components/SceneComponent.h"
@@ -9,7 +9,7 @@
 #include "TextureResource.h"
 
 
-ASimActor::ASimActor() {
+ADispersiveSWEActor::ADispersiveSWEActor() {
     PrimaryActorTick.bCanEverTick = false;
 
     // Root Component
@@ -41,20 +41,20 @@ ASimActor::ASimActor() {
     StaticMeshDefaultSize = 4200.0f;
 
     // Attempt to resolve default plane1024 mesh
-    static ConstructorHelpers::FObjectFinder<UStaticMesh> PlaneMeshFinder(TEXT("/DispersiveSWESim/Meshes/plane1024"));
+    static ConstructorHelpers::FObjectFinder<UStaticMesh> PlaneMeshFinder(TEXT("/DispersiveSWEWaves/Meshes/plane1024"));
     if (PlaneMeshFinder.Succeeded()) {
         WaterStaticMeshAsset = PlaneMeshFinder.Object;
         WaterMeshComponent->SetStaticMesh(WaterStaticMeshAsset);
     }
 
     // Attempt to resolve the default water material
-    static ConstructorHelpers::FObjectFinder<UMaterialInterface> WaterMaterialFinder(TEXT("/DispersiveSWESim/Materials/M_PreviewOceanWater"));
+    static ConstructorHelpers::FObjectFinder<UMaterialInterface> WaterMaterialFinder(TEXT("/DispersiveSWEWaves/Materials/M_DispersiveSWEBaseWater"));
     if (WaterMaterialFinder.Succeeded()) {
         BaseWaterMaterial = WaterMaterialFinder.Object;
     }
 }
 
-void ASimActor::OnConstruction(const FTransform& Transform) {
+void ADispersiveSWEActor::OnConstruction(const FTransform& Transform) {
     Super::OnConstruction(Transform);
 
     // Handle auto-fit logic in editor time so it's instantly visual to the developer
@@ -82,8 +82,8 @@ void ASimActor::OnConstruction(const FTransform& Transform) {
     }
 }
 
-void ASimActor::BeginPlay() {
-    UE_LOG(LogTemp, Warning, TEXT("ASimActor::BeginPlay() started"));
+void ADispersiveSWEActor::BeginPlay() {
+    UE_LOG(LogTemp, Warning, TEXT("ADispersiveSWEActor::BeginPlay() started"));
 
     // Re-run bounds calculation to ensure runtime matches any runtime changes
     FitToTerrain();
@@ -259,7 +259,7 @@ void ASimActor::BeginPlay() {
 
     // Try to load default material if not set
     if (!BaseWaterMaterial && bAutoLoadDefaultAssets) {
-        BaseWaterMaterial = Cast<UMaterialInterface>(StaticLoadObject(UMaterialInterface::StaticClass(), nullptr, TEXT("/DispersiveSWESim/Materials/M_PreviewOceanWater")));
+        BaseWaterMaterial = Cast<UMaterialInterface>(StaticLoadObject(UMaterialInterface::StaticClass(), nullptr, TEXT("/DispersiveSWEWaves/Materials/M_DispersiveSWEBaseWater")));
     }
 
     // Create and bind dynamic material instance
@@ -319,28 +319,28 @@ void ASimActor::BeginPlay() {
     }
 }
 
-float ASimActor::GetWaterHeightAtLocation(const FVector& WorldLocation) const {
+float ADispersiveSWEActor::GetWaterHeightAtLocation(const FVector& WorldLocation) const {
     if (SimComponent) {
         return SimComponent->GetWaterHeightAtLocation(WorldLocation);
     }
     return WaterLevel;
 }
 
-FVector ASimActor::GetWaterVelocityAtLocation(const FVector& WorldLocation) const {
+FVector ADispersiveSWEActor::GetWaterVelocityAtLocation(const FVector& WorldLocation) const {
     if (SimComponent) {
         return SimComponent->GetWaterVelocityAtLocation(WorldLocation);
     }
     return FVector::ZeroVector;
 }
 
-FVector ASimActor::GetWaterAccelerationAtLocation(const FVector& WorldLocation) const {
+FVector ADispersiveSWEActor::GetWaterAccelerationAtLocation(const FVector& WorldLocation) const {
     if (SimComponent) {
         return SimComponent->GetWaterAccelerationAtLocation(WorldLocation);
     }
     return FVector::ZeroVector;
 }
 
-void ASimActor::FitToTerrain() {
+void ADispersiveSWEActor::FitToTerrain() {
     if (bAutoFitToTerrain && TerrainActor) {
         FVector Origin = FVector::ZeroVector;
         FVector BoxExtent = FVector::ZeroVector;

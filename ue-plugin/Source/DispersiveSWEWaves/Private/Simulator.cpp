@@ -248,7 +248,7 @@ void USimulator::SetupInitialStates(FRHICommandListImmediate& RHICmdList) {
 				if (FArchive* Ar = IFileManager::Get().CreateFileWriter(*ExportFilePath)) {
 					Ar->Serialize(RawFloatData.GetData(), RawFloatData.Num() * sizeof(float));
 					delete Ar;
-					UE_LOG(LogTemp, Warning, TEXT("DispersiveSWESim: Successfully exported captured terrain to %s"), *ExportFilePath);
+					UE_LOG(LogTemp, Warning, TEXT("DispersiveSWEWaves: Successfully exported captured terrain to %s"), *ExportFilePath);
 				}
 			}
 		}

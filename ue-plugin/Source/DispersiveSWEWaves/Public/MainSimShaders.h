@@ -32,7 +32,7 @@ BEGIN_GLOBAL_SHADER_PARAMETER_STRUCT(FSimConstants, )
 END_GLOBAL_SHADER_PARAMETER_STRUCT()
 
 // ============================================================================
-// Shader Classes from kernels.usf
+// Shader Classes from dispersiveswe.usf
 // ============================================================================
 
 class FInitializeWaterCS : public FGlobalShader {

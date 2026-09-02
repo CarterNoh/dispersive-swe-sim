@@ -11,7 +11,7 @@
  * Handles double-buffered async GPU readback of fluid height, velocity, and acceleration
  * and thread-safe CPU bilinear spatial queries.
  */
-class DISPERSIVESWESIM_API FSimReadbackHandler {
+class DISPERSIVESWEWAVES_API FSimReadbackHandler {
 public:
 	FSimReadbackHandler();
 

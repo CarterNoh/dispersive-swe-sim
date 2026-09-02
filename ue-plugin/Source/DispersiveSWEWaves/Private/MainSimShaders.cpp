@@ -4,21 +4,21 @@
 
 IMPLEMENT_GLOBAL_SHADER_PARAMETER_STRUCT(FSimConstants, "SimConstants");
 
-IMPLEMENT_GLOBAL_SHADER(FInitializeWaterCS,     "/Plugin/DispersiveSWESim/kernels.usf", "InitializeWater",     SF_Compute);
-IMPLEMENT_GLOBAL_SHADER(FInitDecompCS,          "/Plugin/DispersiveSWESim/kernels.usf", "InitDecomp",          SF_Compute);
-IMPLEMENT_GLOBAL_SHADER(FCalcDiffusionCoeffsCS, "/Plugin/DispersiveSWESim/kernels.usf", "CalcDiffusionCoeffs", SF_Compute);
-IMPLEMENT_GLOBAL_SHADER(FDiffusionStepCS,       "/Plugin/DispersiveSWESim/kernels.usf", "DiffusionStep",       SF_Compute);
-IMPLEMENT_GLOBAL_SHADER(FDecomposeFieldsCS,     "/Plugin/DispersiveSWESim/kernels.usf", "DecomposeFields",     SF_Compute);
-IMPLEMENT_GLOBAL_SHADER(FRecomputeHCS,          "/Plugin/DispersiveSWESim/kernels.usf", "RecomputeH",          SF_Compute);
-IMPLEMENT_GLOBAL_SHADER(FRecomputeHAvgCS,       "/Plugin/DispersiveSWESim/kernels.usf", "RecomputeHAvg",       SF_Compute);
-IMPLEMENT_GLOBAL_SHADER(FTransferToFFTCS,       "/Plugin/DispersiveSWESim/kernels.usf", "TransferToFFT",       SF_Compute);
-IMPLEMENT_GLOBAL_SHADER(FCalcEWaveCS,           "/Plugin/DispersiveSWESim/kernels.usf", "CalcEWave",           SF_Compute);
-IMPLEMENT_GLOBAL_SHADER(FInterpQCS,             "/Plugin/DispersiveSWESim/kernels.usf", "InterpQ",             SF_Compute);
-IMPLEMENT_GLOBAL_SHADER(FCalcUbarCS,            "/Plugin/DispersiveSWESim/kernels.usf", "CalcUbar",            SF_Compute);
-IMPLEMENT_GLOBAL_SHADER(FCalcSWECS,             "/Plugin/DispersiveSWESim/kernels.usf", "CalcSWE",             SF_Compute);
-IMPLEMENT_GLOBAL_SHADER(FUpdateTildeCS,         "/Plugin/DispersiveSWESim/kernels.usf", "UpdateTilde",         SF_Compute);
-IMPLEMENT_GLOBAL_SHADER(FCalcQAdvectCS,         "/Plugin/DispersiveSWESim/kernels.usf", "CalcQAdvect",         SF_Compute);
-IMPLEMENT_GLOBAL_SHADER(FIntegrateHCS,          "/Plugin/DispersiveSWESim/kernels.usf", "IntegrateH",          SF_Compute);
+IMPLEMENT_GLOBAL_SHADER(FInitializeWaterCS,     "/Plugin/DispersiveSWEWaves/dispersiveswe.usf", "InitializeWater",     SF_Compute);
+IMPLEMENT_GLOBAL_SHADER(FInitDecompCS,          "/Plugin/DispersiveSWEWaves/dispersiveswe.usf", "InitDecomp",          SF_Compute);
+IMPLEMENT_GLOBAL_SHADER(FCalcDiffusionCoeffsCS, "/Plugin/DispersiveSWEWaves/dispersiveswe.usf", "CalcDiffusionCoeffs", SF_Compute);
+IMPLEMENT_GLOBAL_SHADER(FDiffusionStepCS,       "/Plugin/DispersiveSWEWaves/dispersiveswe.usf", "DiffusionStep",       SF_Compute);
+IMPLEMENT_GLOBAL_SHADER(FDecomposeFieldsCS,     "/Plugin/DispersiveSWEWaves/dispersiveswe.usf", "DecomposeFields",     SF_Compute);
+IMPLEMENT_GLOBAL_SHADER(FRecomputeHCS,          "/Plugin/DispersiveSWEWaves/dispersiveswe.usf", "RecomputeH",          SF_Compute);
+IMPLEMENT_GLOBAL_SHADER(FRecomputeHAvgCS,       "/Plugin/DispersiveSWEWaves/dispersiveswe.usf", "RecomputeHAvg",       SF_Compute);
+IMPLEMENT_GLOBAL_SHADER(FTransferToFFTCS,       "/Plugin/DispersiveSWEWaves/dispersiveswe.usf", "TransferToFFT",       SF_Compute);
+IMPLEMENT_GLOBAL_SHADER(FCalcEWaveCS,           "/Plugin/DispersiveSWEWaves/dispersiveswe.usf", "CalcEWave",           SF_Compute);
+IMPLEMENT_GLOBAL_SHADER(FInterpQCS,             "/Plugin/DispersiveSWEWaves/dispersiveswe.usf", "InterpQ",             SF_Compute);
+IMPLEMENT_GLOBAL_SHADER(FCalcUbarCS,            "/Plugin/DispersiveSWEWaves/dispersiveswe.usf", "CalcUbar",            SF_Compute);
+IMPLEMENT_GLOBAL_SHADER(FCalcSWECS,             "/Plugin/DispersiveSWEWaves/dispersiveswe.usf", "CalcSWE",             SF_Compute);
+IMPLEMENT_GLOBAL_SHADER(FUpdateTildeCS,         "/Plugin/DispersiveSWEWaves/dispersiveswe.usf", "UpdateTilde",         SF_Compute);
+IMPLEMENT_GLOBAL_SHADER(FCalcQAdvectCS,         "/Plugin/DispersiveSWEWaves/dispersiveswe.usf", "CalcQAdvect",         SF_Compute);
+IMPLEMENT_GLOBAL_SHADER(FIntegrateHCS,          "/Plugin/DispersiveSWEWaves/dispersiveswe.usf", "IntegrateH",          SF_Compute);
 
 
 void AddInitializeWaterPass(

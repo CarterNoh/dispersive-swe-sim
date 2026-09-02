@@ -4,9 +4,9 @@
 
 IMPLEMENT_GLOBAL_SHADER_PARAMETER_STRUCT(FFFTWaveConstants, "FFTWaveConstants");
 
-IMPLEMENT_GLOBAL_SHADER(FPopulateSpectrumCS, "/Plugin/DispersiveSWESim/fftwaves.usf", "PopulateSpectrum", SF_Compute);
-IMPLEMENT_GLOBAL_SHADER(FPropagateWavesCS,   "/Plugin/DispersiveSWESim/fftwaves.usf", "PropagateWaves",   SF_Compute);
-IMPLEMENT_GLOBAL_SHADER(FInterpCS,           "/Plugin/DispersiveSWESim/fftwaves.usf", "Interp",           SF_Compute);
+IMPLEMENT_GLOBAL_SHADER(FPopulateSpectrumCS, "/Plugin/DispersiveSWEWaves/fftwaves.usf", "PopulateSpectrum", SF_Compute);
+IMPLEMENT_GLOBAL_SHADER(FPropagateWavesCS,   "/Plugin/DispersiveSWEWaves/fftwaves.usf", "PropagateWaves",   SF_Compute);
+IMPLEMENT_GLOBAL_SHADER(FInterpCS,           "/Plugin/DispersiveSWEWaves/fftwaves.usf", "Interp",           SF_Compute);
 
 void AddPopulateSpectrumPass(
 	FRDGBuilder& GraphBuilder,
