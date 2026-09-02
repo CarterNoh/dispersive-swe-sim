@@ -3,18 +3,19 @@
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
 #include "Engine/TextureRenderTarget2D.h"
-#include "RenderGraphResources.h"
-#include "DispersiveSWEShaders.h"
+#include "MainSimShaders.h"
+#include "FFTWaveShaders.h"
+#include "ExportShaders.h"
 #include <atomic>
-#include "DispersiveSWESimulator.generated.h"
+#include "Simulator.generated.h"
 
 UCLASS(ClassGroup=(Custom), meta=(BlueprintSpawnableComponent))
-class DISPERSIVESWESIM_API UDispersiveSWESimulator : public UActorComponent
+class DISPERSIVESWESIM_API USimulator : public UActorComponent
 {
 	GENERATED_BODY()
 
 public:
-	UDispersiveSWESimulator();
+	USimulator();
 	virtual void BeginPlay() override;
 	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
 
@@ -197,6 +198,10 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "UE|Configuration")
 	FString JsonConfigFilePath = "";
 
+	// If true, exports the captured terrain height map to terrain_captured.raw upon initialization. Defaults to false.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "UE|Debug")
+	bool bExportCapturedTerrain = false;
+
 	// Output target textures containing wave fields
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "UE|Outputs")
 	UTextureRenderTarget2D* TerrainRT = nullptr;
@@ -206,6 +211,18 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "UE|Outputs")
 	UTextureRenderTarget2D* DisplacementPastRT = nullptr;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "UE|Outputs")
+	UTextureRenderTarget2D* VelocityRT = nullptr;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "UE|Outputs")
+	UTextureRenderTarget2D* VelocityPastRT = nullptr;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "UE|Outputs")
+	UTextureRenderTarget2D* AccelerationRT = nullptr;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "UE|Outputs")
+	UTextureRenderTarget2D* AccelerationPastRT = nullptr;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "UE|Outputs")
 	UTextureRenderTarget2D* NormalRT = nullptr;
@@ -225,8 +242,14 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "UE|Configuration")
 	bool SaveParametersToJson(const FString& FilePath);
 
-	UFUNCTION(BlueprintCallable, Category = "UE|| Buoyancy")
+	UFUNCTION(BlueprintCallable, Category = "UE|Buoyancy")
 	float GetWaterHeightAtLocation(const FVector& WorldLocation) const;
+
+	UFUNCTION(BlueprintCallable, Category = "UE|Buoyancy")
+	FVector GetWaterVelocityAtLocation(const FVector& WorldLocation) const;
+
+	UFUNCTION(BlueprintCallable, Category = "UE|Buoyancy")
+	FVector GetWaterAccelerationAtLocation(const FVector& WorldLocation) const;
 
 private:
 	float SimulationTime = 0.0f;
@@ -236,14 +259,22 @@ private:
 
 	// Staging textures for double-buffered async readback
 	FTextureRHIRef StagingTextures[2];
+	FTextureRHIRef VelocityStagingTextures[2];
+	FTextureRHIRef AccelerationStagingTextures[2];
 	int32 StagingWriteIndex = 0;
 	int32 StagingReadIndex = 1;
 
 	// Thread-safe double-buffered CPU height cache (in meters)
 	TArray<float> CPUHeightData[2];
+	// Thread-safe double-buffered CPU velocity cache (in m/s)
+	TArray<FVector> CPUVelocityData[2];
+	// Thread-safe double-buffered CPU acceleration cache (in m/s^2)
+	TArray<FVector> CPUAccelerationData[2];
 	std::atomic<int32> ActiveCPUBufferIndex{0};
 
 	float GetCachedHeight(int32 X, int32 Y) const;
+	FVector GetCachedVelocity(int32 X, int32 Y) const;
+	FVector GetCachedAcceleration(int32 X, int32 Y) const;
 
 	// Persistent graphics buffers for simulation states
 	TRefCountPtr<IPooledRenderTarget> TexTerrain;
@@ -251,6 +282,7 @@ private:
 	TRefCountPtr<IPooledRenderTarget> TexQ_x;
 	TRefCountPtr<IPooledRenderTarget> TexQ_y;
 	TRefCountPtr<IPooledRenderTarget> Texh;
+	TRefCountPtr<IPooledRenderTarget> Texhdot;
 	TRefCountPtr<IPooledRenderTarget> Texq_x;
 	TRefCountPtr<IPooledRenderTarget> Texq_y;
 	TRefCountPtr<IPooledRenderTarget> TexHOrig;
@@ -314,8 +346,13 @@ private:
 	void InitializeSimulation();
 	void AllocatePersistentTargets(FRHICommandListImmediate& RHICmdList);
 	void SetupInitialStates(FRHICommandListImmediate& RHICmdList);
-	void AssignConstants(FSimConstants& OutConstants) const;
+	void AssignSimulationConstants(FSimConstants& OutConstants) const;
+	void AssignFFTWaveConstants(FFFTWaveConstants& OutConstants) const;
+	void AssignExportConstants(FExportConstants& OutConstants) const;
 	
-	void ExecuteSimulation_RenderThread(FRHICommandListImmediate& RHICmdList, const FSimConstants& Constants);
-	void DispatchFFT_RenderThread(FRDGBuilder& GraphBuilder, FRDGTextureRef TargetTexture, int32 SizeX, int32 SizeY, bool bInverse, int32 NumLayers);
+	void ExecuteSimulation_RenderThread(
+		FRHICommandListImmediate& RHICmdList,
+		const FSimConstants& SimConstants,
+		const FFFTWaveConstants& FFTWaveConstants,
+		const FExportConstants& ExportConstants);
 };

@@ -4,22 +4,28 @@
 #include "GameFramework/Actor.h"
 #include "Components/SceneCaptureComponent2D.h"
 #include "Engine/TextureRenderTarget2D.h"
-#include "DispersiveSWESimulator.h"
-#include "SWESimulatorActor.generated.h"
+#include "Simulator.h"
+#include "SimActor.generated.h"
 
 UCLASS()
-class DISPERSIVESWESIM_API ASWESimulatorActor : public AActor
+class DISPERSIVESWESIM_API ASimActor : public AActor
 {
     GENERATED_BODY()
 
 public:
-    ASWESimulatorActor();
+    ASimActor();
 
     // Editor-time viewport preview and auto-fitting
     virtual void OnConstruction(const FTransform& Transform) override;
 
     UFUNCTION(BlueprintCallable, Category = "SWE | Buoyancy")
     float GetWaterHeightAtLocation(const FVector& WorldLocation) const;
+
+    UFUNCTION(BlueprintCallable, Category = "SWE | Buoyancy")
+    FVector GetWaterVelocityAtLocation(const FVector& WorldLocation) const;
+
+    UFUNCTION(BlueprintCallable, Category = "SWE | Buoyancy")
+    FVector GetWaterAccelerationAtLocation(const FVector& WorldLocation) const;
 
 protected:
     virtual void BeginPlay() override;
@@ -30,7 +36,7 @@ public:
     USceneCaptureComponent2D* TerrainCaptureComponent;
 
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="SWE | Components")
-    UDispersiveSWESimulator* SimComponent;
+    USimulator* SimComponent;
 
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="SWE | Components")
     UStaticMeshComponent* WaterMeshComponent;
@@ -81,6 +87,10 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="SWE | Configuration")
     UMaterialInterface* BaseWaterMaterial;
 
+    // If true, exports the captured terrain height map to terrain_captured.raw upon initialization. Defaults to false.
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SWE | Debug", meta=(ToolTip="If true, exports the captured terrain height map to terrain_captured.raw upon initialization."))
+    bool bExportCapturedTerrain = false;
+
 private:
     // --- Runtime Render Targets ---
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="SWE | Debug", meta=(AllowPrivateAccess="true"))
@@ -94,6 +104,18 @@ private:
 
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="SWE | Debug", meta=(AllowPrivateAccess="true"))
     UTextureRenderTarget2D* DisplacementPastRT;
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="SWE | Debug", meta=(AllowPrivateAccess="true"))
+    UTextureRenderTarget2D* VelocityRT;
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="SWE | Debug", meta=(AllowPrivateAccess="true"))
+    UTextureRenderTarget2D* VelocityPastRT;
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="SWE | Debug", meta=(AllowPrivateAccess="true"))
+    UTextureRenderTarget2D* AccelerationRT;
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="SWE | Debug", meta=(AllowPrivateAccess="true"))
+    UTextureRenderTarget2D* AccelerationPastRT;
 
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="SWE | Debug", meta=(AllowPrivateAccess="true"))
     UTextureRenderTarget2D* NormalRT;

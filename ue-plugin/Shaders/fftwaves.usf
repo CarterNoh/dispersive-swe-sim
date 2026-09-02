@@ -1,44 +1,34 @@
 #include "/Engine/Public/Platform.ush"
-#include "/Engine/Generated/UniformBuffers/SimConstants.ush"
+#include "/Engine/Generated/UniformBuffers/FFTWaveConstants.ush"
 
 /*
 Implementation of FFT waves. Based on Cougar's FFTWave implementation in HoloOcean
 and the paper "Empirical Directional Wave Spectra for Computer Graphics". 
  */
 
-// Simulation parameters redirected to the SimConstants constant buffer
-#define time SimConstants.time
-#define gridSizeX SimConstants.gridSizeX
-#define gridSizeY SimConstants.gridSizeY
-#define cellSize SimConstants.cellSize
-#define timeStep SimConstants.timeStep
-#define minWaterHeight SimConstants.minWaterHeight
-#define surfaceTension SimConstants.surfaceTension
-#define density SimConstants.density
-#define diffusionIterations SimConstants.diffusionIterations
-#define maxDiffusionCells SimConstants.maxDiffusionCells
-#define diffusionPenalty SimConstants.diffusionPenalty
-#define slopeLimit SimConstants.slopeLimit
-#define cflCondition SimConstants.cflCondition
-#define gammaTransport SimConstants.gammaTransport
-#define spongeThickness SimConstants.spongeThickness
-#define laplacianDamping SimConstants.laplacianDamping
-#define depthNum SimConstants.depthNum
-#define fetch SimConstants.fetch
-#define windSpeed SimConstants.windSpeed
-#define windAngle SimConstants.windAngle
-#define swell SimConstants.swell
-#define swellAngle SimConstants.swellAngle
-#define choppiness SimConstants.choppiness
-#define filterSmall SimConstants.filterSmall
-#define filterBig SimConstants.filterBig
-#define filterWidth SimConstants.filterWidth
-#define filterMin SimConstants.filterMin
-#define depthCutoff SimConstants.depthCutoff
-#define paddedGridSizeX SimConstants.paddedGridSizeX
-#define paddedGridSizeY SimConstants.paddedGridSizeY
-#define maxSafeDepth SimConstants.maxSafeDepth
-#define getDepthLevel(index) SimConstants.depthLevels[(index) / 4][(index) % 4]
+// Simulation parameters redirected to the FFTWaveConstants constant buffer
+#define time FFTWaveConstants.time
+#define gridSizeX FFTWaveConstants.gridSizeX
+#define gridSizeY FFTWaveConstants.gridSizeY
+#define cellSize FFTWaveConstants.cellSize
+#define paddedGridSizeX FFTWaveConstants.paddedGridSizeX
+#define paddedGridSizeY FFTWaveConstants.paddedGridSizeY
+#define minWaterHeight FFTWaveConstants.minWaterHeight
+#define maxSafeDepth FFTWaveConstants.maxSafeDepth
+#define depthNum FFTWaveConstants.depthNum
+#define surfaceTension FFTWaveConstants.surfaceTension
+#define density FFTWaveConstants.density
+#define fetch FFTWaveConstants.fetch
+#define windSpeed FFTWaveConstants.windSpeed
+#define windAngle FFTWaveConstants.windAngle
+#define swell FFTWaveConstants.swell
+#define swellAngle FFTWaveConstants.swellAngle
+#define choppiness FFTWaveConstants.choppiness
+#define filterSmall FFTWaveConstants.filterSmall
+#define filterBig FFTWaveConstants.filterBig
+#define filterWidth FFTWaveConstants.filterWidth
+#define filterMin FFTWaveConstants.filterMin
+#define getDepthLevel(index) FFTWaveConstants.depthLevels[(index) / 4][(index) % 4]
 
 #define G 9.80665f
 #define PI 3.14159265358979323846f

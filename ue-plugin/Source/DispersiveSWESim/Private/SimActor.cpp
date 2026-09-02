@@ -1,4 +1,4 @@
-#include "SWESimulatorActor.h"
+#include "SimActor.h"
 #include "Materials/MaterialInstanceDynamic.h"
 #include "ProceduralMeshComponent.h"
 #include "Components/SceneComponent.h"
@@ -9,15 +9,15 @@
 #include "TextureResource.h"
 
 
-ASWESimulatorActor::ASWESimulatorActor()
+ASimActor::ASimActor()
 {
     PrimaryActorTick.bCanEverTick = false;
 
-    // 1. Root Component
+    // Root Component
     USceneComponent* Root = CreateDefaultSubobject<USceneComponent>(TEXT("Root"));
     RootComponent = Root;
 
-    // 2. Attach Scene Capture (positioned facing straight down)
+    // Attach Scene Capture (positioned facing straight down)
     TerrainCaptureComponent = CreateDefaultSubobject<USceneCaptureComponent2D>(TEXT("TerrainCapture"));
     TerrainCaptureComponent->SetupAttachment(Root);
     TerrainCaptureComponent->bCaptureEveryFrame = false;
@@ -25,13 +25,13 @@ ASWESimulatorActor::ASWESimulatorActor()
     TerrainCaptureComponent->SetRelativeLocation(FVector(0.0f, 0.0f, 5000.0f)); // default 50m above
     TerrainCaptureComponent->SetRelativeRotation(FRotator(-90.0f, 0.0f, -90.0f)); // Pointing down
 
-    // 3. Attach water mesh representation (flat plane)
+    // Attach water mesh representation (flat plane)
     WaterMeshComponent = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("WaterMesh"));
     WaterMeshComponent->SetupAttachment(Root);
     WaterMeshComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 
-    // 4. Attach SWE Simulation orchestrator
-    SimComponent = CreateDefaultSubobject<UDispersiveSWESimulator>(TEXT("SWESimulator"));
+    // Attach SWE Simulation orchestrator
+    SimComponent = CreateDefaultSubobject<USimulator>(TEXT("SWESimulator"));
 
     // Set defaults
     GridResolution = 512;
@@ -57,14 +57,14 @@ ASWESimulatorActor::ASWESimulatorActor()
     }
 }
 
-void ASWESimulatorActor::OnConstruction(const FTransform& Transform)
+void ASimActor::OnConstruction(const FTransform& Transform)
 {
     Super::OnConstruction(Transform);
 
     // Handle auto-fit logic in editor time so it's instantly visual to the developer
     FitToTerrain();
 
-    // 5. Setup static water mesh representation and scale it
+    // Setup static water mesh representation and scale it
     if (WaterMeshComponent)
     {
         WaterMeshComponent->SetVisibility(true);
@@ -92,11 +92,11 @@ void ASWESimulatorActor::OnConstruction(const FTransform& Transform)
     }
 }
 
-void ASWESimulatorActor::BeginPlay()
+void ASimActor::BeginPlay()
 {
-    UE_LOG(LogTemp, Warning, TEXT("ASWESimulatorActor::BeginPlay() started"));
+    UE_LOG(LogTemp, Warning, TEXT("ASimActor::BeginPlay() started"));
 
-    // 1. Re-run bounds calculation to ensure runtime matches any runtime changes
+    // Re-run bounds calculation to ensure runtime matches any runtime changes
     FitToTerrain();
 
     // Set up static water mesh at runtime
@@ -120,7 +120,7 @@ void ASWESimulatorActor::BeginPlay()
         }
     }
 
-    // 2. Programmatically allocate 32-bit float Render Targets to avoid asset cluttering
+    // Programmatically allocate 32-bit float Render Targets to avoid asset cluttering
     TerrainCaptureRT = NewObject<UTextureRenderTarget2D>(this);
     TerrainCaptureRT->bCanCreateUAV = true;
     TerrainCaptureRT->InitCustomFormat(GridResolution, GridResolution, PF_FloatRGBA, false);
@@ -144,6 +144,30 @@ void ASWESimulatorActor::BeginPlay()
     DisplacementPastRT->InitCustomFormat(GridResolution, GridResolution, PF_FloatRGBA, false);
     DisplacementPastRT->AddressX = TA_Clamp;
     DisplacementPastRT->AddressY = TA_Clamp;
+
+    VelocityRT = NewObject<UTextureRenderTarget2D>(this);
+    VelocityRT->bCanCreateUAV = true;
+    VelocityRT->InitCustomFormat(GridResolution, GridResolution, PF_FloatRGBA, false);
+    VelocityRT->AddressX = TA_Clamp;
+    VelocityRT->AddressY = TA_Clamp;
+
+    VelocityPastRT = NewObject<UTextureRenderTarget2D>(this);
+    VelocityPastRT->bCanCreateUAV = true;
+    VelocityPastRT->InitCustomFormat(GridResolution, GridResolution, PF_FloatRGBA, false);
+    VelocityPastRT->AddressX = TA_Clamp;
+    VelocityPastRT->AddressY = TA_Clamp;
+
+    AccelerationRT = NewObject<UTextureRenderTarget2D>(this);
+    AccelerationRT->bCanCreateUAV = true;
+    AccelerationRT->InitCustomFormat(GridResolution, GridResolution, PF_FloatRGBA, false);
+    AccelerationRT->AddressX = TA_Clamp;
+    AccelerationRT->AddressY = TA_Clamp;
+
+    AccelerationPastRT = NewObject<UTextureRenderTarget2D>(this);
+    AccelerationPastRT->bCanCreateUAV = true;
+    AccelerationPastRT->InitCustomFormat(GridResolution, GridResolution, PF_FloatRGBA, false);
+    AccelerationPastRT->AddressX = TA_Clamp;
+    AccelerationPastRT->AddressY = TA_Clamp;
 
     NormalRT = NewObject<UTextureRenderTarget2D>(this);
     NormalRT->bCanCreateUAV = true;
@@ -169,7 +193,7 @@ void ASWESimulatorActor::BeginPlay()
     RoughnessRT->AddressX = TA_Clamp;
     RoughnessRT->AddressY = TA_Clamp;
 
-    // 3. Setup Scene Capture Component properties
+    // Setup Scene Capture Component properties
     float CameraZ = 5000.0f;
     if (TerrainCaptureComponent)
     {
@@ -223,7 +247,7 @@ void ASWESimulatorActor::BeginPlay()
         }
     }
 
-    // 4. Configure and Bind Render Targets to Simulation Component
+    // Configure and Bind Render Targets to Simulation Component
     if (SimComponent)
     {
         SimComponent->GridSizeX = GridResolution;
@@ -245,22 +269,27 @@ void ASWESimulatorActor::BeginPlay()
         SimComponent->TerrainRT = TerrainRT;
         SimComponent->DisplacementRT = DisplacementRT;
         SimComponent->DisplacementPastRT = DisplacementPastRT;
+        SimComponent->VelocityRT = VelocityRT;
+        SimComponent->VelocityPastRT = VelocityPastRT;
+        SimComponent->AccelerationRT = AccelerationRT;
+        SimComponent->AccelerationPastRT = AccelerationPastRT;
         SimComponent->NormalRT = NormalRT;
         SimComponent->FoamRT = FoamRT;
         SimComponent->JacobianDetRT = JacobianDetRT;
         SimComponent->RoughnessRT = RoughnessRT;
+        SimComponent->bExportCapturedTerrain = bExportCapturedTerrain;
     }
 
     // Call Super::BeginPlay() after components are fully configured to trigger correct InitializeSimulation grid sizes
     Super::BeginPlay();
 
-    // 5. Try to load default material if not set
+    // Try to load default material if not set
     if (!BaseWaterMaterial && bAutoLoadDefaultAssets)
     {
         BaseWaterMaterial = Cast<UMaterialInterface>(StaticLoadObject(UMaterialInterface::StaticClass(), nullptr, TEXT("/DispersiveSWESim/Materials/M_PreviewOceanWater")));
     }
 
-    // 6. Create and bind dynamic material instance
+    // Create and bind dynamic material instance
     if (BaseWaterMaterial)
     {
         DynamicWaterMaterial = UMaterialInstanceDynamic::Create(BaseWaterMaterial, this);
@@ -271,6 +300,22 @@ void ASWESimulatorActor::BeginPlay()
         DynamicWaterMaterial->SetTextureParameterValue(FName("DisplacementPastMap"), DisplacementPastRT);
         DynamicWaterMaterial->SetTextureParameterValue(FName("Displacement Past Map"), DisplacementPastRT);
         DynamicWaterMaterial->SetTextureParameterValue(FName("DisplacementPast"), DisplacementPastRT);
+
+        DynamicWaterMaterial->SetTextureParameterValue(FName("VelocityMap"), VelocityRT);
+        DynamicWaterMaterial->SetTextureParameterValue(FName("Velocity Map"), VelocityRT);
+        DynamicWaterMaterial->SetTextureParameterValue(FName("Velocity"), VelocityRT);
+
+        DynamicWaterMaterial->SetTextureParameterValue(FName("VelocityPastMap"), VelocityPastRT);
+        DynamicWaterMaterial->SetTextureParameterValue(FName("Velocity Past Map"), VelocityPastRT);
+        DynamicWaterMaterial->SetTextureParameterValue(FName("VelocityPast"), VelocityPastRT);
+
+        DynamicWaterMaterial->SetTextureParameterValue(FName("AccelerationMap"), AccelerationRT);
+        DynamicWaterMaterial->SetTextureParameterValue(FName("Acceleration Map"), AccelerationRT);
+        DynamicWaterMaterial->SetTextureParameterValue(FName("Acceleration"), AccelerationRT);
+
+        DynamicWaterMaterial->SetTextureParameterValue(FName("AccelerationPastMap"), AccelerationPastRT);
+        DynamicWaterMaterial->SetTextureParameterValue(FName("Acceleration Past Map"), AccelerationPastRT);
+        DynamicWaterMaterial->SetTextureParameterValue(FName("AccelerationPast"), AccelerationPastRT);
 
         DynamicWaterMaterial->SetTextureParameterValue(FName("NormalMap"), NormalRT);
         DynamicWaterMaterial->SetTextureParameterValue(FName("Normal Map"), NormalRT);
@@ -302,7 +347,7 @@ void ASWESimulatorActor::BeginPlay()
     }
 }
 
-float ASWESimulatorActor::GetWaterHeightAtLocation(const FVector& WorldLocation) const
+float ASimActor::GetWaterHeightAtLocation(const FVector& WorldLocation) const
 {
     if (SimComponent)
     {
@@ -311,7 +356,25 @@ float ASWESimulatorActor::GetWaterHeightAtLocation(const FVector& WorldLocation)
     return WaterLevel;
 }
 
-void ASWESimulatorActor::FitToTerrain()
+FVector ASimActor::GetWaterVelocityAtLocation(const FVector& WorldLocation) const
+{
+    if (SimComponent)
+    {
+        return SimComponent->GetWaterVelocityAtLocation(WorldLocation);
+    }
+    return FVector::ZeroVector;
+}
+
+FVector ASimActor::GetWaterAccelerationAtLocation(const FVector& WorldLocation) const
+{
+    if (SimComponent)
+    {
+        return SimComponent->GetWaterAccelerationAtLocation(WorldLocation);
+    }
+    return FVector::ZeroVector;
+}
+
+void ASimActor::FitToTerrain()
 {
     if (bAutoFitToTerrain && TerrainActor)
     {

@@ -624,7 +624,7 @@ bool GPU::CreateGridVertexBuffer(int width, int height) {
 }
 
 bool GPU::CreateGridMesh(int width, int height) {
-    // 1. Generate the Vertices (Same as before)
+    // Generate the Vertices (Same as before)
     std::vector<float> vertices;
     vertices.reserve(width * height * 2);
     for (int y = 0; y < height; ++y) {
@@ -643,7 +643,7 @@ bool GPU::CreateGridMesh(int width, int height) {
     vInit.pSysMem = vertices.data();
     device->CreateBuffer(&vbd, &vInit, &vertexBuffer);
 
-    // 2. Generate the Indices (The "Map" of Triangles)
+    // Generate the Indices (The "Map" of Triangles)
     std::vector<unsigned int> indices;
     indices.reserve(width * height * 6);
     // We loop to width/height - 1 because we are building squares BETWEEN the points
@@ -741,7 +741,7 @@ void GPU::Render(const std::vector<ID3D11ShaderResourceView*>& srvs) {
     context->IASetVertexBuffers(0, 1, &vertexBuffer, &stride, &offset);
     context->IASetIndexBuffer(indexBuffer, DXGI_FORMAT_R32_UINT, 0);
     context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-    context->DrawIndexed(indexCount, 0, 0); // 4. Draw using the Indices, not just raw vertices
+    context->DrawIndexed(indexCount, 0, 0); // Draw using the Indices, not just raw vertices
 
     // Unbind the SRV
     ID3D11ShaderResourceView* nullSRV = nullptr;
