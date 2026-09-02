@@ -35,8 +35,7 @@ END_GLOBAL_SHADER_PARAMETER_STRUCT()
 // Shader Classes from kernels.usf
 // ============================================================================
 
-class FInitializeWaterCS : public FGlobalShader
-{
+class FInitializeWaterCS : public FGlobalShader {
 public:
 	DECLARE_GLOBAL_SHADER(FInitializeWaterCS);
 	SHADER_USE_PARAMETER_STRUCT(FInitializeWaterCS, FGlobalShader);
@@ -53,8 +52,7 @@ public:
 	END_SHADER_PARAMETER_STRUCT()
 };
 
-class FInitDecompCS : public FGlobalShader
-{
+class FInitDecompCS : public FGlobalShader {
 public:
 	DECLARE_GLOBAL_SHADER(FInitDecompCS);
 	SHADER_USE_PARAMETER_STRUCT(FInitDecompCS, FGlobalShader);
@@ -71,8 +69,7 @@ public:
 	END_SHADER_PARAMETER_STRUCT()
 };
 
-class FCalcDiffusionCoeffsCS : public FGlobalShader
-{
+class FCalcDiffusionCoeffsCS : public FGlobalShader {
 public:
 	DECLARE_GLOBAL_SHADER(FCalcDiffusionCoeffsCS);
 	SHADER_USE_PARAMETER_STRUCT(FCalcDiffusionCoeffsCS, FGlobalShader);
@@ -87,8 +84,7 @@ public:
 	END_SHADER_PARAMETER_STRUCT()
 };
 
-class FDiffusionStepCS : public FGlobalShader
-{
+class FDiffusionStepCS : public FGlobalShader {
 public:
 	DECLARE_GLOBAL_SHADER(FDiffusionStepCS);
 	SHADER_USE_PARAMETER_STRUCT(FDiffusionStepCS, FGlobalShader);
@@ -111,8 +107,7 @@ public:
 	END_SHADER_PARAMETER_STRUCT()
 };
 
-class FDecomposeFieldsCS : public FGlobalShader
-{
+class FDecomposeFieldsCS : public FGlobalShader {
 public:
 	DECLARE_GLOBAL_SHADER(FDecomposeFieldsCS);
 	SHADER_USE_PARAMETER_STRUCT(FDecomposeFieldsCS, FGlobalShader);
@@ -135,8 +130,7 @@ public:
 	END_SHADER_PARAMETER_STRUCT()
 };
 
-class FRecomputeHCS : public FGlobalShader
-{
+class FRecomputeHCS : public FGlobalShader {
 public:
 	DECLARE_GLOBAL_SHADER(FRecomputeHCS);
 	SHADER_USE_PARAMETER_STRUCT(FRecomputeHCS, FGlobalShader);
@@ -149,8 +143,7 @@ public:
 	END_SHADER_PARAMETER_STRUCT()
 };
 
-class FRecomputeHAvgCS : public FGlobalShader
-{
+class FRecomputeHAvgCS : public FGlobalShader {
 public:
 	DECLARE_GLOBAL_SHADER(FRecomputeHAvgCS);
 	SHADER_USE_PARAMETER_STRUCT(FRecomputeHAvgCS, FGlobalShader);
@@ -164,8 +157,7 @@ public:
 	END_SHADER_PARAMETER_STRUCT()
 };
 
-class FTransferToFFTCS : public FGlobalShader
-{
+class FTransferToFFTCS : public FGlobalShader {
 public:
 	DECLARE_GLOBAL_SHADER(FTransferToFFTCS);
 	SHADER_USE_PARAMETER_STRUCT(FTransferToFFTCS, FGlobalShader);
@@ -183,8 +175,7 @@ public:
 	END_SHADER_PARAMETER_STRUCT()
 };
 
-class FCalcEWaveCS : public FGlobalShader
-{
+class FCalcEWaveCS : public FGlobalShader {
 public:
 	DECLARE_GLOBAL_SHADER(FCalcEWaveCS);
 	SHADER_USE_PARAMETER_STRUCT(FCalcEWaveCS, FGlobalShader);
@@ -201,8 +192,7 @@ public:
 	END_SHADER_PARAMETER_STRUCT()
 };
 
-class FInterpQCS : public FGlobalShader
-{
+class FInterpQCS : public FGlobalShader {
 public:
 	DECLARE_GLOBAL_SHADER(FInterpQCS);
 	SHADER_USE_PARAMETER_STRUCT(FInterpQCS, FGlobalShader);
@@ -217,8 +207,7 @@ public:
 	END_SHADER_PARAMETER_STRUCT()
 };
 
-class FCalcUbarCS : public FGlobalShader
-{
+class FCalcUbarCS : public FGlobalShader {
 public:
 	DECLARE_GLOBAL_SHADER(FCalcUbarCS);
 	SHADER_USE_PARAMETER_STRUCT(FCalcUbarCS, FGlobalShader);
@@ -233,8 +222,7 @@ public:
 	END_SHADER_PARAMETER_STRUCT()
 };
 
-class FCalcSWECS : public FGlobalShader
-{
+class FCalcSWECS : public FGlobalShader {
 public:
 	DECLARE_GLOBAL_SHADER(FCalcSWECS);
 	SHADER_USE_PARAMETER_STRUCT(FCalcSWECS, FGlobalShader);
@@ -255,8 +243,7 @@ public:
 	END_SHADER_PARAMETER_STRUCT()
 };
 
-class FUpdateTildeCS : public FGlobalShader
-{
+class FUpdateTildeCS : public FGlobalShader {
 public:
 	DECLARE_GLOBAL_SHADER(FUpdateTildeCS);
 	SHADER_USE_PARAMETER_STRUCT(FUpdateTildeCS, FGlobalShader);
@@ -277,8 +264,7 @@ public:
 	END_SHADER_PARAMETER_STRUCT()
 };
 
-class FCalcQAdvectCS : public FGlobalShader
-{
+class FCalcQAdvectCS : public FGlobalShader {
 public:
 	DECLARE_GLOBAL_SHADER(FCalcQAdvectCS);
 	SHADER_USE_PARAMETER_STRUCT(FCalcQAdvectCS, FGlobalShader);
@@ -293,8 +279,7 @@ public:
 	END_SHADER_PARAMETER_STRUCT()
 };
 
-class FIntegrateHCS : public FGlobalShader
-{
+class FIntegrateHCS : public FGlobalShader {
 public:
 	DECLARE_GLOBAL_SHADER(FIntegrateHCS);
 	SHADER_USE_PARAMETER_STRUCT(FIntegrateHCS, FGlobalShader);
@@ -316,14 +301,12 @@ public:
 	END_SHADER_PARAMETER_STRUCT()
 };
 
-
 // ============================================================================
 // RDG Helper Structures & Functions
 // ============================================================================
 
 // --- Water Initialization ---
-struct FInitializeWaterInputs
-{
+struct FInitializeWaterInputs {
 	FRDGTextureRef TerrainInput = nullptr;
 	float WaterLevel = 0.0f;
 	float TerrainCaptureCameraZ = 0.0f;
@@ -331,8 +314,7 @@ struct FInitializeWaterInputs
 	int32 GridSizeY = 0;
 };
 
-struct FInitializeWaterOutputs
-{
+struct FInitializeWaterOutputs {
 	FRDGTextureRef hOut = nullptr;
 	FRDGTextureRef H_Out = nullptr;
 	FRDGTextureRef terrainOut = nullptr;
@@ -350,25 +332,17 @@ void AddInitializeWaterPass(
 	const FInitializeWaterOutputs& Outputs);
 
 // --- Field Decomposition & Jacobi Diffusion ---
-struct FDecompositionInputs
-{
+struct FDecompositionInputs {
 	FRDGTextureRef hIn = nullptr;
 	FRDGTextureRef qIn_x = nullptr;
 	FRDGTextureRef qIn_y = nullptr;
 	FRDGTextureRef terrain = nullptr;
-	FRDGTextureRef HOrig = nullptr;
-	FRDGTextureRef QOrig_x = nullptr;
-	FRDGTextureRef QOrig_y = nullptr;
-	FRDGTextureRef alpha_H = nullptr;
-	FRDGTextureRef alpha_Q_x = nullptr;
-	FRDGTextureRef alpha_Q_y = nullptr;
 	int32 GridSizeX = 0;
 	int32 GridSizeY = 0;
 	int32 DiffusionIterations = 128;
 };
 
-struct FDecompositionOutputs
-{
+struct FDecompositionOutputs {
 	FRDGTextureRef H_SrcDst = nullptr;      // Ping-pongs with HPast
 	FRDGTextureRef HPast_SrcDst = nullptr;
 	FRDGTextureRef Qx_SrcDst = nullptr;     // Ping-pongs with QPast_x
@@ -390,8 +364,7 @@ void AddDecompositionPasses(
 	FDecompositionOutputs& Outputs);
 
 // --- eWave Dispersion Solver ---
-struct FEWaveInputs
-{
+struct FEWaveInputs {
 	FRDGTextureRef htildeIn = nullptr;
 	FRDGTextureRef htildeOldIn = nullptr;
 	FRDGTextureRef qtildeIn_x = nullptr;
@@ -399,11 +372,6 @@ struct FEWaveInputs
 	FRDGTextureRef Flow_x = nullptr;
 	FRDGTextureRef Flow_y = nullptr;
 	FRDGTextureRef hbarIn = nullptr;
-	FRDGTextureRef hHat = nullptr;
-	FRDGTextureRef qHat_x = nullptr;
-	FRDGTextureRef qHat_y = nullptr;
-	FRDGTextureRef qHat_x_array = nullptr;
-	FRDGTextureRef qHat_y_array = nullptr;
 	int32 PaddedSizeX = 0;
 	int32 PaddedSizeY = 0;
 	int32 GridSizeX = 0;
@@ -411,8 +379,7 @@ struct FEWaveInputs
 	int32 DepthNum = 0;
 };
 
-struct FEWaveOutputs
-{
+struct FEWaveOutputs {
 	FRDGTextureRef htildeOldNext = nullptr;
 	FRDGTextureRef qtildeOut_x = nullptr;
 	FRDGTextureRef qtildeOut_y = nullptr;
@@ -425,8 +392,7 @@ void AddEWavePasses(
 	const FEWaveOutputs& Outputs);
 
 // --- Bulk Flow (SWE Velocity & Momentum) ---
-struct FSWEBulkInputs
-{
+struct FSWEBulkInputs {
 	FRDGTextureRef qbarIn_x = nullptr;
 	FRDGTextureRef qbarIn_y = nullptr;
 	FRDGTextureRef hbarIn = nullptr;
@@ -439,8 +405,7 @@ struct FSWEBulkInputs
 	int32 GridSizeY = 0;
 };
 
-struct FSWEBulkOutputs
-{
+struct FSWEBulkOutputs {
 	FRDGTextureRef ubarOut_x = nullptr;
 	FRDGTextureRef ubarOut_y = nullptr;
 	FRDGTextureRef ubarNewOut_x = nullptr;
@@ -456,8 +421,7 @@ void AddSWEBulkPasses(
 	const FSWEBulkOutputs& Outputs);
 
 // --- Advective Transport & Height Integration ---
-struct FTransportAndIntegrateInputs
-{
+struct FTransportAndIntegrateInputs {
 	FRDGTextureRef ubarNewIn_x = nullptr;
 	FRDGTextureRef ubarIn_x = nullptr;
 	FRDGTextureRef ubarNewIn_y = nullptr;
@@ -473,13 +437,10 @@ struct FTransportAndIntegrateInputs
 	int32 GridSizeY = 0;
 };
 
-struct FTransportAndIntegrateOutputs
-{
+struct FTransportAndIntegrateOutputs {
 	FRDGTextureRef htildeOut = nullptr;
 	FRDGTextureRef qtildeOut_x = nullptr;
 	FRDGTextureRef qtildeOut_y = nullptr;
-	FRDGTextureRef qAdvectOut_x = nullptr;
-	FRDGTextureRef qAdvectOut_y = nullptr;
 	FRDGTextureRef hOut = nullptr;
 	FRDGTextureRef qOut_x = nullptr;
 	FRDGTextureRef qOut_y = nullptr;

@@ -8,8 +8,7 @@
 
 // --- Shaders from fft.usf ---
 
-class FFFTKernel1DCS : public FGlobalShader
-{
+class FFFTKernel1DCS : public FGlobalShader {
 public:
 	DECLARE_GLOBAL_SHADER(FFFTKernel1DCS);
 	SHADER_USE_PARAMETER_STRUCT(FFFTKernel1DCS, FGlobalShader);
@@ -30,13 +29,11 @@ public:
 		SHADER_PARAMETER_RDG_TEXTURE_UAV(RWTexture2D<float2>, fft)
 	END_SHADER_PARAMETER_STRUCT()
 
-	static bool ShouldCompilePermutation(const FGlobalShaderPermutationParameters& Parameters)
-	{
+	static bool ShouldCompilePermutation(const FGlobalShaderPermutationParameters& Parameters) {
 		return true;
 	}
 
-	static void ModifyCompilationEnvironment(const FGlobalShaderPermutationParameters& Parameters, FShaderCompilerEnvironment& OutEnvironment)
-	{
+	static void ModifyCompilationEnvironment(const FGlobalShaderPermutationParameters& Parameters, FShaderCompilerEnvironment& OutEnvironment) {
 		FGlobalShader::ModifyCompilationEnvironment(Parameters, OutEnvironment);
 		
 		FPermutationDomain PermutationVector(Parameters.PermutationId);

@@ -6,19 +6,18 @@
 #include "MainSimShaders.h"
 #include "FFTWaveShaders.h"
 #include "ExportShaders.h"
-#include <atomic>
+#include "SimStateBuffers.h"
+#include "SimReadback.h"
 #include "Simulator.generated.h"
 
 UCLASS(ClassGroup=(Custom), meta=(BlueprintSpawnableComponent))
-class DISPERSIVESWESIM_API USimulator : public UActorComponent
-{
+class DISPERSIVESWESIM_API USimulator : public UActorComponent {
 	GENERATED_BODY()
 
 public:
 	USimulator();
 	virtual void BeginPlay() override;
 	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
-
 
 	//////// Simulation Parameters ////////
 
@@ -67,7 +66,6 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Sim|Grid")
 	float Density = 999.0f;
 
-
 	//////// Decomposition Parameters ////////
 
 	// Number of iterations for diffusion step; more iterations means more stable but also more expensive
@@ -81,7 +79,6 @@ public:
 	// Penalty factor for diffusion; higher means more diffusion and more stability but also more damping of waves
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Sim|Decomposition")
 	float DiffusionPenalty = 0.01f;
-
 
 	//////// SWE & Transport Parameters ////////
 
@@ -100,7 +97,6 @@ public:
 	// Damping factor for Laplacian smoothing to reduce spikes and unstable grid-scale ripples
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Sim|SWE & Transport")
 	float LaplacianDamping = 0.01f;
-
 
 	//////// FFT Wave Parameters ////////
 
@@ -148,7 +144,6 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Sim|FFT Waves")
 	float DepthCutoff = 4.0f;
 
-
 	//////// eWave Parameters ////////
 
 	// Number of discrete water depth solutions to compute for eWave dispersion correction (in meters)
@@ -174,7 +169,6 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Sim|eWave|Roughness")
 	float RoughnessPower = 1.0f;
-	
 
 	//////// Render Targets ////////
 
@@ -257,94 +251,13 @@ private:
 	int32 PaddedSizeY = 512;
 	bool bInitialized = false;
 
-	// Staging textures for double-buffered async readback
-	FTextureRHIRef StagingTextures[2];
-	FTextureRHIRef VelocityStagingTextures[2];
-	FTextureRHIRef AccelerationStagingTextures[2];
-	int32 StagingWriteIndex = 0;
-	int32 StagingReadIndex = 1;
+	// Persistent GPU graphics state buffers
+	FSimStateBuffers StateBuffers;
 
-	// Thread-safe double-buffered CPU height cache (in meters)
-	TArray<float> CPUHeightData[2];
-	// Thread-safe double-buffered CPU velocity cache (in m/s)
-	TArray<FVector> CPUVelocityData[2];
-	// Thread-safe double-buffered CPU acceleration cache (in m/s^2)
-	TArray<FVector> CPUAccelerationData[2];
-	std::atomic<int32> ActiveCPUBufferIndex{0};
-
-	float GetCachedHeight(int32 X, int32 Y) const;
-	FVector GetCachedVelocity(int32 X, int32 Y) const;
-	FVector GetCachedAcceleration(int32 X, int32 Y) const;
-
-	// Persistent graphics buffers for simulation states
-	TRefCountPtr<IPooledRenderTarget> TexTerrain;
-	TRefCountPtr<IPooledRenderTarget> TexH;
-	TRefCountPtr<IPooledRenderTarget> TexQ_x;
-	TRefCountPtr<IPooledRenderTarget> TexQ_y;
-	TRefCountPtr<IPooledRenderTarget> Texh;
-	TRefCountPtr<IPooledRenderTarget> Texhdot;
-	TRefCountPtr<IPooledRenderTarget> Texq_x;
-	TRefCountPtr<IPooledRenderTarget> Texq_y;
-	TRefCountPtr<IPooledRenderTarget> TexHOrig;
-	TRefCountPtr<IPooledRenderTarget> TexQOrig_x;
-	TRefCountPtr<IPooledRenderTarget> TexQOrig_y;
-	TRefCountPtr<IPooledRenderTarget> TexHPast;
-	TRefCountPtr<IPooledRenderTarget> TexQPast_x;
-	TRefCountPtr<IPooledRenderTarget> TexQPast_y;
-	TRefCountPtr<IPooledRenderTarget> TexAlpha_H;
-	TRefCountPtr<IPooledRenderTarget> TexAlpha_Q_x;
-	TRefCountPtr<IPooledRenderTarget> TexAlpha_Q_y;
-	TRefCountPtr<IPooledRenderTarget> Texhbar;
-	TRefCountPtr<IPooledRenderTarget> TexhbarOld;
-	TRefCountPtr<IPooledRenderTarget> Texqbar_x;
-	TRefCountPtr<IPooledRenderTarget> Texqbar_y;
-	TRefCountPtr<IPooledRenderTarget> Texhtilde;
-	TRefCountPtr<IPooledRenderTarget> TexhtildePast;
-	TRefCountPtr<IPooledRenderTarget> TexhtildeOld;
-	TRefCountPtr<IPooledRenderTarget> TexhtildeOldNext;
-	TRefCountPtr<IPooledRenderTarget> Texqtilde_x;
-	TRefCountPtr<IPooledRenderTarget> Texqtilde_y;
-	TRefCountPtr<IPooledRenderTarget> Texubar_x;
-	TRefCountPtr<IPooledRenderTarget> Texubar_y;
-	TRefCountPtr<IPooledRenderTarget> TexubarNew_x;
-	TRefCountPtr<IPooledRenderTarget> TexubarNew_y;
-	TRefCountPtr<IPooledRenderTarget> TexqtildePast_x;
-	TRefCountPtr<IPooledRenderTarget> TexqtildePast_y;
-	TRefCountPtr<IPooledRenderTarget> TexqAdvect_x;
-	TRefCountPtr<IPooledRenderTarget> TexqAdvect_y;
-	TRefCountPtr<IPooledRenderTarget> TexhPast;
-	TRefCountPtr<IPooledRenderTarget> TexhHat;
-	TRefCountPtr<IPooledRenderTarget> TexqHat_x;
-	TRefCountPtr<IPooledRenderTarget> TexqHat_y;
-	TRefCountPtr<IPooledRenderTarget> TexqHat_x_array;
-	TRefCountPtr<IPooledRenderTarget> TexqHat_y_array;
-
-	// Stateful complex textures array for wave FFT propagation
-	// Outputs of PopulateSpectrum (complex arrays)
-	TRefCountPtr<IPooledRenderTarget> TexHPos;
-	TRefCountPtr<IPooledRenderTarget> TexHNeg;
-	// Outputs of PropagateWaves (complex arrays)
-	TRefCountPtr<IPooledRenderTarget> TexDisp_x;
-	TRefCountPtr<IPooledRenderTarget> TexDisp_y;
-	TRefCountPtr<IPooledRenderTarget> TexDelH_x;
-	TRefCountPtr<IPooledRenderTarget> TexDelH_y;
-	TRefCountPtr<IPooledRenderTarget> TexFlow_x;
-	TRefCountPtr<IPooledRenderTarget> TexFlow_y;
-	// iFFT'd variables after interpolation
-	TRefCountPtr<IPooledRenderTarget> Texdisp_x;
-	TRefCountPtr<IPooledRenderTarget> Texdisp_y;
-	TRefCountPtr<IPooledRenderTarget> TexdelH_x;
-	TRefCountPtr<IPooledRenderTarget> TexdelH_y;
-
-	// Foam, roughness, and dummy export textures
-	TRefCountPtr<IPooledRenderTarget> TexFoam;
-	TRefCountPtr<IPooledRenderTarget> TexNewFoam;
-	TRefCountPtr<IPooledRenderTarget> TexRoughness;
-	TRefCountPtr<IPooledRenderTarget> TexNewRoughness;
-	TRefCountPtr<IPooledRenderTarget> TexTerrainExportDummy;
+	// Double-buffered async GPU readback handler
+	FSimReadbackHandler ReadbackHandler;
 
 	void InitializeSimulation();
-	void AllocatePersistentTargets(FRHICommandListImmediate& RHICmdList);
 	void SetupInitialStates(FRHICommandListImmediate& RHICmdList);
 	void AssignSimulationConstants(FSimConstants& OutConstants) const;
 	void AssignFFTWaveConstants(FFFTWaveConstants& OutConstants) const;

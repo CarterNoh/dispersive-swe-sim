@@ -22,8 +22,7 @@ END_GLOBAL_SHADER_PARAMETER_STRUCT()
 
 // --- Shaders from export.usf ---
 
-class FScaleCopyDisplacementCS : public FGlobalShader
-{
+class FScaleCopyDisplacementCS : public FGlobalShader {
 public:
 	DECLARE_GLOBAL_SHADER(FScaleCopyDisplacementCS);
 	SHADER_USE_PARAMETER_STRUCT(FScaleCopyDisplacementCS, FGlobalShader);
@@ -38,8 +37,7 @@ public:
 	END_SHADER_PARAMETER_STRUCT()
 };
 
-class FScaleCopyVelocityCS : public FGlobalShader
-{
+class FScaleCopyVelocityCS : public FGlobalShader {
 public:
 	DECLARE_GLOBAL_SHADER(FScaleCopyVelocityCS);
 	SHADER_USE_PARAMETER_STRUCT(FScaleCopyVelocityCS, FGlobalShader);
@@ -55,8 +53,7 @@ public:
 	END_SHADER_PARAMETER_STRUCT()
 };
 
-class FCalcAccelerationCS : public FGlobalShader
-{
+class FCalcAccelerationCS : public FGlobalShader {
 public:
 	DECLARE_GLOBAL_SHADER(FCalcAccelerationCS);
 	SHADER_USE_PARAMETER_STRUCT(FCalcAccelerationCS, FGlobalShader);
@@ -69,8 +66,7 @@ public:
 	END_SHADER_PARAMETER_STRUCT()
 };
 
-class FCalcSurfaceNormalAndFoamCS : public FGlobalShader
-{
+class FCalcSurfaceNormalAndFoamCS : public FGlobalShader {
 public:
 	DECLARE_GLOBAL_SHADER(FCalcSurfaceNormalAndFoamCS);
 	SHADER_USE_PARAMETER_STRUCT(FCalcSurfaceNormalAndFoamCS, FGlobalShader);
@@ -87,8 +83,7 @@ public:
 	END_SHADER_PARAMETER_STRUCT()
 };
 
-class FCalcRoughnessLUTCS : public FGlobalShader
-{
+class FCalcRoughnessLUTCS : public FGlobalShader {
 public:
 	DECLARE_GLOBAL_SHADER(FCalcRoughnessLUTCS);
 	SHADER_USE_PARAMETER_STRUCT(FCalcRoughnessLUTCS, FGlobalShader);
@@ -106,8 +101,7 @@ public:
 
 // --- RDG Helper Structures & Functions ---
 
-struct FVisualExportInputs
-{
+struct FVisualExportInputs {
 	FRDGTextureRef inDispX = nullptr;
 	FRDGTextureRef inDispY = nullptr;
 	FRDGTextureRef inHeight = nullptr;
@@ -121,14 +115,6 @@ struct FVisualExportInputs
 	FRDGTextureRef inVel = nullptr;
 	FRDGTextureRef inVelPast = nullptr;
 
-	FRDGTextureRef ExportDispDest = nullptr;
-	FRDGTextureRef ExportVelocityDest = nullptr;
-	FRDGTextureRef ExportAccelDest = nullptr;
-	FRDGTextureRef ExportNormalDest = nullptr;
-	FRDGTextureRef ExportFoamDest = nullptr;
-	FRDGTextureRef ExportJacobianDest = nullptr;
-	FRDGTextureRef ExportRoughnessDest = nullptr;
-
 	float ScaleFactor = 100.0f; // m to cm
 	float IntegrationSamples = 100.0f;
 	float RoughnessPower = 1.0f;
@@ -136,10 +122,19 @@ struct FVisualExportInputs
 	int32 GridSizeY = 0;
 };
 
-struct FVisualExportOutputs
-{
+struct FVisualExportOutputs {
+	// Persistent simulation state updates
 	FRDGTextureRef outNewFoam = nullptr;
 	FRDGTextureRef outNewRoughness = nullptr;
+
+	// Export destinations (Render Targets / Staging targets)
+	FRDGTextureRef ExportDispDest = nullptr;
+	FRDGTextureRef ExportVelocityDest = nullptr;
+	FRDGTextureRef ExportAccelDest = nullptr;
+	FRDGTextureRef ExportNormalDest = nullptr;
+	FRDGTextureRef ExportFoamDest = nullptr;
+	FRDGTextureRef ExportJacobianDest = nullptr;
+	FRDGTextureRef ExportRoughnessDest = nullptr;
 };
 
 /**

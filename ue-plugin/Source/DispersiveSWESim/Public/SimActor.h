@@ -8,8 +8,7 @@
 #include "SimActor.generated.h"
 
 UCLASS()
-class DISPERSIVESWESIM_API ASimActor : public AActor
-{
+class DISPERSIVESWESIM_API ASimActor : public AActor {
     GENERATED_BODY()
 
 public:

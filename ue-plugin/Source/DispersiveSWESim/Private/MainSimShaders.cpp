@@ -25,8 +25,7 @@ void AddInitializeWaterPass(
 	FRDGBuilder& GraphBuilder,
 	TUniformBufferRef<FSimConstants> ConstantBuffer,
 	const FInitializeWaterInputs& Inputs,
-	const FInitializeWaterOutputs& Outputs)
-{
+	const FInitializeWaterOutputs& Outputs) {
 	FGlobalShaderMap* ShaderMap = GetGlobalShaderMap(GMaxRHIFeatureLevel);
 	FIntVector GridGroups(
 		FMath::DivideAndRoundUp(Inputs.GridSizeX, 16),
@@ -55,22 +54,18 @@ void AddInitializeWaterPass(
 	);
 
 	// Copy initial water height h to hbar and hbarOld
-	if (Outputs.hbarOut)
-	{
+	if (Outputs.hbarOut) {
 		AddCopyTexturePass(GraphBuilder, Outputs.hOut, Outputs.hbarOut);
 	}
-	if (Outputs.hbarOldOut)
-	{
+	if (Outputs.hbarOldOut) {
 		AddCopyTexturePass(GraphBuilder, Outputs.hOut, Outputs.hbarOldOut);
 	}
 
 	// Initialize persistent foam and roughness targets to 0
-	if (Outputs.FoamOut)
-	{
+	if (Outputs.FoamOut) {
 		AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(Outputs.FoamOut), FLinearColor::Black);
 	}
-	if (Outputs.RoughnessOut)
-	{
+	if (Outputs.RoughnessOut) {
 		AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(Outputs.RoughnessOut), FLinearColor::Black);
 	}
 }
@@ -79,8 +74,7 @@ void AddDecompositionPasses(
 	FRDGBuilder& GraphBuilder,
 	TUniformBufferRef<FSimConstants> ConstantBuffer,
 	const FDecompositionInputs& Inputs,
-	FDecompositionOutputs& Outputs)
-{
+	FDecompositionOutputs& Outputs) {
 	FGlobalShaderMap* ShaderMap = GetGlobalShaderMap(GMaxRHIFeatureLevel);
 	FIntVector GridGroups(
 		FMath::DivideAndRoundUp(Inputs.GridSizeX, 16),
@@ -88,160 +82,163 @@ void AddDecompositionPasses(
 		1
 	);
 
-	// InitDecomp
-	{
-		TShaderMapRef<FInitDecompCS> Shader(ShaderMap);
-		FInitDecompCS::FParameters* Params = GraphBuilder.AllocParameters<FInitDecompCS::FParameters>();
-		Params->SimConstants = ConstantBuffer;
-		Params->hIn = GraphBuilder.CreateSRV(Inputs.hIn);
-		Params->qIn_x = GraphBuilder.CreateSRV(Inputs.qIn_x);
-		Params->qIn_y = GraphBuilder.CreateSRV(Inputs.qIn_y);
-		Params->terrain = GraphBuilder.CreateSRV(Inputs.terrain);
-		Params->H_Out = GraphBuilder.CreateUAV(Outputs.H_SrcDst);
-		Params->Q_Out_x = GraphBuilder.CreateUAV(Outputs.Qx_SrcDst);
-		Params->Q_Out_y = GraphBuilder.CreateUAV(Outputs.Qy_SrcDst);
+	// Transient textures for decomposition and Jacobi diffusion
+	FRDGTextureDesc GridFloatDesc = FRDGTextureDesc::Create2D(
+		FIntPoint(Inputs.GridSizeX, Inputs.GridSizeY),
+		PF_R32_FLOAT,
+		FClearValueBinding::None,
+		TexCreate_ShaderResource | TexCreate_UAV
+	);
 
-		FComputeShaderUtils::AddPass(
-			GraphBuilder,
-			RDG_EVENT_NAME("SWE_Decomp_Init"),
-			ERDGPassFlags::Compute,
-			Shader,
-			Params,
-			GridGroups
-		);
-	}
+	FRDGTextureRef HOrig = GraphBuilder.CreateTexture(GridFloatDesc, TEXT("HOrig"));
+	FRDGTextureRef QOrig_x = GraphBuilder.CreateTexture(GridFloatDesc, TEXT("QOrig_x"));
+	FRDGTextureRef QOrig_y = GraphBuilder.CreateTexture(GridFloatDesc, TEXT("QOrig_y"));
+	FRDGTextureRef alpha_H = GraphBuilder.CreateTexture(GridFloatDesc, TEXT("alpha_H"));
+	FRDGTextureRef alpha_Q_x = GraphBuilder.CreateTexture(GridFloatDesc, TEXT("alpha_Q_x"));
+	FRDGTextureRef alpha_Q_y = GraphBuilder.CreateTexture(GridFloatDesc, TEXT("alpha_Q_y"));
+
+	// Initialize Decomposition Fields
+	TShaderMapRef<FInitDecompCS> InitDecompShader(ShaderMap);
+	FInitDecompCS::FParameters* InitParams = GraphBuilder.AllocParameters<FInitDecompCS::FParameters>();
+	InitParams->SimConstants = ConstantBuffer;
+	InitParams->hIn = GraphBuilder.CreateSRV(Inputs.hIn);
+	InitParams->qIn_x = GraphBuilder.CreateSRV(Inputs.qIn_x);
+	InitParams->qIn_y = GraphBuilder.CreateSRV(Inputs.qIn_y);
+	InitParams->terrain = GraphBuilder.CreateSRV(Inputs.terrain);
+	InitParams->H_Out = GraphBuilder.CreateUAV(Outputs.H_SrcDst);
+	InitParams->Q_Out_x = GraphBuilder.CreateUAV(Outputs.Qx_SrcDst);
+	InitParams->Q_Out_y = GraphBuilder.CreateUAV(Outputs.Qy_SrcDst);
+
+	FComputeShaderUtils::AddPass(
+		GraphBuilder,
+		RDG_EVENT_NAME("SWE_Decomp_Init"),
+		ERDGPassFlags::Compute,
+		InitDecompShader,
+		InitParams,
+		GridGroups
+	);
 
 	// Copy initial fields to Orig fields before Jacobi solver
-	AddCopyTexturePass(GraphBuilder, Outputs.H_SrcDst, Inputs.HOrig);
-	AddCopyTexturePass(GraphBuilder, Outputs.Qx_SrcDst, Inputs.QOrig_x);
-	AddCopyTexturePass(GraphBuilder, Outputs.Qy_SrcDst, Inputs.QOrig_y);
+	AddCopyTexturePass(GraphBuilder, Outputs.H_SrcDst, HOrig);
+	AddCopyTexturePass(GraphBuilder, Outputs.Qx_SrcDst, QOrig_x);
+	AddCopyTexturePass(GraphBuilder, Outputs.Qy_SrcDst, QOrig_y);
 
-	// CalcDiffusionCoeffs
-	{
-		TShaderMapRef<FCalcDiffusionCoeffsCS> Shader(ShaderMap);
-		FCalcDiffusionCoeffsCS::FParameters* Params = GraphBuilder.AllocParameters<FCalcDiffusionCoeffsCS::FParameters>();
-		Params->SimConstants = ConstantBuffer;
-		Params->H_In = GraphBuilder.CreateSRV(Outputs.H_SrcDst);
-		Params->terrain = GraphBuilder.CreateSRV(Inputs.terrain);
-		Params->alpha_HOut = GraphBuilder.CreateUAV(Inputs.alpha_H);
-		Params->alpha_QOut_x = GraphBuilder.CreateUAV(Inputs.alpha_Q_x);
-		Params->alpha_QOut_y = GraphBuilder.CreateUAV(Inputs.alpha_Q_y);
+	// Calculate Diffusion Coefficients
+	TShaderMapRef<FCalcDiffusionCoeffsCS> CoeffsShader(ShaderMap);
+	FCalcDiffusionCoeffsCS::FParameters* CoeffsParams = GraphBuilder.AllocParameters<FCalcDiffusionCoeffsCS::FParameters>();
+	CoeffsParams->SimConstants = ConstantBuffer;
+	CoeffsParams->H_In = GraphBuilder.CreateSRV(Outputs.H_SrcDst);
+	CoeffsParams->terrain = GraphBuilder.CreateSRV(Inputs.terrain);
+	CoeffsParams->alpha_HOut = GraphBuilder.CreateUAV(alpha_H);
+	CoeffsParams->alpha_QOut_x = GraphBuilder.CreateUAV(alpha_Q_x);
+	CoeffsParams->alpha_QOut_y = GraphBuilder.CreateUAV(alpha_Q_y);
 
-		FComputeShaderUtils::AddPass(
-			GraphBuilder,
-			RDG_EVENT_NAME("SWE_Decomp_Coeffs"),
-			ERDGPassFlags::Compute,
-			Shader,
-			Params,
-			GridGroups
-		);
-	}
+	FComputeShaderUtils::AddPass(
+		GraphBuilder,
+		RDG_EVENT_NAME("SWE_Decomp_Coeffs"),
+		ERDGPassFlags::Compute,
+		CoeffsShader,
+		CoeffsParams,
+		GridGroups
+	);
 
 	// Diffusion loop - implicit Jacobi solver ping-ponging across iterations
-	{
-		FRDGTextureRef H_Src = Outputs.H_SrcDst;
-		FRDGTextureRef H_Dst = Outputs.HPast_SrcDst;
-		FRDGTextureRef Qx_Src = Outputs.Qx_SrcDst;
-		FRDGTextureRef Qx_Dst = Outputs.QPast_x_SrcDst;
-		FRDGTextureRef Qy_Src = Outputs.Qy_SrcDst;
-		FRDGTextureRef Qy_Dst = Outputs.QPast_y_SrcDst;
+	FRDGTextureRef H_Src = Outputs.H_SrcDst;
+	FRDGTextureRef H_Dst = Outputs.HPast_SrcDst;
+	FRDGTextureRef Qx_Src = Outputs.Qx_SrcDst;
+	FRDGTextureRef Qx_Dst = Outputs.QPast_x_SrcDst;
+	FRDGTextureRef Qy_Src = Outputs.Qy_SrcDst;
+	FRDGTextureRef Qy_Dst = Outputs.QPast_y_SrcDst;
 
-		TShaderMapRef<FDiffusionStepCS> Shader(ShaderMap);
-		for (int32 j = 0; j < Inputs.DiffusionIterations; j++)
-		{
-			FDiffusionStepCS::FParameters* Params = GraphBuilder.AllocParameters<FDiffusionStepCS::FParameters>();
-			Params->SimConstants = ConstantBuffer;
-			Params->terrain = GraphBuilder.CreateSRV(Inputs.terrain);
-			Params->H_Orig = GraphBuilder.CreateSRV(Inputs.HOrig);
-			Params->Q_Orig_x = GraphBuilder.CreateSRV(Inputs.QOrig_x);
-			Params->Q_Orig_y = GraphBuilder.CreateSRV(Inputs.QOrig_y);
-			Params->H_Past = GraphBuilder.CreateSRV(H_Src);
-			Params->Q_Past_x = GraphBuilder.CreateSRV(Qx_Src);
-			Params->Q_Past_y = GraphBuilder.CreateSRV(Qy_Src);
-			Params->alpha_HIn = GraphBuilder.CreateSRV(Inputs.alpha_H);
-			Params->alpha_QIn_x = GraphBuilder.CreateSRV(Inputs.alpha_Q_x);
-			Params->alpha_QIn_y = GraphBuilder.CreateSRV(Inputs.alpha_Q_y);
-			Params->H_Out = GraphBuilder.CreateUAV(H_Dst);
-			Params->Q_Out_x = GraphBuilder.CreateUAV(Qx_Dst);
-			Params->Q_Out_y = GraphBuilder.CreateUAV(Qy_Dst);
-
-			FComputeShaderUtils::AddPass(
-				GraphBuilder,
-				RDG_EVENT_NAME("SWE_Decomp_Diffusion"),
-				ERDGPassFlags::Compute,
-				Shader,
-				Params,
-				GridGroups
-			);
-
-			Swap(H_Src, H_Dst);
-			Swap(Qx_Src, Qx_Dst);
-			Swap(Qy_Src, Qy_Dst);
-		}
-
-		Outputs.H_SrcDst = H_Src;
-		Outputs.HPast_SrcDst = H_Dst;
-		Outputs.Qx_SrcDst = Qx_Src;
-		Outputs.QPast_x_SrcDst = Qx_Dst;
-		Outputs.Qy_SrcDst = Qy_Src;
-		Outputs.QPast_y_SrcDst = Qy_Dst;
-	}
-
-	// DecomposeFields
-	{
-		TShaderMapRef<FDecomposeFieldsCS> Shader(ShaderMap);
-		FDecomposeFieldsCS::FParameters* Params = GraphBuilder.AllocParameters<FDecomposeFieldsCS::FParameters>();
+	TShaderMapRef<FDiffusionStepCS> DiffusionShader(ShaderMap);
+	for (int32 j = 0; j < Inputs.DiffusionIterations; j++) {
+		FDiffusionStepCS::FParameters* Params = GraphBuilder.AllocParameters<FDiffusionStepCS::FParameters>();
 		Params->SimConstants = ConstantBuffer;
-		Params->H_In = GraphBuilder.CreateSRV(Outputs.H_SrcDst);
-		Params->Q_In_x = GraphBuilder.CreateSRV(Outputs.Qx_SrcDst);
-		Params->Q_In_y = GraphBuilder.CreateSRV(Outputs.Qy_SrcDst);
-		Params->hIn = GraphBuilder.CreateSRV(Inputs.hIn);
-		Params->qIn_x = GraphBuilder.CreateSRV(Inputs.qIn_x);
-		Params->qIn_y = GraphBuilder.CreateSRV(Inputs.qIn_y);
 		Params->terrain = GraphBuilder.CreateSRV(Inputs.terrain);
-		Params->hbarOut = GraphBuilder.CreateUAV(Outputs.hbarOut);
-		Params->qbarOut_x = GraphBuilder.CreateUAV(Outputs.qbarOut_x);
-		Params->qbarOut_y = GraphBuilder.CreateUAV(Outputs.qbarOut_y);
-		Params->htildeOut = GraphBuilder.CreateUAV(Outputs.htildeOut);
-		Params->qtildeOut_x = GraphBuilder.CreateUAV(Outputs.qtildeOut_x);
-		Params->qtildeOut_y = GraphBuilder.CreateUAV(Outputs.qtildeOut_y);
+		Params->H_Orig = GraphBuilder.CreateSRV(HOrig);
+		Params->Q_Orig_x = GraphBuilder.CreateSRV(QOrig_x);
+		Params->Q_Orig_y = GraphBuilder.CreateSRV(QOrig_y);
+		Params->H_Past = GraphBuilder.CreateSRV(H_Src);
+		Params->Q_Past_x = GraphBuilder.CreateSRV(Qx_Src);
+		Params->Q_Past_y = GraphBuilder.CreateSRV(Qy_Src);
+		Params->alpha_HIn = GraphBuilder.CreateSRV(alpha_H);
+		Params->alpha_QIn_x = GraphBuilder.CreateSRV(alpha_Q_x);
+		Params->alpha_QIn_y = GraphBuilder.CreateSRV(alpha_Q_y);
+		Params->H_Out = GraphBuilder.CreateUAV(H_Dst);
+		Params->Q_Out_x = GraphBuilder.CreateUAV(Qx_Dst);
+		Params->Q_Out_y = GraphBuilder.CreateUAV(Qy_Dst);
 
 		FComputeShaderUtils::AddPass(
 			GraphBuilder,
-			RDG_EVENT_NAME("SWE_Decomp_Final"),
+			RDG_EVENT_NAME("SWE_Decomp_Diffusion"),
 			ERDGPassFlags::Compute,
-			Shader,
+			DiffusionShader,
 			Params,
 			GridGroups
 		);
+
+		Swap(H_Src, H_Dst);
+		Swap(Qx_Src, Qx_Dst);
+		Swap(Qy_Src, Qy_Dst);
 	}
+
+	Outputs.H_SrcDst = H_Src;
+	Outputs.HPast_SrcDst = H_Dst;
+	Outputs.Qx_SrcDst = Qx_Src;
+	Outputs.QPast_x_SrcDst = Qx_Dst;
+	Outputs.Qy_SrcDst = Qy_Src;
+	Outputs.QPast_y_SrcDst = Qy_Dst;
+
+	// Decompose Fields into low-frequency and high-frequency wave parts
+	TShaderMapRef<FDecomposeFieldsCS> DecompShader(ShaderMap);
+	FDecomposeFieldsCS::FParameters* DecompParams = GraphBuilder.AllocParameters<FDecomposeFieldsCS::FParameters>();
+	DecompParams->SimConstants = ConstantBuffer;
+	DecompParams->H_In = GraphBuilder.CreateSRV(Outputs.H_SrcDst);
+	DecompParams->Q_In_x = GraphBuilder.CreateSRV(Outputs.Qx_SrcDst);
+	DecompParams->Q_In_y = GraphBuilder.CreateSRV(Outputs.Qy_SrcDst);
+	DecompParams->hIn = GraphBuilder.CreateSRV(Inputs.hIn);
+	DecompParams->qIn_x = GraphBuilder.CreateSRV(Inputs.qIn_x);
+	DecompParams->qIn_y = GraphBuilder.CreateSRV(Inputs.qIn_y);
+	DecompParams->terrain = GraphBuilder.CreateSRV(Inputs.terrain);
+	DecompParams->hbarOut = GraphBuilder.CreateUAV(Outputs.hbarOut);
+	DecompParams->qbarOut_x = GraphBuilder.CreateUAV(Outputs.qbarOut_x);
+	DecompParams->qbarOut_y = GraphBuilder.CreateUAV(Outputs.qbarOut_y);
+	DecompParams->htildeOut = GraphBuilder.CreateUAV(Outputs.htildeOut);
+	DecompParams->qtildeOut_x = GraphBuilder.CreateUAV(Outputs.qtildeOut_x);
+	DecompParams->qtildeOut_y = GraphBuilder.CreateUAV(Outputs.qtildeOut_y);
+
+	FComputeShaderUtils::AddPass(
+		GraphBuilder,
+		RDG_EVENT_NAME("SWE_Decomp_Final"),
+		ERDGPassFlags::Compute,
+		DecompShader,
+		DecompParams,
+		GridGroups
+	);
 
 	// Recompute H
-	{
-		TShaderMapRef<FRecomputeHCS> Shader(ShaderMap);
-		FRecomputeHCS::FParameters* Params = GraphBuilder.AllocParameters<FRecomputeHCS::FParameters>();
-		Params->SimConstants = ConstantBuffer;
-		Params->hIn = GraphBuilder.CreateSRV(Inputs.hIn);
-		Params->terrain = GraphBuilder.CreateSRV(Inputs.terrain);
-		Params->H_Out = GraphBuilder.CreateUAV(Outputs.H_SrcDst);
+	TShaderMapRef<FRecomputeHCS> RecomputeHShader(ShaderMap);
+	FRecomputeHCS::FParameters* RecomputeHParams = GraphBuilder.AllocParameters<FRecomputeHCS::FParameters>();
+	RecomputeHParams->SimConstants = ConstantBuffer;
+	RecomputeHParams->hIn = GraphBuilder.CreateSRV(Inputs.hIn);
+	RecomputeHParams->terrain = GraphBuilder.CreateSRV(Inputs.terrain);
+	RecomputeHParams->H_Out = GraphBuilder.CreateUAV(Outputs.H_SrcDst);
 
-		FComputeShaderUtils::AddPass(
-			GraphBuilder,
-			RDG_EVENT_NAME("SWE_Decomp_ReH"),
-			ERDGPassFlags::Compute,
-			Shader,
-			Params,
-			GridGroups
-		);
-	}
+	FComputeShaderUtils::AddPass(
+		GraphBuilder,
+		RDG_EVENT_NAME("SWE_Decomp_ReH"),
+		ERDGPassFlags::Compute,
+		RecomputeHShader,
+		RecomputeHParams,
+		GridGroups
+	);
 }
 
 void AddEWavePasses(
 	FRDGBuilder& GraphBuilder,
 	TUniformBufferRef<FSimConstants> ConstantBuffer,
 	const FEWaveInputs& Inputs,
-	const FEWaveOutputs& Outputs)
-{
+	const FEWaveOutputs& Outputs) {
 	FGlobalShaderMap* ShaderMap = GetGlobalShaderMap(GMaxRHIFeatureLevel);
 	FIntVector PaddedGroups(
 		FMath::DivideAndRoundUp(Inputs.PaddedSizeX, 16),
@@ -259,90 +256,105 @@ void AddEWavePasses(
 		1
 	);
 
-	// Transfer variables to Fourier domain
-	{
-		TShaderMapRef<FTransferToFFTCS> Shader(ShaderMap);
-		FTransferToFFTCS::FParameters* Params = GraphBuilder.AllocParameters<FTransferToFFTCS::FParameters>();
-		Params->SimConstants = ConstantBuffer;
-		Params->htildeIn = GraphBuilder.CreateSRV(Inputs.htildeIn);
-		Params->htildeOldIn = GraphBuilder.CreateSRV(Inputs.htildeOldIn);
-		Params->qtildeIn_x = GraphBuilder.CreateSRV(Inputs.qtildeIn_x);
-		Params->qtildeIn_y = GraphBuilder.CreateSRV(Inputs.qtildeIn_y);
-		Params->htildeOldNext = GraphBuilder.CreateUAV(Outputs.htildeOldNext);
-		Params->hHat = GraphBuilder.CreateUAV(Inputs.hHat);
-		Params->qHat_x = GraphBuilder.CreateUAV(Inputs.qHat_x);
-		Params->qHat_y = GraphBuilder.CreateUAV(Inputs.qHat_y);
+	// Transient complex Fourier buffers
+	FRDGTextureDesc FloatPaddedDesc = FRDGTextureDesc::Create2D(
+		FIntPoint(Inputs.PaddedSizeX, Inputs.PaddedSizeY),
+		PF_G32R32F,
+		FClearValueBinding::None,
+		TexCreate_ShaderResource | TexCreate_UAV
+	);
 
-		FComputeShaderUtils::AddPass(
-			GraphBuilder,
-			RDG_EVENT_NAME("SWE_eWave_Transfer"),
-			ERDGPassFlags::Compute,
-			Shader,
-			Params,
-			PaddedGroups
-		);
-	}
+	FRDGTextureDesc ComplexArrayDesc = FRDGTextureDesc::Create2DArray(
+		FIntPoint(Inputs.PaddedSizeX, Inputs.PaddedSizeY),
+		PF_G32R32F,
+		FClearValueBinding::None,
+		TexCreate_ShaderResource | TexCreate_UAV,
+		Inputs.DepthNum
+	);
+
+	FRDGTextureRef hHat = GraphBuilder.CreateTexture(FloatPaddedDesc, TEXT("hHat"));
+	FRDGTextureRef qHat_x = GraphBuilder.CreateTexture(FloatPaddedDesc, TEXT("qHat_x"));
+	FRDGTextureRef qHat_y = GraphBuilder.CreateTexture(FloatPaddedDesc, TEXT("qHat_y"));
+	FRDGTextureRef qHat_x_array = GraphBuilder.CreateTexture(ComplexArrayDesc, TEXT("qHat_x_array"));
+	FRDGTextureRef qHat_y_array = GraphBuilder.CreateTexture(ComplexArrayDesc, TEXT("qHat_y_array"));
+
+	// Transfer variables to Fourier domain
+	TShaderMapRef<FTransferToFFTCS> TransferShader(ShaderMap);
+	FTransferToFFTCS::FParameters* TransferParams = GraphBuilder.AllocParameters<FTransferToFFTCS::FParameters>();
+	TransferParams->SimConstants = ConstantBuffer;
+	TransferParams->htildeIn = GraphBuilder.CreateSRV(Inputs.htildeIn);
+	TransferParams->htildeOldIn = GraphBuilder.CreateSRV(Inputs.htildeOldIn);
+	TransferParams->qtildeIn_x = GraphBuilder.CreateSRV(Inputs.qtildeIn_x);
+	TransferParams->qtildeIn_y = GraphBuilder.CreateSRV(Inputs.qtildeIn_y);
+	TransferParams->htildeOldNext = GraphBuilder.CreateUAV(Outputs.htildeOldNext);
+	TransferParams->hHat = GraphBuilder.CreateUAV(hHat);
+	TransferParams->qHat_x = GraphBuilder.CreateUAV(qHat_x);
+	TransferParams->qHat_y = GraphBuilder.CreateUAV(qHat_y);
+
+	FComputeShaderUtils::AddPass(
+		GraphBuilder,
+		RDG_EVENT_NAME("SWE_eWave_Transfer"),
+		ERDGPassFlags::Compute,
+		TransferShader,
+		TransferParams,
+		PaddedGroups
+	);
 
 	// Forward 2D FFTs
-	Add2DFFTPasses(GraphBuilder, Inputs.hHat, Inputs.PaddedSizeX, Inputs.PaddedSizeY, false, 1);
-	Add2DFFTPasses(GraphBuilder, Inputs.qHat_x, Inputs.PaddedSizeX, Inputs.PaddedSizeY, false, 1);
-	Add2DFFTPasses(GraphBuilder, Inputs.qHat_y, Inputs.PaddedSizeX, Inputs.PaddedSizeY, false, 1);
+	Add2DFFTPasses(GraphBuilder, hHat, Inputs.PaddedSizeX, Inputs.PaddedSizeY, false, 1);
+	Add2DFFTPasses(GraphBuilder, qHat_x, Inputs.PaddedSizeX, Inputs.PaddedSizeY, false, 1);
+	Add2DFFTPasses(GraphBuilder, qHat_y, Inputs.PaddedSizeX, Inputs.PaddedSizeY, false, 1);
 
 	// Compute eWave dispersion updates across depth levels
-	{
-		TShaderMapRef<FCalcEWaveCS> Shader(ShaderMap);
-		FCalcEWaveCS::FParameters* Params = GraphBuilder.AllocParameters<FCalcEWaveCS::FParameters>();
-		Params->SimConstants = ConstantBuffer;
-		Params->hhat = GraphBuilder.CreateSRV(Inputs.hHat);
-		Params->qhat_x = GraphBuilder.CreateSRV(Inputs.qHat_x);
-		Params->qhat_y = GraphBuilder.CreateSRV(Inputs.qHat_y);
-		Params->Flow_x = GraphBuilder.CreateSRV(Inputs.Flow_x);
-		Params->Flow_y = GraphBuilder.CreateSRV(Inputs.Flow_y);
-		Params->qhat_x_array = GraphBuilder.CreateUAV(Inputs.qHat_x_array);
-		Params->qhat_y_array = GraphBuilder.CreateUAV(Inputs.qHat_y_array);
+	TShaderMapRef<FCalcEWaveCS> CalcEWaveShader(ShaderMap);
+	FCalcEWaveCS::FParameters* CalcEWaveParams = GraphBuilder.AllocParameters<FCalcEWaveCS::FParameters>();
+	CalcEWaveParams->SimConstants = ConstantBuffer;
+	CalcEWaveParams->hhat = GraphBuilder.CreateSRV(hHat);
+	CalcEWaveParams->qhat_x = GraphBuilder.CreateSRV(qHat_x);
+	CalcEWaveParams->qhat_y = GraphBuilder.CreateSRV(qHat_y);
+	CalcEWaveParams->Flow_x = GraphBuilder.CreateSRV(Inputs.Flow_x);
+	CalcEWaveParams->Flow_y = GraphBuilder.CreateSRV(Inputs.Flow_y);
+	CalcEWaveParams->qhat_x_array = GraphBuilder.CreateUAV(qHat_x_array);
+	CalcEWaveParams->qhat_y_array = GraphBuilder.CreateUAV(qHat_y_array);
 
-		FComputeShaderUtils::AddPass(
-			GraphBuilder,
-			RDG_EVENT_NAME("SWE_eWave_Calc"),
-			ERDGPassFlags::Compute,
-			Shader,
-			Params,
-			ComplexArrayGroups
-		);
-	}
+	FComputeShaderUtils::AddPass(
+		GraphBuilder,
+		RDG_EVENT_NAME("SWE_eWave_Calc"),
+		ERDGPassFlags::Compute,
+		CalcEWaveShader,
+		CalcEWaveParams,
+		ComplexArrayGroups
+	);
 
 	// Inverse 2D FFTs
-	Add2DFFTPasses(GraphBuilder, Inputs.qHat_x_array, Inputs.PaddedSizeX, Inputs.PaddedSizeY, true, Inputs.DepthNum);
-	Add2DFFTPasses(GraphBuilder, Inputs.qHat_y_array, Inputs.PaddedSizeX, Inputs.PaddedSizeY, true, Inputs.DepthNum);
+	Add2DFFTPasses(GraphBuilder, qHat_x_array, Inputs.PaddedSizeX, Inputs.PaddedSizeY, true, Inputs.DepthNum);
+	Add2DFFTPasses(GraphBuilder, qHat_y_array, Inputs.PaddedSizeX, Inputs.PaddedSizeY, true, Inputs.DepthNum);
 
 	// Interpolate between depths to get new qtilde
-	{
-		TShaderMapRef<FInterpQCS> Shader(ShaderMap);
-		FInterpQCS::FParameters* Params = GraphBuilder.AllocParameters<FInterpQCS::FParameters>();
-		Params->SimConstants = ConstantBuffer;
-		Params->hbarIn = GraphBuilder.CreateSRV(Inputs.hbarIn);
-		Params->qHat_x_array = GraphBuilder.CreateSRV(Inputs.qHat_x_array);
-		Params->qHat_y_array = GraphBuilder.CreateSRV(Inputs.qHat_y_array);
-		Params->qtildeOut_x = GraphBuilder.CreateUAV(Outputs.qtildeOut_x);
-		Params->qtildeOut_y = GraphBuilder.CreateUAV(Outputs.qtildeOut_y);
+	TShaderMapRef<FInterpQCS> InterpQShader(ShaderMap);
+	FInterpQCS::FParameters* InterpQParams = GraphBuilder.AllocParameters<FInterpQCS::FParameters>();
+	InterpQParams->SimConstants = ConstantBuffer;
+	InterpQParams->hbarIn = GraphBuilder.CreateSRV(Inputs.hbarIn);
+	InterpQParams->qHat_x_array = GraphBuilder.CreateSRV(qHat_x_array);
+	InterpQParams->qHat_y_array = GraphBuilder.CreateSRV(qHat_y_array);
+	InterpQParams->qtildeOut_x = GraphBuilder.CreateUAV(Outputs.qtildeOut_x);
+	InterpQParams->qtildeOut_y = GraphBuilder.CreateUAV(Outputs.qtildeOut_y);
 
-		FComputeShaderUtils::AddPass(
-			GraphBuilder,
-			RDG_EVENT_NAME("SWE_eWave_InterpQ"),
-			ERDGPassFlags::Compute,
-			Shader,
-			Params,
-			GridGroups
-		);
-	}
+	FComputeShaderUtils::AddPass(
+		GraphBuilder,
+		RDG_EVENT_NAME("SWE_eWave_InterpQ"),
+		ERDGPassFlags::Compute,
+		InterpQShader,
+		InterpQParams,
+		GridGroups
+	);
 }
 
 void AddSWEBulkPasses(
 	FRDGBuilder& GraphBuilder,
 	TUniformBufferRef<FSimConstants> ConstantBuffer,
 	const FSWEBulkInputs& Inputs,
-	const FSWEBulkOutputs& Outputs)
-{
+	const FSWEBulkOutputs& Outputs) {
 	FGlobalShaderMap* ShaderMap = GetGlobalShaderMap(GMaxRHIFeatureLevel);
 	FIntVector GridGroups(
 		FMath::DivideAndRoundUp(Inputs.GridSizeX, 16),
@@ -350,61 +362,56 @@ void AddSWEBulkPasses(
 		1
 	);
 
-	// CalcUbar
-	{
-		TShaderMapRef<FCalcUbarCS> Shader(ShaderMap);
-		FCalcUbarCS::FParameters* Params = GraphBuilder.AllocParameters<FCalcUbarCS::FParameters>();
-		Params->SimConstants = ConstantBuffer;
-		Params->qbarIn_x = GraphBuilder.CreateSRV(Inputs.qbarIn_x);
-		Params->qbarIn_y = GraphBuilder.CreateSRV(Inputs.qbarIn_y);
-		Params->hbarIn = GraphBuilder.CreateSRV(Inputs.hbarOldIn);
-		Params->ubarOut_x = GraphBuilder.CreateUAV(Outputs.ubarOut_x);
-		Params->ubarOut_y = GraphBuilder.CreateUAV(Outputs.ubarOut_y);
+	// Calculate SWE Velocity (ubar) from momentum (qbar)
+	TShaderMapRef<FCalcUbarCS> CalcUbarShader(ShaderMap);
+	FCalcUbarCS::FParameters* CalcUbarParams = GraphBuilder.AllocParameters<FCalcUbarCS::FParameters>();
+	CalcUbarParams->SimConstants = ConstantBuffer;
+	CalcUbarParams->qbarIn_x = GraphBuilder.CreateSRV(Inputs.qbarIn_x);
+	CalcUbarParams->qbarIn_y = GraphBuilder.CreateSRV(Inputs.qbarIn_y);
+	CalcUbarParams->hbarIn = GraphBuilder.CreateSRV(Inputs.hbarOldIn);
+	CalcUbarParams->ubarOut_x = GraphBuilder.CreateUAV(Outputs.ubarOut_x);
+	CalcUbarParams->ubarOut_y = GraphBuilder.CreateUAV(Outputs.ubarOut_y);
 
-		FComputeShaderUtils::AddPass(
-			GraphBuilder,
-			RDG_EVENT_NAME("SWE_CalcUbar"),
-			ERDGPassFlags::Compute,
-			Shader,
-			Params,
-			GridGroups
-		);
-	}
+	FComputeShaderUtils::AddPass(
+		GraphBuilder,
+		RDG_EVENT_NAME("SWE_CalcUbar"),
+		ERDGPassFlags::Compute,
+		CalcUbarShader,
+		CalcUbarParams,
+		GridGroups
+	);
 
-	// CalcSWE
-	{
-		TShaderMapRef<FCalcSWECS> Shader(ShaderMap);
-		FCalcSWECS::FParameters* Params = GraphBuilder.AllocParameters<FCalcSWECS::FParameters>();
-		Params->SimConstants = ConstantBuffer;
-		Params->ubarIn_x = GraphBuilder.CreateSRV(Outputs.ubarOut_x);
-		Params->ubarIn_y = GraphBuilder.CreateSRV(Outputs.ubarOut_y);
-		Params->hbarIn = GraphBuilder.CreateSRV(Inputs.hbarIn);
-		Params->H_In = GraphBuilder.CreateSRV(Inputs.H_In);
-		Params->delH_x = GraphBuilder.CreateSRV(Inputs.delH_x);
-		Params->delH_y = GraphBuilder.CreateSRV(Inputs.delH_y);
-		Params->terrain = GraphBuilder.CreateSRV(Inputs.terrain);
-		Params->ubarNewOut_x = GraphBuilder.CreateUAV(Outputs.ubarNewOut_x);
-		Params->ubarNewOut_y = GraphBuilder.CreateUAV(Outputs.ubarNewOut_y);
-		Params->qbarOut_x = GraphBuilder.CreateUAV(Outputs.qbarOut_x);
-		Params->qbarOut_y = GraphBuilder.CreateUAV(Outputs.qbarOut_y);
+	// Solve SWE Non-Linear Wave Equations
+	TShaderMapRef<FCalcSWECS> CalcSWEEShader(ShaderMap);
+	FCalcSWECS::FParameters* CalcSWEParams = GraphBuilder.AllocParameters<FCalcSWECS::FParameters>();
+	CalcSWEParams->SimConstants = ConstantBuffer;
+	CalcSWEParams->ubarIn_x = GraphBuilder.CreateSRV(Outputs.ubarOut_x);
+	CalcSWEParams->ubarIn_y = GraphBuilder.CreateSRV(Outputs.ubarOut_y);
+	CalcSWEParams->hbarIn = GraphBuilder.CreateSRV(Inputs.hbarIn);
+	CalcSWEParams->H_In = GraphBuilder.CreateSRV(Inputs.H_In);
+	CalcSWEParams->delH_x = GraphBuilder.CreateSRV(Inputs.delH_x);
+	CalcSWEParams->delH_y = GraphBuilder.CreateSRV(Inputs.delH_y);
+	CalcSWEParams->terrain = GraphBuilder.CreateSRV(Inputs.terrain);
+	CalcSWEParams->ubarNewOut_x = GraphBuilder.CreateUAV(Outputs.ubarNewOut_x);
+	CalcSWEParams->ubarNewOut_y = GraphBuilder.CreateUAV(Outputs.ubarNewOut_y);
+	CalcSWEParams->qbarOut_x = GraphBuilder.CreateUAV(Outputs.qbarOut_x);
+	CalcSWEParams->qbarOut_y = GraphBuilder.CreateUAV(Outputs.qbarOut_y);
 
-		FComputeShaderUtils::AddPass(
-			GraphBuilder,
-			RDG_EVENT_NAME("SWE_CalcSWE"),
-			ERDGPassFlags::Compute,
-			Shader,
-			Params,
-			GridGroups
-		);
-	}
+	FComputeShaderUtils::AddPass(
+		GraphBuilder,
+		RDG_EVENT_NAME("SWE_CalcSWE"),
+		ERDGPassFlags::Compute,
+		CalcSWEEShader,
+		CalcSWEParams,
+		GridGroups
+	);
 }
 
 void AddTransportAndIntegratePasses(
 	FRDGBuilder& GraphBuilder,
 	TUniformBufferRef<FSimConstants> ConstantBuffer,
 	const FTransportAndIntegrateInputs& Inputs,
-	const FTransportAndIntegrateOutputs& Outputs)
-{
+	const FTransportAndIntegrateOutputs& Outputs) {
 	FGlobalShaderMap* ShaderMap = GetGlobalShaderMap(GMaxRHIFeatureLevel);
 	FIntVector GridGroups(
 		FMath::DivideAndRoundUp(Inputs.GridSizeX, 16),
@@ -413,118 +420,121 @@ void AddTransportAndIntegratePasses(
 	);
 
 	// UpdateTilde (Advect wave height and flow rate)
-	{
-		TShaderMapRef<FUpdateTildeCS> Shader(ShaderMap);
-		FUpdateTildeCS::FParameters* Params = GraphBuilder.AllocParameters<FUpdateTildeCS::FParameters>();
-		Params->SimConstants = ConstantBuffer;
-		Params->ubarNewIn_x = GraphBuilder.CreateSRV(Inputs.ubarNewIn_x);
-		Params->ubarIn_x = GraphBuilder.CreateSRV(Inputs.ubarIn_x);
-		Params->ubarNewIn_y = GraphBuilder.CreateSRV(Inputs.ubarNewIn_y);
-		Params->ubarIn_y = GraphBuilder.CreateSRV(Inputs.ubarIn_y);
-		Params->qtildePast_x = GraphBuilder.CreateSRV(Inputs.qtildePast_x);
-		Params->qtildePast_y = GraphBuilder.CreateSRV(Inputs.qtildePast_y);
-		Params->hIn = GraphBuilder.CreateSRV(Inputs.hPast);
-		Params->htildePast = GraphBuilder.CreateSRV(Inputs.htildePast);
-		Params->htildeOut = GraphBuilder.CreateUAV(Outputs.htildeOut);
-		Params->qtildeOut_x = GraphBuilder.CreateUAV(Outputs.qtildeOut_x);
-		Params->qtildeOut_y = GraphBuilder.CreateUAV(Outputs.qtildeOut_y);
+	TShaderMapRef<FUpdateTildeCS> UpdateTildeShader(ShaderMap);
+	FUpdateTildeCS::FParameters* UpdateTildeParams = GraphBuilder.AllocParameters<FUpdateTildeCS::FParameters>();
+	UpdateTildeParams->SimConstants = ConstantBuffer;
+	UpdateTildeParams->ubarNewIn_x = GraphBuilder.CreateSRV(Inputs.ubarNewIn_x);
+	UpdateTildeParams->ubarIn_x = GraphBuilder.CreateSRV(Inputs.ubarIn_x);
+	UpdateTildeParams->ubarNewIn_y = GraphBuilder.CreateSRV(Inputs.ubarNewIn_y);
+	UpdateTildeParams->ubarIn_y = GraphBuilder.CreateSRV(Inputs.ubarIn_y);
+	UpdateTildeParams->qtildePast_x = GraphBuilder.CreateSRV(Inputs.qtildePast_x);
+	UpdateTildeParams->qtildePast_y = GraphBuilder.CreateSRV(Inputs.qtildePast_y);
+	UpdateTildeParams->hIn = GraphBuilder.CreateSRV(Inputs.hPast);
+	UpdateTildeParams->htildePast = GraphBuilder.CreateSRV(Inputs.htildePast);
+	UpdateTildeParams->htildeOut = GraphBuilder.CreateUAV(Outputs.htildeOut);
+	UpdateTildeParams->qtildeOut_x = GraphBuilder.CreateUAV(Outputs.qtildeOut_x);
+	UpdateTildeParams->qtildeOut_y = GraphBuilder.CreateUAV(Outputs.qtildeOut_y);
 
-		FComputeShaderUtils::AddPass(
-			GraphBuilder,
-			RDG_EVENT_NAME("SWE_UpdateTilde"),
-			ERDGPassFlags::Compute,
-			Shader,
-			Params,
-			GridGroups
-		);
-	}
+	FComputeShaderUtils::AddPass(
+		GraphBuilder,
+		RDG_EVENT_NAME("SWE_UpdateTilde"),
+		ERDGPassFlags::Compute,
+		UpdateTildeShader,
+		UpdateTildeParams,
+		GridGroups
+	);
 
-	// CalcQAdvect
-	{
-		TShaderMapRef<FCalcQAdvectCS> Shader(ShaderMap);
-		FCalcQAdvectCS::FParameters* Params = GraphBuilder.AllocParameters<FCalcQAdvectCS::FParameters>();
-		Params->SimConstants = ConstantBuffer;
-		Params->ubarNewIn_x = GraphBuilder.CreateSRV(Inputs.ubarNewIn_x);
-		Params->ubarNewIn_y = GraphBuilder.CreateSRV(Inputs.ubarNewIn_y);
-		Params->htildeIn = GraphBuilder.CreateSRV(Outputs.htildeOut);
-		Params->qAdvectOut_x = GraphBuilder.CreateUAV(Outputs.qAdvectOut_x);
-		Params->qAdvectOut_y = GraphBuilder.CreateUAV(Outputs.qAdvectOut_y);
+	// Transient advection intermediate flux
+	FRDGTextureDesc GridFloatDesc = FRDGTextureDesc::Create2D(
+		FIntPoint(Inputs.GridSizeX, Inputs.GridSizeY),
+		PF_R32_FLOAT,
+		FClearValueBinding::None,
+		TexCreate_ShaderResource | TexCreate_UAV
+	);
 
-		FComputeShaderUtils::AddPass(
-			GraphBuilder,
-			RDG_EVENT_NAME("SWE_CalcQAdvect"),
-			ERDGPassFlags::Compute,
-			Shader,
-			Params,
-			GridGroups
-		);
-	}
+	FRDGTextureRef qAdvectOut_x = GraphBuilder.CreateTexture(GridFloatDesc, TEXT("qAdvect_x"));
+	FRDGTextureRef qAdvectOut_y = GraphBuilder.CreateTexture(GridFloatDesc, TEXT("qAdvect_y"));
 
-	// IntegrateH
-	{
-		TShaderMapRef<FIntegrateHCS> Shader(ShaderMap);
-		FIntegrateHCS::FParameters* Params = GraphBuilder.AllocParameters<FIntegrateHCS::FParameters>();
-		Params->SimConstants = ConstantBuffer;
-		Params->qbarIn_x = GraphBuilder.CreateSRV(Inputs.qbarIn_x);
-		Params->qtildeIn_x = GraphBuilder.CreateSRV(Outputs.qtildeOut_x);
-		Params->qAdvectIn_x = GraphBuilder.CreateSRV(Outputs.qAdvectOut_x);
-		Params->qbarIn_y = GraphBuilder.CreateSRV(Inputs.qbarIn_y);
-		Params->qtildeIn_y = GraphBuilder.CreateSRV(Outputs.qtildeOut_y);
-		Params->qAdvectIn_y = GraphBuilder.CreateSRV(Outputs.qAdvectOut_y);
-		Params->hPast = GraphBuilder.CreateSRV(Inputs.hPast);
-		Params->terrain = GraphBuilder.CreateSRV(Inputs.terrain);
-		Params->hOut = GraphBuilder.CreateUAV(Outputs.hOut);
-		Params->qOut_x = GraphBuilder.CreateUAV(Outputs.qOut_x);
-		Params->qOut_y = GraphBuilder.CreateUAV(Outputs.qOut_y);
-		Params->hdot_out = GraphBuilder.CreateUAV(Outputs.hdot_out);
+	// CalcQAdvect (Compute advective flux)
+	TShaderMapRef<FCalcQAdvectCS> CalcQAdvectShader(ShaderMap);
+	FCalcQAdvectCS::FParameters* CalcQAdvectParams = GraphBuilder.AllocParameters<FCalcQAdvectCS::FParameters>();
+	CalcQAdvectParams->SimConstants = ConstantBuffer;
+	CalcQAdvectParams->ubarNewIn_x = GraphBuilder.CreateSRV(Inputs.ubarNewIn_x);
+	CalcQAdvectParams->ubarNewIn_y = GraphBuilder.CreateSRV(Inputs.ubarNewIn_y);
+	CalcQAdvectParams->htildeIn = GraphBuilder.CreateSRV(Outputs.htildeOut);
+	CalcQAdvectParams->qAdvectOut_x = GraphBuilder.CreateUAV(qAdvectOut_x);
+	CalcQAdvectParams->qAdvectOut_y = GraphBuilder.CreateUAV(qAdvectOut_y);
 
-		FComputeShaderUtils::AddPass(
-			GraphBuilder,
-			RDG_EVENT_NAME("SWE_IntegrateH"),
-			ERDGPassFlags::Compute,
-			Shader,
-			Params,
-			GridGroups
-		);
-	}
+	FComputeShaderUtils::AddPass(
+		GraphBuilder,
+		RDG_EVENT_NAME("SWE_CalcQAdvect"),
+		ERDGPassFlags::Compute,
+		CalcQAdvectShader,
+		CalcQAdvectParams,
+		GridGroups
+	);
 
-	// Recompute H (Total free surface elevation for next tick)
-	if (Outputs.H_Out)
-	{
-		TShaderMapRef<FRecomputeHCS> Shader(ShaderMap);
-		FRecomputeHCS::FParameters* Params = GraphBuilder.AllocParameters<FRecomputeHCS::FParameters>();
-		Params->SimConstants = ConstantBuffer;
-		Params->hIn = GraphBuilder.CreateSRV(Outputs.hOut);
-		Params->terrain = GraphBuilder.CreateSRV(Inputs.terrain);
-		Params->H_Out = GraphBuilder.CreateUAV(Outputs.H_Out);
+	// IntegrateH (Time-integrate water depth)
+	TShaderMapRef<FIntegrateHCS> IntegrateHShader(ShaderMap);
+	FIntegrateHCS::FParameters* IntegrateHParams = GraphBuilder.AllocParameters<FIntegrateHCS::FParameters>();
+	IntegrateHParams->SimConstants = ConstantBuffer;
+	IntegrateHParams->qbarIn_x = GraphBuilder.CreateSRV(Inputs.qbarIn_x);
+	IntegrateHParams->qtildeIn_x = GraphBuilder.CreateSRV(Outputs.qtildeOut_x);
+	IntegrateHParams->qAdvectIn_x = GraphBuilder.CreateSRV(qAdvectOut_x);
+	IntegrateHParams->qbarIn_y = GraphBuilder.CreateSRV(Inputs.qbarIn_y);
+	IntegrateHParams->qtildeIn_y = GraphBuilder.CreateSRV(Outputs.qtildeOut_y);
+	IntegrateHParams->qAdvectIn_y = GraphBuilder.CreateSRV(qAdvectOut_y);
+	IntegrateHParams->hPast = GraphBuilder.CreateSRV(Inputs.hPast);
+	IntegrateHParams->terrain = GraphBuilder.CreateSRV(Inputs.terrain);
+	IntegrateHParams->hOut = GraphBuilder.CreateUAV(Outputs.hOut);
+	IntegrateHParams->qOut_x = GraphBuilder.CreateUAV(Outputs.qOut_x);
+	IntegrateHParams->qOut_y = GraphBuilder.CreateUAV(Outputs.qOut_y);
+	IntegrateHParams->hdot_out = GraphBuilder.CreateUAV(Outputs.hdot_out);
+
+	FComputeShaderUtils::AddPass(
+		GraphBuilder,
+		RDG_EVENT_NAME("SWE_IntegrateH"),
+		ERDGPassFlags::Compute,
+		IntegrateHShader,
+		IntegrateHParams,
+		GridGroups
+	);
+
+	// 4. Recompute H (Total free surface elevation for next tick)
+	if (Outputs.H_Out) {
+		TShaderMapRef<FRecomputeHCS> RecomputeHShader(ShaderMap);
+		FRecomputeHCS::FParameters* RecomputeHParams = GraphBuilder.AllocParameters<FRecomputeHCS::FParameters>();
+		RecomputeHParams->SimConstants = ConstantBuffer;
+		RecomputeHParams->hIn = GraphBuilder.CreateSRV(Outputs.hOut);
+		RecomputeHParams->terrain = GraphBuilder.CreateSRV(Inputs.terrain);
+		RecomputeHParams->H_Out = GraphBuilder.CreateUAV(Outputs.H_Out);
 
 		FComputeShaderUtils::AddPass(
 			GraphBuilder,
 			RDG_EVENT_NAME("SWE_Final_ReH"),
 			ERDGPassFlags::Compute,
-			Shader,
-			Params,
+			RecomputeHShader,
+			RecomputeHParams,
 			GridGroups
 		);
 	}
 
-	// Recompute HAvg (Time-averaged free surface elevation for visual export & CPU readback)
-	if (Outputs.HAvg_Out)
-	{
-		TShaderMapRef<FRecomputeHAvgCS> Shader(ShaderMap);
-		FRecomputeHAvgCS::FParameters* Params = GraphBuilder.AllocParameters<FRecomputeHAvgCS::FParameters>();
-		Params->SimConstants = ConstantBuffer;
-		Params->hIn = GraphBuilder.CreateSRV(Outputs.hOut);
-		Params->hPast = GraphBuilder.CreateSRV(Inputs.hPast);
-		Params->terrain = GraphBuilder.CreateSRV(Inputs.terrain);
-		Params->H_Out = GraphBuilder.CreateUAV(Outputs.HAvg_Out);
+	// 5. Recompute HAvg (Time-averaged free surface elevation for visual export & CPU readback)
+	if (Outputs.HAvg_Out) {
+		TShaderMapRef<FRecomputeHAvgCS> RecomputeHAvgShader(ShaderMap);
+		FRecomputeHAvgCS::FParameters* RecomputeHAvgParams = GraphBuilder.AllocParameters<FRecomputeHAvgCS::FParameters>();
+		RecomputeHAvgParams->SimConstants = ConstantBuffer;
+		RecomputeHAvgParams->hIn = GraphBuilder.CreateSRV(Outputs.hOut);
+		RecomputeHAvgParams->hPast = GraphBuilder.CreateSRV(Inputs.hPast);
+		RecomputeHAvgParams->terrain = GraphBuilder.CreateSRV(Inputs.terrain);
+		RecomputeHAvgParams->H_Out = GraphBuilder.CreateUAV(Outputs.HAvg_Out);
 
 		FComputeShaderUtils::AddPass(
 			GraphBuilder,
 			RDG_EVENT_NAME("SWE_Final_ReHAvg"),
 			ERDGPassFlags::Compute,
-			Shader,
-			Params,
+			RecomputeHAvgShader,
+			RecomputeHAvgParams,
 			GridGroups
 		);
 	}

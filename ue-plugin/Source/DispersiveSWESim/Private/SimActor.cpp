@@ -9,8 +9,7 @@
 #include "TextureResource.h"
 
 
-ASimActor::ASimActor()
-{
+ASimActor::ASimActor() {
     PrimaryActorTick.bCanEverTick = false;
 
     // Root Component
@@ -43,76 +42,61 @@ ASimActor::ASimActor()
 
     // Attempt to resolve default plane1024 mesh
     static ConstructorHelpers::FObjectFinder<UStaticMesh> PlaneMeshFinder(TEXT("/DispersiveSWESim/Meshes/plane1024"));
-    if (PlaneMeshFinder.Succeeded())
-    {
+    if (PlaneMeshFinder.Succeeded()) {
         WaterStaticMeshAsset = PlaneMeshFinder.Object;
         WaterMeshComponent->SetStaticMesh(WaterStaticMeshAsset);
     }
 
     // Attempt to resolve the default water material
     static ConstructorHelpers::FObjectFinder<UMaterialInterface> WaterMaterialFinder(TEXT("/DispersiveSWESim/Materials/M_PreviewOceanWater"));
-    if (WaterMaterialFinder.Succeeded())
-    {
+    if (WaterMaterialFinder.Succeeded()) {
         BaseWaterMaterial = WaterMaterialFinder.Object;
     }
 }
 
-void ASimActor::OnConstruction(const FTransform& Transform)
-{
+void ASimActor::OnConstruction(const FTransform& Transform) {
     Super::OnConstruction(Transform);
 
     // Handle auto-fit logic in editor time so it's instantly visual to the developer
     FitToTerrain();
 
     // Setup static water mesh representation and scale it
-    if (WaterMeshComponent)
-    {
+    if (WaterMeshComponent) {
         WaterMeshComponent->SetVisibility(true);
-        if (WaterStaticMeshAsset)
-        {
+        if (WaterStaticMeshAsset) {
             WaterMeshComponent->SetStaticMesh(WaterStaticMeshAsset);
             float ScaleFactor = CapturedWorldWidth / FMath::Max(1.0f, StaticMeshDefaultSize);
             WaterMeshComponent->SetWorldScale3D(FVector(ScaleFactor, ScaleFactor, 1.0f));
-        }
-        else if (bAutoLoadDefaultAssets)
-        {
+        } else if (bAutoLoadDefaultAssets) {
             UStaticMesh* DefaultPlane = Cast<UStaticMesh>(StaticLoadObject(UStaticMesh::StaticClass(), nullptr, TEXT("/Engine/BasicShapes/Plane")));
-            if (DefaultPlane)
-            {
+            if (DefaultPlane) {
                 WaterMeshComponent->SetStaticMesh(DefaultPlane);
                 float ScaleFactor = CapturedWorldWidth / 100.0f; // Basic shapes plane is 100x100
                 WaterMeshComponent->SetWorldScale3D(FVector(ScaleFactor, ScaleFactor, 1.0f));
             }
         }
 
-        if (BaseWaterMaterial)
-        {
+        if (BaseWaterMaterial) {
             WaterMeshComponent->SetMaterial(0, BaseWaterMaterial);
         }
     }
 }
 
-void ASimActor::BeginPlay()
-{
+void ASimActor::BeginPlay() {
     UE_LOG(LogTemp, Warning, TEXT("ASimActor::BeginPlay() started"));
 
     // Re-run bounds calculation to ensure runtime matches any runtime changes
     FitToTerrain();
 
     // Set up static water mesh at runtime
-    if (WaterMeshComponent)
-    {
-        if (WaterStaticMeshAsset)
-        {
+    if (WaterMeshComponent) {
+        if (WaterStaticMeshAsset) {
             WaterMeshComponent->SetStaticMesh(WaterStaticMeshAsset);
             float ScaleFactor = CapturedWorldWidth / FMath::Max(1.0f, StaticMeshDefaultSize);
             WaterMeshComponent->SetWorldScale3D(FVector(ScaleFactor, ScaleFactor, 1.0f));
-        }
-        else if (bAutoLoadDefaultAssets)
-        {
+        } else if (bAutoLoadDefaultAssets) {
             UStaticMesh* DefaultPlane = Cast<UStaticMesh>(StaticLoadObject(UStaticMesh::StaticClass(), nullptr, TEXT("/Engine/BasicShapes/Plane")));
-            if (DefaultPlane)
-            {
+            if (DefaultPlane) {
                 WaterMeshComponent->SetStaticMesh(DefaultPlane);
                 float ScaleFactor = CapturedWorldWidth / 100.0f;
                 WaterMeshComponent->SetWorldScale3D(FVector(ScaleFactor, ScaleFactor, 1.0f));
@@ -195,15 +179,12 @@ void ASimActor::BeginPlay()
 
     // Setup Scene Capture Component properties
     float CameraZ = 5000.0f;
-    if (TerrainCaptureComponent)
-    {
+    if (TerrainCaptureComponent) {
         // Temporarily hide the water mesh component so it doesn't block the depth capture of the terrain below it
-        if (WaterMeshComponent)
-        {
+        if (WaterMeshComponent) {
             WaterMeshComponent->SetVisibility(false);
         }
-        if (TerrainActor)
-        {
+        if (TerrainActor) {
             TerrainCaptureComponent->ShowOnlyActors.Add(TerrainActor);
             TerrainCaptureComponent->PrimitiveRenderMode = ESceneCapturePrimitiveRenderMode::PRM_UseShowOnlyList;
         }
@@ -215,23 +196,19 @@ void ASimActor::BeginPlay()
         TerrainCaptureComponent->CaptureScene(); // Render the terrain depth once on start
         CameraZ = TerrainCaptureComponent->GetComponentLocation().Z;
 
-        if (WaterMeshComponent)
-        {
+        if (WaterMeshComponent) {
             WaterMeshComponent->SetVisibility(true);
         }
 
         // Diagnostic readback of captured depth pixels
-        if (TerrainCaptureRT)
-        {
+        if (TerrainCaptureRT) {
             FTextureRenderTargetResource* Resource = TerrainCaptureRT->GameThread_GetRenderTargetResource();
             TArray<FFloat16Color> Pixels;
-            if (Resource && Resource->ReadFloat16Pixels(Pixels))
-            {
+            if (Resource && Resource->ReadFloat16Pixels(Pixels)) {
                 float MinR = 1e20f;
                 float MaxR = -1e20f;
                 float SumR = 0.f;
-                for (const FFloat16Color& Pixel : Pixels)
-                {
+                for (const FFloat16Color& Pixel : Pixels) {
                     float Val = Pixel.R.GetFloat();
                     if (Val < MinR) MinR = Val;
                     if (Val > MaxR) MaxR = Val;
@@ -239,17 +216,14 @@ void ASimActor::BeginPlay()
                 }
                 float AvgR = Pixels.Num() > 0 ? SumR / Pixels.Num() : 0.f;
                 UE_LOG(LogTemp, Warning, TEXT("TerrainCaptureRT Diagnostic: MinR=%f, MaxR=%f, AvgR=%f, NumPixels=%d, CameraZ=%f"), MinR, MaxR, AvgR, Pixels.Num(), CameraZ);
-            }
-            else
-            {
+            } else {
                 UE_LOG(LogTemp, Warning, TEXT("TerrainCaptureRT Diagnostic: Failed to read pixels."));
             }
         }
     }
 
     // Configure and Bind Render Targets to Simulation Component
-    if (SimComponent)
-    {
+    if (SimComponent) {
         SimComponent->GridSizeX = GridResolution;
         SimComponent->GridSizeY = GridResolution;
         SimComponent->CapturedWorldWidth = CapturedWorldWidth;
@@ -284,14 +258,12 @@ void ASimActor::BeginPlay()
     Super::BeginPlay();
 
     // Try to load default material if not set
-    if (!BaseWaterMaterial && bAutoLoadDefaultAssets)
-    {
+    if (!BaseWaterMaterial && bAutoLoadDefaultAssets) {
         BaseWaterMaterial = Cast<UMaterialInterface>(StaticLoadObject(UMaterialInterface::StaticClass(), nullptr, TEXT("/DispersiveSWESim/Materials/M_PreviewOceanWater")));
     }
 
     // Create and bind dynamic material instance
-    if (BaseWaterMaterial)
-    {
+    if (BaseWaterMaterial) {
         DynamicWaterMaterial = UMaterialInstanceDynamic::Create(BaseWaterMaterial, this);
         DynamicWaterMaterial->SetTextureParameterValue(FName("DisplacementMap"), DisplacementRT);
         DynamicWaterMaterial->SetTextureParameterValue(FName("Displacement Map"), DisplacementRT);
@@ -347,58 +319,45 @@ void ASimActor::BeginPlay()
     }
 }
 
-float ASimActor::GetWaterHeightAtLocation(const FVector& WorldLocation) const
-{
-    if (SimComponent)
-    {
+float ASimActor::GetWaterHeightAtLocation(const FVector& WorldLocation) const {
+    if (SimComponent) {
         return SimComponent->GetWaterHeightAtLocation(WorldLocation);
     }
     return WaterLevel;
 }
 
-FVector ASimActor::GetWaterVelocityAtLocation(const FVector& WorldLocation) const
-{
-    if (SimComponent)
-    {
+FVector ASimActor::GetWaterVelocityAtLocation(const FVector& WorldLocation) const {
+    if (SimComponent) {
         return SimComponent->GetWaterVelocityAtLocation(WorldLocation);
     }
     return FVector::ZeroVector;
 }
 
-FVector ASimActor::GetWaterAccelerationAtLocation(const FVector& WorldLocation) const
-{
-    if (SimComponent)
-    {
+FVector ASimActor::GetWaterAccelerationAtLocation(const FVector& WorldLocation) const {
+    if (SimComponent) {
         return SimComponent->GetWaterAccelerationAtLocation(WorldLocation);
     }
     return FVector::ZeroVector;
 }
 
-void ASimActor::FitToTerrain()
-{
-    if (bAutoFitToTerrain && TerrainActor)
-    {
+void ASimActor::FitToTerrain() {
+    if (bAutoFitToTerrain && TerrainActor) {
         FVector Origin = FVector::ZeroVector;
         FVector BoxExtent = FVector::ZeroVector;
         bool bBoundsFound = false;
 
-        if (!bBoundsFound)
-        {
+        if (!bBoundsFound) {
             TerrainActor->GetActorBounds(false, Origin, BoxExtent);
 
             // Fall back to landscape pivot and CapturedWorldWidth if bounds are zero (World Partition proxy case)
-            if (BoxExtent.X <= 10.0f || BoxExtent.Y <= 10.0f)
-            {
-                if (CapturedWorldWidth <= 10.0f)
-                {
+            if (BoxExtent.X <= 10.0f || BoxExtent.Y <= 10.0f) {
+                if (CapturedWorldWidth <= 10.0f) {
                     CapturedWorldWidth = 51200.0f; // Reset to default 512m
                 }
                 // Landscape pivot is at the bottom-left corner; offset by half-width to center it
                 Origin = TerrainActor->GetActorLocation() + FVector(CapturedWorldWidth * 0.5f, CapturedWorldWidth * 0.5f, 0.0f);
                 BoxExtent = FVector(CapturedWorldWidth * 0.5f, CapturedWorldWidth * 0.5f, 1000.0f);
-            }
-            else
-            {
+            } else {
                 CapturedWorldWidth = FMath::Max(BoxExtent.X, BoxExtent.Y) * 2.0f;
             }
         }
@@ -408,12 +367,10 @@ void ASimActor::FitToTerrain()
         NewLoc.Z = 0.0f;
         SetActorLocation(NewLoc);
 
-        if (WaterMeshComponent)
-        {
+        if (WaterMeshComponent) {
             WaterMeshComponent->SetWorldScale3D(FVector(1.0f, 1.0f, 1.0f));
         }
-        if (TerrainCaptureComponent)
-        {
+        if (TerrainCaptureComponent) {
             TerrainCaptureComponent->OrthoWidth = CapturedWorldWidth;
             
             // Put scene capture above the highest point of the terrain bounds
@@ -422,12 +379,9 @@ void ASimActor::FitToTerrain()
             TerrainCaptureComponent->SetRelativeLocation(FVector(0.0f, 0.0f, TargetRelativeZ));
         }
 
-        if (SimComponent)
-        {
+        if (SimComponent) {
             SimComponent->WaterLevel = WaterLevel;
             SimComponent->CapturedWorldWidth = CapturedWorldWidth;
         }
     }
 }
-
-

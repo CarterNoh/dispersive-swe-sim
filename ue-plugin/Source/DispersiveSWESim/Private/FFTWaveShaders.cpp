@@ -15,8 +15,7 @@ void AddPopulateSpectrumPass(
 	FRDGTextureRef HNegOut,
 	int32 PaddedSizeX,
 	int32 PaddedSizeY,
-	int32 DepthLevelsCount)
-{
+	int32 DepthLevelsCount) {
 	FGlobalShaderMap* ShaderMap = GetGlobalShaderMap(GMaxRHIFeatureLevel);
 	TShaderMapRef<FPopulateSpectrumCS> PopulateSpectrumCS(ShaderMap);
 	FPopulateSpectrumCS::FParameters* PassParams = GraphBuilder.AllocParameters<FPopulateSpectrumCS::FParameters>();
@@ -42,8 +41,7 @@ void AddPropagateFFTWavesPasses(
 	FRDGBuilder& GraphBuilder,
 	TUniformBufferRef<FFFTWaveConstants> ConstantBuffer,
 	const FPropagateFFTWavesInputs& Inputs,
-	const FPropagateFFTWavesOutputs& Outputs)
-{
+	const FPropagateFFTWavesOutputs& Outputs) {
 	FGlobalShaderMap* ShaderMap = GetGlobalShaderMap(GMaxRHIFeatureLevel);
 
 	FIntVector ComplexArrayGroups(
@@ -57,58 +55,68 @@ void AddPropagateFFTWavesPasses(
 		1
 	);
 
-	// Propagate spectral waves
-	{
-		TShaderMapRef<FPropagateWavesCS> Shader(ShaderMap);
-		FPropagateWavesCS::FParameters* Params = GraphBuilder.AllocParameters<FPropagateWavesCS::FParameters>();
-		Params->FFTWaveConstants = ConstantBuffer;
-		Params->HPosIn = GraphBuilder.CreateSRV(Inputs.HPosIn);
-		Params->HNegIn = GraphBuilder.CreateSRV(Inputs.HNegIn);
-		Params->DispXOut = GraphBuilder.CreateUAV(Inputs.Disp_x_Array);
-		Params->DispYOut = GraphBuilder.CreateUAV(Inputs.Disp_y_Array);
-		Params->DelHXOut = GraphBuilder.CreateUAV(Inputs.DelH_x_Array);
-		Params->DelHYOut = GraphBuilder.CreateUAV(Inputs.DelH_y_Array);
-		Params->FlowXOut = GraphBuilder.CreateUAV(Inputs.Flow_x_Array);
-		Params->FlowYOut = GraphBuilder.CreateUAV(Inputs.Flow_y_Array);
+	// Transient complex arrays for FFT wave workspace
+	FRDGTextureDesc ComplexArrayDesc = FRDGTextureDesc::Create2DArray(
+		FIntPoint(Inputs.PaddedSizeX, Inputs.PaddedSizeY),
+		PF_G32R32F,
+		FClearValueBinding::None,
+		TexCreate_ShaderResource | TexCreate_UAV,
+		Inputs.DepthNum
+	);
 
-		FComputeShaderUtils::AddPass(
-			GraphBuilder,
-			RDG_EVENT_NAME("SWE_FFTWaves_Propagate"),
-			ERDGPassFlags::Compute,
-			Shader,
-			Params,
-			ComplexArrayGroups
-		);
-	}
+	FRDGTextureRef Disp_x_Array = GraphBuilder.CreateTexture(ComplexArrayDesc, TEXT("Disp_x_Array"));
+	FRDGTextureRef Disp_y_Array = GraphBuilder.CreateTexture(ComplexArrayDesc, TEXT("Disp_y_Array"));
+	FRDGTextureRef DelH_x_Array = GraphBuilder.CreateTexture(ComplexArrayDesc, TEXT("DelH_x_Array"));
+	FRDGTextureRef DelH_y_Array = GraphBuilder.CreateTexture(ComplexArrayDesc, TEXT("DelH_y_Array"));
+
+	// Propagate spectral waves
+	TShaderMapRef<FPropagateWavesCS> PropagateShader(ShaderMap);
+	FPropagateWavesCS::FParameters* PropagateParams = GraphBuilder.AllocParameters<FPropagateWavesCS::FParameters>();
+	PropagateParams->FFTWaveConstants = ConstantBuffer;
+	PropagateParams->HPosIn = GraphBuilder.CreateSRV(Inputs.HPosIn);
+	PropagateParams->HNegIn = GraphBuilder.CreateSRV(Inputs.HNegIn);
+	PropagateParams->DispXOut = GraphBuilder.CreateUAV(Disp_x_Array);
+	PropagateParams->DispYOut = GraphBuilder.CreateUAV(Disp_y_Array);
+	PropagateParams->DelHXOut = GraphBuilder.CreateUAV(DelH_x_Array);
+	PropagateParams->DelHYOut = GraphBuilder.CreateUAV(DelH_y_Array);
+	PropagateParams->FlowXOut = GraphBuilder.CreateUAV(Outputs.Flow_x_Out);
+	PropagateParams->FlowYOut = GraphBuilder.CreateUAV(Outputs.Flow_y_Out);
+
+	FComputeShaderUtils::AddPass(
+		GraphBuilder,
+		RDG_EVENT_NAME("SWE_FFTWaves_Propagate"),
+		ERDGPassFlags::Compute,
+		PropagateShader,
+		PropagateParams,
+		ComplexArrayGroups
+	);
 
 	// Inverse FFTs on Disp and DelH 2D Texture Arrays
-	Add2DFFTPasses(GraphBuilder, Inputs.Disp_x_Array, Inputs.PaddedSizeX, Inputs.PaddedSizeY, true, Inputs.DepthNum);
-	Add2DFFTPasses(GraphBuilder, Inputs.Disp_y_Array, Inputs.PaddedSizeX, Inputs.PaddedSizeY, true, Inputs.DepthNum);
-	Add2DFFTPasses(GraphBuilder, Inputs.DelH_x_Array, Inputs.PaddedSizeX, Inputs.PaddedSizeY, true, Inputs.DepthNum);
-	Add2DFFTPasses(GraphBuilder, Inputs.DelH_y_Array, Inputs.PaddedSizeX, Inputs.PaddedSizeY, true, Inputs.DepthNum);
+	Add2DFFTPasses(GraphBuilder, Disp_x_Array, Inputs.PaddedSizeX, Inputs.PaddedSizeY, true, Inputs.DepthNum);
+	Add2DFFTPasses(GraphBuilder, Disp_y_Array, Inputs.PaddedSizeX, Inputs.PaddedSizeY, true, Inputs.DepthNum);
+	Add2DFFTPasses(GraphBuilder, DelH_x_Array, Inputs.PaddedSizeX, Inputs.PaddedSizeY, true, Inputs.DepthNum);
+	Add2DFFTPasses(GraphBuilder, DelH_y_Array, Inputs.PaddedSizeX, Inputs.PaddedSizeY, true, Inputs.DepthNum);
 
 	// Interpolate wind wave outputs between depths
-	{
-		TShaderMapRef<FInterpCS> Shader(ShaderMap);
-		FInterpCS::FParameters* Params = GraphBuilder.AllocParameters<FInterpCS::FParameters>();
-		Params->FFTWaveConstants = ConstantBuffer;
-		Params->HxIn = GraphBuilder.CreateSRV(Inputs.DelH_x_Array);
-		Params->HyIn = GraphBuilder.CreateSRV(Inputs.DelH_y_Array);
-		Params->DxIn = GraphBuilder.CreateSRV(Inputs.Disp_x_Array);
-		Params->DyIn = GraphBuilder.CreateSRV(Inputs.Disp_y_Array);
-		Params->hbarIn = GraphBuilder.CreateSRV(Inputs.hbarIn);
-		Params->HxOut = GraphBuilder.CreateUAV(Outputs.delH_x_Out);
-		Params->HyOut = GraphBuilder.CreateUAV(Outputs.delH_y_Out);
-		Params->DxOut = GraphBuilder.CreateUAV(Outputs.disp_x_Out);
-		Params->DyOut = GraphBuilder.CreateUAV(Outputs.disp_y_Out);
+	TShaderMapRef<FInterpCS> InterpShader(ShaderMap);
+	FInterpCS::FParameters* InterpParams = GraphBuilder.AllocParameters<FInterpCS::FParameters>();
+	InterpParams->FFTWaveConstants = ConstantBuffer;
+	InterpParams->HxIn = GraphBuilder.CreateSRV(DelH_x_Array);
+	InterpParams->HyIn = GraphBuilder.CreateSRV(DelH_y_Array);
+	InterpParams->DxIn = GraphBuilder.CreateSRV(Disp_x_Array);
+	InterpParams->DyIn = GraphBuilder.CreateSRV(Disp_y_Array);
+	InterpParams->hbarIn = GraphBuilder.CreateSRV(Inputs.hbarIn);
+	InterpParams->HxOut = GraphBuilder.CreateUAV(Outputs.delH_x_Out);
+	InterpParams->HyOut = GraphBuilder.CreateUAV(Outputs.delH_y_Out);
+	InterpParams->DxOut = GraphBuilder.CreateUAV(Outputs.disp_x_Out);
+	InterpParams->DyOut = GraphBuilder.CreateUAV(Outputs.disp_y_Out);
 
-		FComputeShaderUtils::AddPass(
-			GraphBuilder,
-			RDG_EVENT_NAME("SWE_FFTWaves_Interp"),
-			ERDGPassFlags::Compute,
-			Shader,
-			Params,
-			GridGroups
-		);
-	}
+	FComputeShaderUtils::AddPass(
+		GraphBuilder,
+		RDG_EVENT_NAME("SWE_FFTWaves_Interp"),
+		ERDGPassFlags::Compute,
+		InterpShader,
+		InterpParams,
+		GridGroups
+	);
 }

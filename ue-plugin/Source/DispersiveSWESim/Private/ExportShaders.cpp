@@ -13,8 +13,7 @@ void AddVisualExportPasses(
 	FRDGBuilder& GraphBuilder,
 	TUniformBufferRef<FExportConstants> ConstantBuffer,
 	const FVisualExportInputs& Inputs,
-	const FVisualExportOutputs& Outputs)
-{
+	const FVisualExportOutputs& Outputs) {
 	FGlobalShaderMap* ShaderMap = GetGlobalShaderMap(GMaxRHIFeatureLevel);
 	FIntVector GridGroups(
 		FMath::DivideAndRoundUp(Inputs.GridSizeX, 16),
@@ -23,8 +22,7 @@ void AddVisualExportPasses(
 	);
 
 	// Export Displacement (Pack X, Y, Z/Height into single FloatRGBA target)
-	if (Inputs.ExportDispDest && Inputs.inHeight)
-	{
+	if (Outputs.ExportDispDest && Inputs.inHeight) {
 		TShaderMapRef<FScaleCopyDisplacementCS> ScaleCopyCS(ShaderMap);
 		FScaleCopyDisplacementCS::FParameters* PassParams = GraphBuilder.AllocParameters<FScaleCopyDisplacementCS::FParameters>();
 		PassParams->ExportConstants = ConstantBuffer;
@@ -32,7 +30,7 @@ void AddVisualExportPasses(
 		PassParams->inDispX = GraphBuilder.CreateSRV(Inputs.inDispX);
 		PassParams->inDispY = GraphBuilder.CreateSRV(Inputs.inDispY);
 		PassParams->inHeight = GraphBuilder.CreateSRV(Inputs.inHeight);
-		PassParams->outDisp4 = GraphBuilder.CreateUAV(Inputs.ExportDispDest);
+		PassParams->outDisp4 = GraphBuilder.CreateUAV(Outputs.ExportDispDest);
 
 		FComputeShaderUtils::AddPass(
 			GraphBuilder,
@@ -45,8 +43,7 @@ void AddVisualExportPasses(
 	}
 
 	// Export Fluid Velocity (Pack u_x, u_y, w into single FloatRGBA target in m/s)
-	if (Inputs.ExportVelocityDest && Inputs.inQx && Inputs.inQy && Inputs.inHPast && Inputs.inHNew && Inputs.inHdot)
-	{
+	if (Outputs.ExportVelocityDest && Inputs.inQx && Inputs.inQy && Inputs.inHPast && Inputs.inHNew && Inputs.inHdot) {
 		TShaderMapRef<FScaleCopyVelocityCS> VelocityCS(ShaderMap);
 		FScaleCopyVelocityCS::FParameters* PassParams = GraphBuilder.AllocParameters<FScaleCopyVelocityCS::FParameters>();
 		PassParams->ExportConstants = ConstantBuffer;
@@ -55,7 +52,7 @@ void AddVisualExportPasses(
 		PassParams->inHPast = GraphBuilder.CreateSRV(Inputs.inHPast);
 		PassParams->inHNew = GraphBuilder.CreateSRV(Inputs.inHNew);
 		PassParams->inHdot = GraphBuilder.CreateSRV(Inputs.inHdot);
-		PassParams->outVel4 = GraphBuilder.CreateUAV(Inputs.ExportVelocityDest);
+		PassParams->outVel4 = GraphBuilder.CreateUAV(Outputs.ExportVelocityDest);
 
 		FComputeShaderUtils::AddPass(
 			GraphBuilder,
@@ -68,14 +65,13 @@ void AddVisualExportPasses(
 	}
 
 	// Export Fluid Acceleration (Forward Euler from current and past velocity in m/s^2)
-	if (Inputs.ExportAccelDest && Inputs.inVel && Inputs.inVelPast)
-	{
+	if (Outputs.ExportAccelDest && Inputs.inVel && Inputs.inVelPast) {
 		TShaderMapRef<FCalcAccelerationCS> AccelCS(ShaderMap);
 		FCalcAccelerationCS::FParameters* PassParams = GraphBuilder.AllocParameters<FCalcAccelerationCS::FParameters>();
 		PassParams->ExportConstants = ConstantBuffer;
 		PassParams->inVel = GraphBuilder.CreateSRV(Inputs.inVel);
 		PassParams->inVelPast = GraphBuilder.CreateSRV(Inputs.inVelPast);
-		PassParams->outAccel4 = GraphBuilder.CreateUAV(Inputs.ExportAccelDest);
+		PassParams->outAccel4 = GraphBuilder.CreateUAV(Outputs.ExportAccelDest);
 
 		FComputeShaderUtils::AddPass(
 			GraphBuilder,
@@ -88,8 +84,16 @@ void AddVisualExportPasses(
 	}
 
 	// Export Surface Normal, Foam & Jacobian Determinant
-	if (Inputs.ExportNormalDest && Inputs.ExportFoamDest && Inputs.ExportJacobianDest && Outputs.outNewFoam)
-	{
+	if (Outputs.outNewFoam && Inputs.inPreviousFoam) {
+		FRDGTextureRef NormalDest = Outputs.ExportNormalDest;
+		if (!NormalDest) {
+			NormalDest = GraphBuilder.CreateTexture(FRDGTextureDesc::Create2D(FIntPoint(Inputs.GridSizeX, Inputs.GridSizeY), PF_FloatRGBA, FClearValueBinding::None, TexCreate_ShaderResource | TexCreate_UAV), TEXT("NormalTemp"));
+		}
+		FRDGTextureRef JacobianDest = Outputs.ExportJacobianDest;
+		if (!JacobianDest) {
+			JacobianDest = GraphBuilder.CreateTexture(FRDGTextureDesc::Create2D(FIntPoint(Inputs.GridSizeX, Inputs.GridSizeY), PF_FloatRGBA, FClearValueBinding::None, TexCreate_ShaderResource | TexCreate_UAV), TEXT("JacobianTemp"));
+		}
+
 		TShaderMapRef<FCalcSurfaceNormalAndFoamCS> NormalAndFoamCS(ShaderMap);
 		FCalcSurfaceNormalAndFoamCS::FParameters* PassParams = GraphBuilder.AllocParameters<FCalcSurfaceNormalAndFoamCS::FParameters>();
 		PassParams->ExportConstants = ConstantBuffer;
@@ -97,9 +101,9 @@ void AddVisualExportPasses(
 		PassParams->inDispY = GraphBuilder.CreateSRV(Inputs.inDispY);
 		PassParams->inHeight = GraphBuilder.CreateSRV(Inputs.inHeight);
 		PassParams->inPreviousFoam = GraphBuilder.CreateSRV(Inputs.inPreviousFoam);
-		PassParams->outNormal = GraphBuilder.CreateUAV(Inputs.ExportNormalDest);
+		PassParams->outNormal = GraphBuilder.CreateUAV(NormalDest);
 		PassParams->outFoam = GraphBuilder.CreateUAV(Outputs.outNewFoam);
-		PassParams->outJacobianDet = GraphBuilder.CreateUAV(Inputs.ExportJacobianDest);
+		PassParams->outJacobianDet = GraphBuilder.CreateUAV(JacobianDest);
 
 		FComputeShaderUtils::AddPass(
 			GraphBuilder,
@@ -110,19 +114,19 @@ void AddVisualExportPasses(
 			GridGroups
 		);
 
-		// Copy updated foam to user-facing render target
-		AddCopyTexturePass(GraphBuilder, Outputs.outNewFoam, Inputs.ExportFoamDest);
+		if (Outputs.ExportFoamDest) {
+			AddCopyTexturePass(GraphBuilder, Outputs.outNewFoam, Outputs.ExportFoamDest);
+		}
 	}
 
 	// Calculate Roughness LUT
-	if (Inputs.ExportRoughnessDest && Inputs.ExportNormalDest && Outputs.outNewRoughness && Inputs.inPreviousRoughness)
-	{
+	if (Outputs.outNewRoughness && Inputs.inPreviousRoughness && Outputs.ExportNormalDest) {
 		TShaderMapRef<FCalcRoughnessLUTCS> RoughnessCS(ShaderMap);
 		FCalcRoughnessLUTCS::FParameters* PassParams = GraphBuilder.AllocParameters<FCalcRoughnessLUTCS::FParameters>();
 		PassParams->ExportConstants = ConstantBuffer;
 		PassParams->IntegrationSamples = Inputs.IntegrationSamples;
 		PassParams->RoughnessPower = Inputs.RoughnessPower;
-		PassParams->inNormal = GraphBuilder.CreateSRV(Inputs.ExportNormalDest);
+		PassParams->inNormal = GraphBuilder.CreateSRV(Outputs.ExportNormalDest);
 		PassParams->inPreviousRoughness = GraphBuilder.CreateSRV(Inputs.inPreviousRoughness);
 		PassParams->BilinearWrapSampler = TStaticSamplerState<SF_Bilinear, AM_Wrap, AM_Wrap, AM_Wrap>::GetRHI();
 		PassParams->outRoughness = GraphBuilder.CreateUAV(Outputs.outNewRoughness);
@@ -136,6 +140,8 @@ void AddVisualExportPasses(
 			FIntVector(FMath::DivideAndRoundUp(Inputs.GridSizeX, 16), 1, 1)
 		);
 
-		AddCopyTexturePass(GraphBuilder, Outputs.outNewRoughness, Inputs.ExportRoughnessDest);
+		if (Outputs.ExportRoughnessDest) {
+			AddCopyTexturePass(GraphBuilder, Outputs.outNewRoughness, Outputs.ExportRoughnessDest);
+		}
 	}
 }

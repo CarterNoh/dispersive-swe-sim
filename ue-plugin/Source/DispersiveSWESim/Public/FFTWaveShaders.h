@@ -34,8 +34,7 @@ END_GLOBAL_SHADER_PARAMETER_STRUCT()
 
 // --- Shaders from fftwaves.usf ---
 
-class FPopulateSpectrumCS : public FGlobalShader
-{
+class FPopulateSpectrumCS : public FGlobalShader {
 public:
 	DECLARE_GLOBAL_SHADER(FPopulateSpectrumCS);
 	SHADER_USE_PARAMETER_STRUCT(FPopulateSpectrumCS, FGlobalShader);
@@ -47,8 +46,7 @@ public:
 	END_SHADER_PARAMETER_STRUCT()
 };
 
-class FPropagateWavesCS : public FGlobalShader
-{
+class FPropagateWavesCS : public FGlobalShader {
 public:
 	DECLARE_GLOBAL_SHADER(FPropagateWavesCS);
 	SHADER_USE_PARAMETER_STRUCT(FPropagateWavesCS, FGlobalShader);
@@ -66,8 +64,7 @@ public:
 	END_SHADER_PARAMETER_STRUCT()
 };
 
-class FInterpCS : public FGlobalShader
-{
+class FInterpCS : public FGlobalShader {
 public:
 	DECLARE_GLOBAL_SHADER(FInterpCS);
 	SHADER_USE_PARAMETER_STRUCT(FInterpCS, FGlobalShader);
@@ -88,16 +85,9 @@ public:
 
 // --- RDG Helper Structures & Functions ---
 
-struct FPropagateFFTWavesInputs
-{
+struct FPropagateFFTWavesInputs {
 	FRDGTextureRef HPosIn = nullptr;
 	FRDGTextureRef HNegIn = nullptr;
-	FRDGTextureRef Disp_x_Array = nullptr;
-	FRDGTextureRef Disp_y_Array = nullptr;
-	FRDGTextureRef DelH_x_Array = nullptr;
-	FRDGTextureRef DelH_y_Array = nullptr;
-	FRDGTextureRef Flow_x_Array = nullptr;
-	FRDGTextureRef Flow_y_Array = nullptr;
 	FRDGTextureRef hbarIn = nullptr;
 
 	int32 PaddedSizeX = 0;
@@ -107,12 +97,16 @@ struct FPropagateFFTWavesInputs
 	int32 DepthNum = 0;
 };
 
-struct FPropagateFFTWavesOutputs
-{
+struct FPropagateFFTWavesOutputs {
+	// Spatial 2D outputs (after iFFT & depth interpolation)
 	FRDGTextureRef disp_x_Out = nullptr;
 	FRDGTextureRef disp_y_Out = nullptr;
 	FRDGTextureRef delH_x_Out = nullptr;
 	FRDGTextureRef delH_y_Out = nullptr;
+
+	// Spectral outputs for eWave coupling (2D complex array)
+	FRDGTextureRef Flow_x_Out = nullptr;
+	FRDGTextureRef Flow_y_Out = nullptr;
 };
 
 /**
