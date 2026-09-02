@@ -17,6 +17,7 @@ BEGIN_GLOBAL_SHADER_PARAMETER_STRUCT(FExportConstants, )
 	SHADER_PARAMETER(float, foamMultiplier)
 	SHADER_PARAMETER(float, foamFade)
 	SHADER_PARAMETER(float, foamBlur)
+	SHADER_PARAMETER(float, minWaterHeight)
 END_GLOBAL_SHADER_PARAMETER_STRUCT()
 
 // --- Shaders from export.usf ---
@@ -34,6 +35,37 @@ public:
 		SHADER_PARAMETER_RDG_TEXTURE_SRV(Texture2D<float>, inDispY)
 		SHADER_PARAMETER_RDG_TEXTURE_SRV(Texture2D<float>, inHeight)
 		SHADER_PARAMETER_RDG_TEXTURE_UAV(RWTexture2D<float4>, outDisp4)
+	END_SHADER_PARAMETER_STRUCT()
+};
+
+class FScaleCopyVelocityCS : public FGlobalShader
+{
+public:
+	DECLARE_GLOBAL_SHADER(FScaleCopyVelocityCS);
+	SHADER_USE_PARAMETER_STRUCT(FScaleCopyVelocityCS, FGlobalShader);
+
+	BEGIN_SHADER_PARAMETER_STRUCT(FParameters, )
+		SHADER_PARAMETER_STRUCT_REF(FExportConstants, ExportConstants)
+		SHADER_PARAMETER_RDG_TEXTURE_SRV(Texture2D<float>, inQx)
+		SHADER_PARAMETER_RDG_TEXTURE_SRV(Texture2D<float>, inQy)
+		SHADER_PARAMETER_RDG_TEXTURE_SRV(Texture2D<float>, inHPast)
+		SHADER_PARAMETER_RDG_TEXTURE_SRV(Texture2D<float>, inHNew)
+		SHADER_PARAMETER_RDG_TEXTURE_SRV(Texture2D<float>, inHdot)
+		SHADER_PARAMETER_RDG_TEXTURE_UAV(RWTexture2D<float4>, outVel4)
+	END_SHADER_PARAMETER_STRUCT()
+};
+
+class FCalcAccelerationCS : public FGlobalShader
+{
+public:
+	DECLARE_GLOBAL_SHADER(FCalcAccelerationCS);
+	SHADER_USE_PARAMETER_STRUCT(FCalcAccelerationCS, FGlobalShader);
+
+	BEGIN_SHADER_PARAMETER_STRUCT(FParameters, )
+		SHADER_PARAMETER_STRUCT_REF(FExportConstants, ExportConstants)
+		SHADER_PARAMETER_RDG_TEXTURE_SRV(Texture2D<float4>, inVel)
+		SHADER_PARAMETER_RDG_TEXTURE_SRV(Texture2D<float4>, inVelPast)
+		SHADER_PARAMETER_RDG_TEXTURE_UAV(RWTexture2D<float4>, outAccel4)
 	END_SHADER_PARAMETER_STRUCT()
 };
 
@@ -81,8 +113,17 @@ struct FVisualExportInputs
 	FRDGTextureRef inHeight = nullptr;
 	FRDGTextureRef inPreviousFoam = nullptr;
 	FRDGTextureRef inPreviousRoughness = nullptr;
+	FRDGTextureRef inQx = nullptr;
+	FRDGTextureRef inQy = nullptr;
+	FRDGTextureRef inHPast = nullptr;
+	FRDGTextureRef inHNew = nullptr;
+	FRDGTextureRef inHdot = nullptr;
+	FRDGTextureRef inVel = nullptr;
+	FRDGTextureRef inVelPast = nullptr;
 
 	FRDGTextureRef ExportDispDest = nullptr;
+	FRDGTextureRef ExportVelocityDest = nullptr;
+	FRDGTextureRef ExportAccelDest = nullptr;
 	FRDGTextureRef ExportNormalDest = nullptr;
 	FRDGTextureRef ExportFoamDest = nullptr;
 	FRDGTextureRef ExportJacobianDest = nullptr;

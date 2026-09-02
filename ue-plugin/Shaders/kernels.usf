@@ -102,6 +102,7 @@ RWTexture2D<float> qAdvectOut_x;
 RWTexture2D<float> qAdvectOut_y;
 RWTexture2D<float> qOut_x;
 RWTexture2D<float> qOut_y;
+RWTexture2D<float> hdot_out;
 RWTexture2DArray<float2> qhat_x_array;
 RWTexture2DArray<float2> qhat_y_array;
 
@@ -361,6 +362,15 @@ void RecomputeH(uint3 id : SV_DispatchThreadID) {
     // Outputs H_Out
     if (id.x >= (uint)(gridSizeX) || id.y >= (uint)(gridSizeY)) return;
     H_Out[id.xy] = hIn[id.xy] + terrain[id.xy];
+}
+
+[numthreads(16, 16, 1)]
+void RecomputeHAvg(uint3 id : SV_DispatchThreadID) {
+    // Inputs: hIn, hPast, terrain
+    // Outputs H_Out
+    if (id.x >= (uint)(gridSizeX) || id.y >= (uint)(gridSizeY)) return;
+    float h_avg = 0.5f * (hIn[id.xy] + hPast[id.xy]);
+    H_Out[id.xy] = h_avg + terrain[id.xy];
 }
 
 
@@ -776,4 +786,5 @@ void IntegrateH(uint3 id : SV_DispatchThreadID) {
     float q_out_y = (qbarIn_y[curr] + qtildeIn_y[curr]) * damping;
     qOut_x[curr] = LimitFlowRate(q_out_x, h_curr, t_curr, h_right, t_right, cflFactor);
     qOut_y[curr] = LimitFlowRate(q_out_y, h_curr, t_curr, h_up,    t_up,    cflFactor);
+    hdot_out[curr] = -div_q;
 }

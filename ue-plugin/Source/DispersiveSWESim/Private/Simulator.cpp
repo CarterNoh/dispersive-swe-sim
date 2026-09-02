@@ -148,6 +148,7 @@ void USimulator::AllocatePersistentTargets(FRHICommandListImmediate& RHICmdList)
 	GRenderTargetPool.FindFreeElement(RHICmdList, Desc, TexdelH_y, TEXT("delH_y"));
 	GRenderTargetPool.FindFreeElement(RHICmdList, Desc, Texdisp_x, TEXT("disp_x"));
 	GRenderTargetPool.FindFreeElement(RHICmdList, Desc, Texdisp_y, TEXT("disp_y"));
+	GRenderTargetPool.FindFreeElement(RHICmdList, Desc, Texhdot, TEXT("hdot"));
 	GRenderTargetPool.FindFreeElement(RHICmdList, Desc, TexTerrainExportDummy, TEXT("TerrainExportDummy"));
 
 	FPooledRenderTargetDesc FoamDesc = FPooledRenderTargetDesc::Create2DDesc(
@@ -207,20 +208,51 @@ void USimulator::AllocatePersistentTargets(FRHICommandListImmediate& RHICmdList)
 	GRenderTargetPool.FindFreeElement(RHICmdList, ComplexPaddedDesc, TexqHat_y, TEXT("qHat_y"));
 
 	// Initialize staging textures for double-buffered async readback
-	FRHITextureCreateDesc Desc0 = FRHITextureCreateDesc::Create2D(TEXT("Staging0"), GridSizeX, GridSizeY, PF_R32_FLOAT)
+	FRHITextureCreateDesc DispDesc0 = FRHITextureCreateDesc::Create2D(TEXT("Staging0"), GridSizeX, GridSizeY, PF_R32_FLOAT)
 		.SetFlags(TexCreate_CPUReadback)
 		.SetNumMips(1);
-	StagingTextures[0] = RHICreateTexture(Desc0);
+	StagingTextures[0] = RHICreateTexture(DispDesc0);
 
-	FRHITextureCreateDesc Desc1 = FRHITextureCreateDesc::Create2D(TEXT("Staging1"), GridSizeX, GridSizeY, PF_R32_FLOAT)
+	FRHITextureCreateDesc DispDesc1 = FRHITextureCreateDesc::Create2D(TEXT("Staging1"), GridSizeX, GridSizeY, PF_R32_FLOAT)
 		.SetFlags(TexCreate_CPUReadback)
 		.SetNumMips(1);
-	StagingTextures[1] = RHICreateTexture(Desc1);
+	StagingTextures[1] = RHICreateTexture(DispDesc1);
+
+	FRHITextureCreateDesc VelDesc0 = FRHITextureCreateDesc::Create2D(TEXT("VelocityStaging0"), GridSizeX, GridSizeY, PF_FloatRGBA)
+		.SetFlags(TexCreate_CPUReadback)
+		.SetNumMips(1);
+	VelocityStagingTextures[0] = RHICreateTexture(VelDesc0);
+
+	FRHITextureCreateDesc VelDesc1 = FRHITextureCreateDesc::Create2D(TEXT("VelocityStaging1"), GridSizeX, GridSizeY, PF_FloatRGBA)
+		.SetFlags(TexCreate_CPUReadback)
+		.SetNumMips(1);
+	VelocityStagingTextures[1] = RHICreateTexture(VelDesc1);
+
+	FRHITextureCreateDesc AccelDesc0 = FRHITextureCreateDesc::Create2D(TEXT("AccelerationStaging0"), GridSizeX, GridSizeY, PF_FloatRGBA)
+		.SetFlags(TexCreate_CPUReadback)
+		.SetNumMips(1);
+	AccelerationStagingTextures[0] = RHICreateTexture(AccelDesc0);
+
+	FRHITextureCreateDesc AccelDesc1 = FRHITextureCreateDesc::Create2D(TEXT("AccelerationStaging1"), GridSizeX, GridSizeY, PF_FloatRGBA)
+		.SetFlags(TexCreate_CPUReadback)
+		.SetNumMips(1);
+	AccelerationStagingTextures[1] = RHICreateTexture(AccelDesc1);
 
 	CPUHeightData[0].Reset();
 	CPUHeightData[0].SetNumZeroed(GridSizeX * GridSizeY);
 	CPUHeightData[1].Reset();
 	CPUHeightData[1].SetNumZeroed(GridSizeX * GridSizeY);
+
+	CPUVelocityData[0].Reset();
+	CPUVelocityData[0].SetNumZeroed(GridSizeX * GridSizeY);
+	CPUVelocityData[1].Reset();
+	CPUVelocityData[1].SetNumZeroed(GridSizeX * GridSizeY);
+
+	CPUAccelerationData[0].Reset();
+	CPUAccelerationData[0].SetNumZeroed(GridSizeX * GridSizeY);
+	CPUAccelerationData[1].Reset();
+	CPUAccelerationData[1].SetNumZeroed(GridSizeX * GridSizeY);
+
 	ActiveCPUBufferIndex.store(0);
 	StagingWriteIndex = 0;
 	StagingReadIndex = 1;
@@ -294,6 +326,7 @@ void USimulator::AssignExportConstants(FExportConstants& Constants) const
 	Constants.foamMultiplier = FoamMultiplier;
 	Constants.foamFade = FoamFade;
 	Constants.foamBlur = FoamBlur;
+	Constants.minWaterHeight = MinWaterHeight * 0.01f; // Convert cm to meters
 }
 
 void USimulator::SetupInitialStates(FRHICommandListImmediate& RHICmdList) 
@@ -311,11 +344,12 @@ void USimulator::SetupInitialStates(FRHICommandListImmediate& RHICmdList)
 	{
 		FRDGBuilder GraphBuilder(RHICmdList);
 
-		// 1. 2D Scalar simulation fields
+		// 2D Scalar simulation fields
 		if (TexQ_x.IsValid()) AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(GraphBuilder.RegisterExternalTexture(TexQ_x)), FLinearColor::Black);
 		if (TexQ_y.IsValid()) AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(GraphBuilder.RegisterExternalTexture(TexQ_y)), FLinearColor::Black);
 		if (Texq_x.IsValid()) AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(GraphBuilder.RegisterExternalTexture(Texq_x)), FLinearColor::Black);
 		if (Texq_y.IsValid()) AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(GraphBuilder.RegisterExternalTexture(Texq_y)), FLinearColor::Black);
+		if (Texhdot.IsValid()) AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(GraphBuilder.RegisterExternalTexture(Texhdot)), FLinearColor::Black);
 		if (TexHOrig.IsValid()) AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(GraphBuilder.RegisterExternalTexture(TexHOrig)), FLinearColor::Black);
 		if (TexQOrig_x.IsValid()) AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(GraphBuilder.RegisterExternalTexture(TexQOrig_x)), FLinearColor::Black);
 		if (TexQOrig_y.IsValid()) AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(GraphBuilder.RegisterExternalTexture(TexQOrig_y)), FLinearColor::Black);
@@ -348,12 +382,12 @@ void USimulator::SetupInitialStates(FRHICommandListImmediate& RHICmdList)
 		if (Texdisp_y.IsValid()) AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(GraphBuilder.RegisterExternalTexture(Texdisp_y)), FLinearColor::Black);
 		if (TexTerrainExportDummy.IsValid()) AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(GraphBuilder.RegisterExternalTexture(TexTerrainExportDummy)), FLinearColor::Black);
 
-		// 2. 2D Complex float2 fields
+		// 2D Complex float2 fields
 		if (TexhHat.IsValid()) AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(GraphBuilder.RegisterExternalTexture(TexhHat)), FLinearColor::Black);
 		if (TexqHat_x.IsValid()) AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(GraphBuilder.RegisterExternalTexture(TexqHat_x)), FLinearColor::Black);
 		if (TexqHat_y.IsValid()) AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(GraphBuilder.RegisterExternalTexture(TexqHat_y)), FLinearColor::Black);
 
-		// 3. 2D Complex float2 array fields
+		// 2D Complex float2 array fields
 		if (TexDisp_x.IsValid()) AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(GraphBuilder.RegisterExternalTexture(TexDisp_x)), FLinearColor::Black);
 		if (TexDisp_y.IsValid()) AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(GraphBuilder.RegisterExternalTexture(TexDisp_y)), FLinearColor::Black);
 		if (TexDelH_x.IsValid()) AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(GraphBuilder.RegisterExternalTexture(TexDelH_x)), FLinearColor::Black);
@@ -365,7 +399,7 @@ void USimulator::SetupInitialStates(FRHICommandListImmediate& RHICmdList)
 		if (TexHPos.IsValid()) AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(GraphBuilder.RegisterExternalTexture(TexHPos)), FLinearColor::Black);
 		if (TexHNeg.IsValid()) AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(GraphBuilder.RegisterExternalTexture(TexHNeg)), FLinearColor::Black);
 
-		// 4. Foam & Roughness
+		// Foam & Roughness
 		if (TexFoam.IsValid()) AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(GraphBuilder.RegisterExternalTexture(TexFoam)), FLinearColor::Black);
 		if (TexNewFoam.IsValid()) AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(GraphBuilder.RegisterExternalTexture(TexNewFoam)), FLinearColor::Black);
 		if (TexRoughness.IsValid()) AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(GraphBuilder.RegisterExternalTexture(TexRoughness)), FLinearColor::Black);
@@ -603,6 +637,7 @@ void USimulator::ExecuteSimulation_RenderThread(
 	FRDGTextureRef qAdvect_x_RDG = GraphBuilder.RegisterExternalTexture(TexqAdvect_x);
 	FRDGTextureRef qAdvect_y_RDG = GraphBuilder.RegisterExternalTexture(TexqAdvect_y);
 	FRDGTextureRef hPast_RDG = GraphBuilder.RegisterExternalTexture(TexhPast);
+	FRDGTextureRef hdot_RDG = GraphBuilder.RegisterExternalTexture(Texhdot);
 	FRDGTextureRef hHat_RDG = GraphBuilder.RegisterExternalTexture(TexhHat);
 	FRDGTextureRef qHat_x_RDG = GraphBuilder.RegisterExternalTexture(TexqHat_x);
 	FRDGTextureRef qHat_y_RDG = GraphBuilder.RegisterExternalTexture(TexqHat_y);
@@ -631,7 +666,7 @@ void USimulator::ExecuteSimulation_RenderThread(
 	TUniformBufferRef<FExportConstants> ExportConstantBuffer = CreateUniformBufferImmediate(ExportConstants, EUniformBufferUsage::UniformBuffer_SingleFrame);
 
 	// ----------------------------------------------------
-	// 1. DECOMPOSITION & JACOBI DIFFUSION STEP
+	// DECOMPOSITION & JACOBI DIFFUSION STEP
 	// ----------------------------------------------------
 	FDecompositionInputs DecompInputs;
 	DecompInputs.hIn = h_RDG;
@@ -673,7 +708,7 @@ void USimulator::ExecuteSimulation_RenderThread(
 	Qy_RDG = DecompOutputs.Qy_SrcDst;
 
 	// ----------------------------------------------------
-	// 2. FFT WIND WAVE STEP
+	// FFT WIND WAVE STEP
 	// ----------------------------------------------------
 	FPropagateFFTWavesInputs FFTWaveInputs;
 	FFTWaveInputs.HPosIn = HPos_RDG;
@@ -700,7 +735,7 @@ void USimulator::ExecuteSimulation_RenderThread(
 	AddPropagateFFTWavesPasses(GraphBuilder, FFTWaveConstantBuffer, FFTWaveInputs, FFTWaveOutputs);
 
 	// ----------------------------------------------------
-	// 3. EWAVE DISPERSION STEP
+	// EWAVE DISPERSION STEP
 	// ----------------------------------------------------
 	FEWaveInputs EWaveInputs;
 	EWaveInputs.htildeIn = htilde_RDG;
@@ -733,7 +768,7 @@ void USimulator::ExecuteSimulation_RenderThread(
 	Swap(htildeOld_RDG, htildeOldNext_RDG);
 
 	// ----------------------------------------------------
-	// 4. BULK FLOW (SWE VELOCITY & MOMENTUM)
+	// BULK FLOW (SWE VELOCITY & MOMENTUM)
 	// ----------------------------------------------------
 	FSWEBulkInputs SWEInputs;
 	SWEInputs.qbarIn_x = qbarx_RDG;
@@ -762,7 +797,7 @@ void USimulator::ExecuteSimulation_RenderThread(
 	Swap(hbar_RDG, hbarOld_RDG);
 
 	// ----------------------------------------------------
-	// 5. ADVECTIVE TRANSPORT & HEIGHT INTEGRATION
+	// ADVECTIVE TRANSPORT & HEIGHT INTEGRATION
 	// ----------------------------------------------------
 	// Ping-pong swap pointers for qtilde, htilde, and h before transport
 	Swap(Texqtilde_x, TexqtildePast_x);
@@ -789,6 +824,14 @@ void USimulator::ExecuteSimulation_RenderThread(
 	TransportInputs.GridSizeX = GridSizeX;
 	TransportInputs.GridSizeY = GridSizeY;
 
+	FRDGTextureDesc HAvgDesc = FRDGTextureDesc::Create2D(
+		FIntPoint(GridSizeX, GridSizeY),
+		PF_R32_FLOAT,
+		FClearValueBinding::None,
+		TexCreate_ShaderResource | TexCreate_UAV
+	);
+	FRDGTextureRef HAvg_RDG = GraphBuilder.CreateTexture(HAvgDesc, TEXT("HAvg_RDG"));
+
 	FTransportAndIntegrateOutputs TransportOutputs;
 	TransportOutputs.htildeOut = htilde_RDG;
 	TransportOutputs.qtildeOut_x = qtildex_RDG;
@@ -798,12 +841,14 @@ void USimulator::ExecuteSimulation_RenderThread(
 	TransportOutputs.hOut = h_RDG;
 	TransportOutputs.qOut_x = qx_RDG;
 	TransportOutputs.qOut_y = qy_RDG;
+	TransportOutputs.hdot_out = hdot_RDG;
 	TransportOutputs.H_Out = H_RDG;
+	TransportOutputs.HAvg_Out = HAvg_RDG;
 
 	AddTransportAndIntegratePasses(GraphBuilder, SimConstantBuffer, TransportInputs, TransportOutputs);
 
 	// ----------------------------------------------------
-	// 6. EXPORT VISUAL OUTPUTS TO RENDER TARGETS
+	// EXPORT VISUAL OUTPUTS TO RENDER TARGETS
 	// ----------------------------------------------------
 	// Copy current Displacement to DisplacementPast before updating
 	if (DisplacementPastRT && DisplacementPastRT->GetRenderTargetResource() &&
@@ -814,16 +859,83 @@ void USimulator::ExecuteSimulation_RenderThread(
 		AddCopyTexturePass(GraphBuilder, SrcRDG, DestRDG);
 	}
 
+	// Copy current Velocity to VelocityPast before updating
+	FRDGTextureRef VelPast_RDG = nullptr;
+	if (VelocityPastRT && VelocityPastRT->GetRenderTargetResource() &&
+		VelocityRT && VelocityRT->GetRenderTargetResource())
+	{
+		FRDGTextureRef SrcRDG = GraphBuilder.RegisterExternalTexture(CreateRenderTarget(VelocityRT->GetRenderTargetResource()->GetTexture2DRHI(), TEXT("VelCurrent_CopySrc")));
+		FRDGTextureRef DestRDG = GraphBuilder.RegisterExternalTexture(CreateRenderTarget(VelocityPastRT->GetRenderTargetResource()->GetTexture2DRHI(), TEXT("VelPast_CopyDest")));
+		AddCopyTexturePass(GraphBuilder, SrcRDG, DestRDG);
+		VelPast_RDG = DestRDG;
+	}
+	else if (VelocityPastRT && VelocityPastRT->GetRenderTargetResource())
+	{
+		VelPast_RDG = GraphBuilder.RegisterExternalTexture(CreateRenderTarget(VelocityPastRT->GetRenderTargetResource()->GetTexture2DRHI(), TEXT("VelPastExport")));
+	}
+
+	// Copy current Acceleration to AccelerationPast before updating
+	if (AccelerationPastRT && AccelerationPastRT->GetRenderTargetResource() &&
+		AccelerationRT && AccelerationRT->GetRenderTargetResource())
+	{
+		FRDGTextureRef SrcRDG = GraphBuilder.RegisterExternalTexture(CreateRenderTarget(AccelerationRT->GetRenderTargetResource()->GetTexture2DRHI(), TEXT("AccelCurrent_CopySrc")));
+		FRDGTextureRef DestRDG = GraphBuilder.RegisterExternalTexture(CreateRenderTarget(AccelerationPastRT->GetRenderTargetResource()->GetTexture2DRHI(), TEXT("AccelPast_CopyDest")));
+		AddCopyTexturePass(GraphBuilder, SrcRDG, DestRDG);
+	}
+
 	FVisualExportInputs ExportInputs;
 	ExportInputs.inDispX = disp_x_RDG;
 	ExportInputs.inDispY = disp_y_RDG;
-	ExportInputs.inHeight = H_RDG;
+	ExportInputs.inHeight = HAvg_RDG; // Use time-averaged surface height for displacement export & normals
 	ExportInputs.inPreviousFoam = GraphBuilder.RegisterExternalTexture(TexFoam);
 	if (TexRoughness.IsValid()) ExportInputs.inPreviousRoughness = GraphBuilder.RegisterExternalTexture(TexRoughness);
+	ExportInputs.inQx = qx_RDG;
+	ExportInputs.inQy = qy_RDG;
+	ExportInputs.inHPast = hPast_RDG;
+	ExportInputs.inHNew = h_RDG;
+	ExportInputs.inHdot = hdot_RDG;
+
 	if (DisplacementRT && DisplacementRT->GetRenderTargetResource())
 	{
 		ExportInputs.ExportDispDest = GraphBuilder.RegisterExternalTexture(CreateRenderTarget(DisplacementRT->GetRenderTargetResource()->GetTexture2DRHI(), TEXT("DispExport")));
 	}
+
+	FRDGTextureRef VelocityExportRDG = nullptr;
+	if (VelocityRT && VelocityRT->GetRenderTargetResource())
+	{
+		VelocityExportRDG = GraphBuilder.RegisterExternalTexture(CreateRenderTarget(VelocityRT->GetRenderTargetResource()->GetTexture2DRHI(), TEXT("VelocityExport")));
+	}
+	else if (VelocityStagingTextures[0].IsValid())
+	{
+		FRDGTextureDesc VelDesc = FRDGTextureDesc::Create2D(
+			FIntPoint(GridSizeX, GridSizeY),
+			PF_FloatRGBA,
+			FClearValueBinding::None,
+			TexCreate_ShaderResource | TexCreate_UAV
+		);
+		VelocityExportRDG = GraphBuilder.CreateTexture(VelDesc, TEXT("VelocityTransient"));
+	}
+	ExportInputs.ExportVelocityDest = VelocityExportRDG;
+	ExportInputs.inVel = VelocityExportRDG;
+	ExportInputs.inVelPast = VelPast_RDG ? VelPast_RDG : VelocityExportRDG;
+
+	FRDGTextureRef AccelExportRDG = nullptr;
+	if (AccelerationRT && AccelerationRT->GetRenderTargetResource())
+	{
+		AccelExportRDG = GraphBuilder.RegisterExternalTexture(CreateRenderTarget(AccelerationRT->GetRenderTargetResource()->GetTexture2DRHI(), TEXT("AccelerationExport")));
+	}
+	else if (AccelerationStagingTextures[0].IsValid())
+	{
+		FRDGTextureDesc AccelDesc = FRDGTextureDesc::Create2D(
+			FIntPoint(GridSizeX, GridSizeY),
+			PF_FloatRGBA,
+			FClearValueBinding::None,
+			TexCreate_ShaderResource | TexCreate_UAV
+		);
+		AccelExportRDG = GraphBuilder.CreateTexture(AccelDesc, TEXT("AccelerationTransient"));
+	}
+	ExportInputs.ExportAccelDest = AccelExportRDG;
+
 	if (NormalRT && NormalRT->GetRenderTargetResource())
 	{
 		ExportInputs.ExportNormalDest = GraphBuilder.RegisterExternalTexture(CreateRenderTarget(NormalRT->GetRenderTargetResource()->GetTexture2DRHI(), TEXT("NormalExport")));
@@ -860,52 +972,128 @@ void USimulator::ExecuteSimulation_RenderThread(
 	}
 
 	// ----------------------------------------------------
-	// ASYNC READBACK OF WATER HEIGHT FIELD (TexH)
+	// ASYNC READBACK OF DISPLACEMENT & VELOCITY
 	// ----------------------------------------------------
-	if (StagingTextures[StagingWriteIndex].IsValid() && H_RDG)
+	if (StagingTextures[StagingWriteIndex].IsValid() && HAvg_RDG)
 	{
 		FTextureRHIRef CurrentStagingTexture = StagingTextures[StagingWriteIndex];
-		
 		TRefCountPtr<IPooledRenderTarget> StagingPooled = CreateRenderTarget(CurrentStagingTexture, TEXT("StagingTexture"));
 		FRDGTextureRef StagingRDG = GraphBuilder.RegisterExternalTexture(StagingPooled);
-		AddCopyTexturePass(GraphBuilder, H_RDG, StagingRDG);
+		AddCopyTexturePass(GraphBuilder, HAvg_RDG, StagingRDG);
 	}
 
-	if (StagingTextures[StagingReadIndex].IsValid())
+	if (VelocityStagingTextures[StagingWriteIndex].IsValid() && VelocityExportRDG)
+	{
+		FTextureRHIRef CurrentVelStaging = VelocityStagingTextures[StagingWriteIndex];
+		TRefCountPtr<IPooledRenderTarget> VelStagingPooled = CreateRenderTarget(CurrentVelStaging, TEXT("VelStagingTexture"));
+		FRDGTextureRef VelStagingRDG = GraphBuilder.RegisterExternalTexture(VelStagingPooled);
+		AddCopyTexturePass(GraphBuilder, VelocityExportRDG, VelStagingRDG);
+	}
+
+	if (AccelerationStagingTextures[StagingWriteIndex].IsValid() && AccelExportRDG)
+	{
+		FTextureRHIRef CurrentAccelStaging = AccelerationStagingTextures[StagingWriteIndex];
+		TRefCountPtr<IPooledRenderTarget> AccelStagingPooled = CreateRenderTarget(CurrentAccelStaging, TEXT("AccelStagingTexture"));
+		FRDGTextureRef AccelStagingRDG = GraphBuilder.RegisterExternalTexture(AccelStagingPooled);
+		AddCopyTexturePass(GraphBuilder, AccelExportRDG, AccelStagingRDG);
+	}
+
+	if (StagingTextures[StagingReadIndex].IsValid() || VelocityStagingTextures[StagingReadIndex].IsValid() || AccelerationStagingTextures[StagingReadIndex].IsValid())
 	{
 		FTextureRHIRef ReadStagingTexture = StagingTextures[StagingReadIndex];
+		FTextureRHIRef ReadVelStagingTexture = VelocityStagingTextures[StagingReadIndex];
+		FTextureRHIRef ReadAccelStagingTexture = AccelerationStagingTextures[StagingReadIndex];
 		int32 TargetCPUIndex = 1 - ActiveCPUBufferIndex.load();
 
 		GraphBuilder.AddPass(
 			RDG_EVENT_NAME("SWE_ReadbackMap"),
 			ERDGPassFlags::None,
-			[ReadStagingTexture, TargetCPUIndex, this](FRHICommandListImmediate& RHICmdList)
+			[ReadStagingTexture, ReadVelStagingTexture, ReadAccelStagingTexture, TargetCPUIndex, this](FRHICommandListImmediate& RHICmdList)
 			{
-				void* LocalData = nullptr;
-				int32 OutWidth = 0;
-				int32 OutHeight = 0;
-				RHICmdList.MapStagingSurface(ReadStagingTexture, LocalData, OutWidth, OutHeight);
-				if (LocalData)
+				if (ReadStagingTexture.IsValid())
 				{
-					float* FloatData = (float*)LocalData;
-					int32 Size = GridSizeX * GridSizeY;
-					
-					TArray<float>& DestArray = CPUHeightData[TargetCPUIndex];
-					DestArray.SetNumUninitialized(Size);
-					
-					uint8* LocalByteData = (uint8*)LocalData;
-					for (int32 y = 0; y < GridSizeY; ++y)
+					void* LocalData = nullptr;
+					int32 OutWidth = 0;
+					int32 OutHeight = 0;
+					RHICmdList.MapStagingSurface(ReadStagingTexture, LocalData, OutWidth, OutHeight);
+					if (LocalData)
 					{
-						float* SrcRow = (float*)(LocalByteData + y * OutWidth);
-						float* DestRow = DestArray.GetData() + y * GridSizeX;
-						FMemory::Memcpy(DestRow, SrcRow, GridSizeX * sizeof(float));
+						int32 Size = GridSizeX * GridSizeY;
+						TArray<float>& DestArray = CPUHeightData[TargetCPUIndex];
+						DestArray.SetNumUninitialized(Size);
+						
+						uint8* LocalByteData = (uint8*)LocalData;
+						for (int32 y = 0; y < GridSizeY; ++y)
+						{
+							float* SrcRow = (float*)(LocalByteData + y * OutWidth);
+							float* DestRow = DestArray.GetData() + y * GridSizeX;
+							FMemory::Memcpy(DestRow, SrcRow, GridSizeX * sizeof(float));
+						}
+						
+						RHICmdList.UnmapStagingSurface(ReadStagingTexture);
 					}
-					
-					RHICmdList.UnmapStagingSurface(ReadStagingTexture);
-					
-					// Swap indices
-					ActiveCPUBufferIndex.store(TargetCPUIndex);
 				}
+
+				if (ReadVelStagingTexture.IsValid())
+				{
+					void* VelData = nullptr;
+					int32 VelOutWidth = 0;
+					int32 VelOutHeight = 0;
+					RHICmdList.MapStagingSurface(ReadVelStagingTexture, VelData, VelOutWidth, VelOutHeight);
+					if (VelData)
+					{
+						int32 Size = GridSizeX * GridSizeY;
+						TArray<FVector>& DestVelArray = CPUVelocityData[TargetCPUIndex];
+						DestVelArray.SetNumUninitialized(Size);
+
+						uint8* VelByteData = (uint8*)VelData;
+						for (int32 y = 0; y < GridSizeY; ++y)
+						{
+							FFloat16Color* SrcRow = (FFloat16Color*)(VelByteData + y * VelOutWidth);
+							for (int32 x = 0; x < GridSizeX; ++x)
+							{
+								DestVelArray[y * GridSizeX + x] = FVector(
+									SrcRow[x].R.GetFloat(),
+									SrcRow[x].G.GetFloat(),
+									SrcRow[x].B.GetFloat()
+								);
+							}
+						}
+						RHICmdList.UnmapStagingSurface(ReadVelStagingTexture);
+					}
+				}
+
+				if (ReadAccelStagingTexture.IsValid())
+				{
+					void* AccelData = nullptr;
+					int32 AccelOutWidth = 0;
+					int32 AccelOutHeight = 0;
+					RHICmdList.MapStagingSurface(ReadAccelStagingTexture, AccelData, AccelOutWidth, AccelOutHeight);
+					if (AccelData)
+					{
+						int32 Size = GridSizeX * GridSizeY;
+						TArray<FVector>& DestAccelArray = CPUAccelerationData[TargetCPUIndex];
+						DestAccelArray.SetNumUninitialized(Size);
+
+						uint8* AccelByteData = (uint8*)AccelData;
+						for (int32 y = 0; y < GridSizeY; ++y)
+						{
+							FFloat16Color* SrcRow = (FFloat16Color*)(AccelByteData + y * AccelOutWidth);
+							for (int32 x = 0; x < GridSizeX; ++x)
+							{
+								DestAccelArray[y * GridSizeX + x] = FVector(
+									SrcRow[x].R.GetFloat(),
+									SrcRow[x].G.GetFloat(),
+									SrcRow[x].B.GetFloat()
+								);
+							}
+						}
+						RHICmdList.UnmapStagingSurface(ReadAccelStagingTexture);
+					}
+				}
+
+				// Swap active buffer index
+				ActiveCPUBufferIndex.store(TargetCPUIndex);
 			}
 		);
 	}
@@ -977,6 +1165,10 @@ bool USimulator::SaveParametersToJson(const FString& FilePath)
 	JsonObject->RemoveField(TEXT("terrainHeightInputRT"));
 	JsonObject->RemoveField(TEXT("displacementRT"));
 	JsonObject->RemoveField(TEXT("displacementPastRT"));
+	JsonObject->RemoveField(TEXT("velocityRT"));
+	JsonObject->RemoveField(TEXT("velocityPastRT"));
+	JsonObject->RemoveField(TEXT("accelerationRT"));
+	JsonObject->RemoveField(TEXT("accelerationPastRT"));
 	JsonObject->RemoveField(TEXT("normalRT"));
 	JsonObject->RemoveField(TEXT("foamRT"));
 	JsonObject->RemoveField(TEXT("jacobianDetRT"));
@@ -1007,6 +1199,26 @@ float USimulator::GetCachedHeight(int32 X, int32 Y) const
 		return CPUHeightData[ActiveIdx][Index];
 	}
 	return WaterLevel * 0.01f; // base water level in meters
+}
+
+FVector USimulator::GetCachedVelocity(int32 X, int32 Y) const 
+{
+	int32 Index = Y * GridSizeX + X;
+	int32 ActiveIdx = ActiveCPUBufferIndex.load();
+	if (CPUVelocityData[ActiveIdx].IsValidIndex(Index)) {
+		return CPUVelocityData[ActiveIdx][Index];
+	}
+	return FVector::ZeroVector;
+}
+
+FVector USimulator::GetCachedAcceleration(int32 X, int32 Y) const 
+{
+	int32 Index = Y * GridSizeX + X;
+	int32 ActiveIdx = ActiveCPUBufferIndex.load();
+	if (CPUAccelerationData[ActiveIdx].IsValidIndex(Index)) {
+		return CPUAccelerationData[ActiveIdx][Index];
+	}
+	return FVector::ZeroVector;
 }
 
 float USimulator::GetWaterHeightAtLocation(const FVector& WorldLocation) const 
@@ -1050,4 +1262,90 @@ float USimulator::GetWaterHeightAtLocation(const FVector& WorldLocation) const
 
 	// Convert meters to centimeters (Unreal units)
 	return H_Avg * 100.0f;
+}
+
+FVector USimulator::GetWaterVelocityAtLocation(const FVector& WorldLocation) const 
+{
+	if (GridSizeX <= 1 || GridSizeY <= 1 || CapturedWorldWidth <= 0.0f) {
+		return FVector::ZeroVector;
+	}
+
+	AActor* Owner = GetOwner();
+	if (!Owner) {
+		return FVector::ZeroVector;
+	}
+
+	FVector ActorLoc = Owner->GetActorLocation();
+	FVector LocalPos = WorldLocation - ActorLoc;
+
+	// Map to UV space [-0.5, 0.5] -> [0, 1]
+	float U = (LocalPos.X / CapturedWorldWidth) + 0.5f;
+	float V = (LocalPos.Y / CapturedWorldWidth) + 0.5f;
+
+	U = FMath::Clamp(U, 0.0f, 1.0f);
+	V = FMath::Clamp(V, 0.0f, 1.0f);
+
+	float GridX = U * (GridSizeX - 1);
+	float GridY = V * (GridSizeY - 1);
+
+	int32 X0 = FMath::FloorToInt(GridX);
+	int32 Y0 = FMath::FloorToInt(GridY);
+	int32 X1 = FMath::Min(X0 + 1, GridSizeX - 1);
+	int32 Y1 = FMath::Min(Y0 + 1, GridSizeY - 1);
+
+	float LerpX = GridX - X0;
+	float LerpY = GridY - Y0;
+
+	FVector V00 = GetCachedVelocity(X0, Y0);
+	FVector V10 = GetCachedVelocity(X1, Y0);
+	FVector V01 = GetCachedVelocity(X0, Y1);
+	FVector V11 = GetCachedVelocity(X1, Y1);
+
+	FVector V_Avg = FMath::BiLerp(V00, V10, V01, V11, LerpX, LerpY);
+
+	// In meters/sec
+	return V_Avg;
+}
+
+FVector USimulator::GetWaterAccelerationAtLocation(const FVector& WorldLocation) const 
+{
+	if (GridSizeX <= 1 || GridSizeY <= 1 || CapturedWorldWidth <= 0.0f) {
+		return FVector::ZeroVector;
+	}
+
+	AActor* Owner = GetOwner();
+	if (!Owner) {
+		return FVector::ZeroVector;
+	}
+
+	FVector ActorLoc = Owner->GetActorLocation();
+	FVector LocalPos = WorldLocation - ActorLoc;
+
+	// Map to UV space [-0.5, 0.5] -> [0, 1]
+	float U = (LocalPos.X / CapturedWorldWidth) + 0.5f;
+	float V = (LocalPos.Y / CapturedWorldWidth) + 0.5f;
+
+	U = FMath::Clamp(U, 0.0f, 1.0f);
+	V = FMath::Clamp(V, 0.0f, 1.0f);
+
+	float GridX = U * (GridSizeX - 1);
+	float GridY = V * (GridSizeY - 1);
+
+	int32 X0 = FMath::FloorToInt(GridX);
+	int32 Y0 = FMath::FloorToInt(GridY);
+	int32 X1 = FMath::Min(X0 + 1, GridSizeX - 1);
+	int32 Y1 = FMath::Min(Y0 + 1, GridSizeY - 1);
+
+	float LerpX = GridX - X0;
+	float LerpY = GridY - Y0;
+
+	FVector A00 = GetCachedAcceleration(X0, Y0);
+	FVector A10 = GetCachedAcceleration(X1, Y0);
+	FVector A01 = GetCachedAcceleration(X0, Y1);
+	FVector A11 = GetCachedAcceleration(X1, Y1);
+
+	FVector A_Avg = FMath::BiLerp(A00, A10, A01, A11, LerpX, LerpY);
+
+	// In m/s^2
+	return A_Avg;
 }

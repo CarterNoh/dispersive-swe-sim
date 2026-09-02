@@ -10,6 +10,7 @@ IMPLEMENT_GLOBAL_SHADER(FCalcDiffusionCoeffsCS, "/Plugin/DispersiveSWESim/kernel
 IMPLEMENT_GLOBAL_SHADER(FDiffusionStepCS,       "/Plugin/DispersiveSWESim/kernels.usf", "DiffusionStep",       SF_Compute);
 IMPLEMENT_GLOBAL_SHADER(FDecomposeFieldsCS,     "/Plugin/DispersiveSWESim/kernels.usf", "DecomposeFields",     SF_Compute);
 IMPLEMENT_GLOBAL_SHADER(FRecomputeHCS,          "/Plugin/DispersiveSWESim/kernels.usf", "RecomputeH",          SF_Compute);
+IMPLEMENT_GLOBAL_SHADER(FRecomputeHAvgCS,       "/Plugin/DispersiveSWESim/kernels.usf", "RecomputeHAvg",       SF_Compute);
 IMPLEMENT_GLOBAL_SHADER(FTransferToFFTCS,       "/Plugin/DispersiveSWESim/kernels.usf", "TransferToFFT",       SF_Compute);
 IMPLEMENT_GLOBAL_SHADER(FCalcEWaveCS,           "/Plugin/DispersiveSWESim/kernels.usf", "CalcEWave",           SF_Compute);
 IMPLEMENT_GLOBAL_SHADER(FInterpQCS,             "/Plugin/DispersiveSWESim/kernels.usf", "InterpQ",             SF_Compute);
@@ -87,7 +88,7 @@ void AddDecompositionPasses(
 		1
 	);
 
-	// 1. InitDecomp
+	// InitDecomp
 	{
 		TShaderMapRef<FInitDecompCS> Shader(ShaderMap);
 		FInitDecompCS::FParameters* Params = GraphBuilder.AllocParameters<FInitDecompCS::FParameters>();
@@ -110,12 +111,12 @@ void AddDecompositionPasses(
 		);
 	}
 
-	// 2. Copy initial fields to Orig fields before Jacobi solver
+	// Copy initial fields to Orig fields before Jacobi solver
 	AddCopyTexturePass(GraphBuilder, Outputs.H_SrcDst, Inputs.HOrig);
 	AddCopyTexturePass(GraphBuilder, Outputs.Qx_SrcDst, Inputs.QOrig_x);
 	AddCopyTexturePass(GraphBuilder, Outputs.Qy_SrcDst, Inputs.QOrig_y);
 
-	// 3. CalcDiffusionCoeffs
+	// CalcDiffusionCoeffs
 	{
 		TShaderMapRef<FCalcDiffusionCoeffsCS> Shader(ShaderMap);
 		FCalcDiffusionCoeffsCS::FParameters* Params = GraphBuilder.AllocParameters<FCalcDiffusionCoeffsCS::FParameters>();
@@ -136,7 +137,7 @@ void AddDecompositionPasses(
 		);
 	}
 
-	// 4. Diffusion loop - implicit Jacobi solver ping-ponging across iterations
+	// Diffusion loop - implicit Jacobi solver ping-ponging across iterations
 	{
 		FRDGTextureRef H_Src = Outputs.H_SrcDst;
 		FRDGTextureRef H_Dst = Outputs.HPast_SrcDst;
@@ -186,7 +187,7 @@ void AddDecompositionPasses(
 		Outputs.QPast_y_SrcDst = Qy_Dst;
 	}
 
-	// 5. DecomposeFields
+	// DecomposeFields
 	{
 		TShaderMapRef<FDecomposeFieldsCS> Shader(ShaderMap);
 		FDecomposeFieldsCS::FParameters* Params = GraphBuilder.AllocParameters<FDecomposeFieldsCS::FParameters>();
@@ -215,7 +216,7 @@ void AddDecompositionPasses(
 		);
 	}
 
-	// 6. Recompute H
+	// Recompute H
 	{
 		TShaderMapRef<FRecomputeHCS> Shader(ShaderMap);
 		FRecomputeHCS::FParameters* Params = GraphBuilder.AllocParameters<FRecomputeHCS::FParameters>();
@@ -258,7 +259,7 @@ void AddEWavePasses(
 		1
 	);
 
-	// 1. Transfer variables to Fourier domain
+	// Transfer variables to Fourier domain
 	{
 		TShaderMapRef<FTransferToFFTCS> Shader(ShaderMap);
 		FTransferToFFTCS::FParameters* Params = GraphBuilder.AllocParameters<FTransferToFFTCS::FParameters>();
@@ -282,12 +283,12 @@ void AddEWavePasses(
 		);
 	}
 
-	// 2. Forward 2D FFTs
+	// Forward 2D FFTs
 	Add2DFFTPasses(GraphBuilder, Inputs.hHat, Inputs.PaddedSizeX, Inputs.PaddedSizeY, false, 1);
 	Add2DFFTPasses(GraphBuilder, Inputs.qHat_x, Inputs.PaddedSizeX, Inputs.PaddedSizeY, false, 1);
 	Add2DFFTPasses(GraphBuilder, Inputs.qHat_y, Inputs.PaddedSizeX, Inputs.PaddedSizeY, false, 1);
 
-	// 3. Compute eWave dispersion updates across depth levels
+	// Compute eWave dispersion updates across depth levels
 	{
 		TShaderMapRef<FCalcEWaveCS> Shader(ShaderMap);
 		FCalcEWaveCS::FParameters* Params = GraphBuilder.AllocParameters<FCalcEWaveCS::FParameters>();
@@ -310,11 +311,11 @@ void AddEWavePasses(
 		);
 	}
 
-	// 4. Inverse 2D FFTs
+	// Inverse 2D FFTs
 	Add2DFFTPasses(GraphBuilder, Inputs.qHat_x_array, Inputs.PaddedSizeX, Inputs.PaddedSizeY, true, Inputs.DepthNum);
 	Add2DFFTPasses(GraphBuilder, Inputs.qHat_y_array, Inputs.PaddedSizeX, Inputs.PaddedSizeY, true, Inputs.DepthNum);
 
-	// 5. Interpolate between depths to get new qtilde
+	// Interpolate between depths to get new qtilde
 	{
 		TShaderMapRef<FInterpQCS> Shader(ShaderMap);
 		FInterpQCS::FParameters* Params = GraphBuilder.AllocParameters<FInterpQCS::FParameters>();
@@ -349,7 +350,7 @@ void AddSWEBulkPasses(
 		1
 	);
 
-	// 1. CalcUbar
+	// CalcUbar
 	{
 		TShaderMapRef<FCalcUbarCS> Shader(ShaderMap);
 		FCalcUbarCS::FParameters* Params = GraphBuilder.AllocParameters<FCalcUbarCS::FParameters>();
@@ -370,7 +371,7 @@ void AddSWEBulkPasses(
 		);
 	}
 
-	// 2. CalcSWE
+	// CalcSWE
 	{
 		TShaderMapRef<FCalcSWECS> Shader(ShaderMap);
 		FCalcSWECS::FParameters* Params = GraphBuilder.AllocParameters<FCalcSWECS::FParameters>();
@@ -411,7 +412,7 @@ void AddTransportAndIntegratePasses(
 		1
 	);
 
-	// 1. UpdateTilde (Advect wave height and flow rate)
+	// UpdateTilde (Advect wave height and flow rate)
 	{
 		TShaderMapRef<FUpdateTildeCS> Shader(ShaderMap);
 		FUpdateTildeCS::FParameters* Params = GraphBuilder.AllocParameters<FUpdateTildeCS::FParameters>();
@@ -438,7 +439,7 @@ void AddTransportAndIntegratePasses(
 		);
 	}
 
-	// 2. CalcQAdvect
+	// CalcQAdvect
 	{
 		TShaderMapRef<FCalcQAdvectCS> Shader(ShaderMap);
 		FCalcQAdvectCS::FParameters* Params = GraphBuilder.AllocParameters<FCalcQAdvectCS::FParameters>();
@@ -459,7 +460,7 @@ void AddTransportAndIntegratePasses(
 		);
 	}
 
-	// 3. IntegrateH
+	// IntegrateH
 	{
 		TShaderMapRef<FIntegrateHCS> Shader(ShaderMap);
 		FIntegrateHCS::FParameters* Params = GraphBuilder.AllocParameters<FIntegrateHCS::FParameters>();
@@ -475,6 +476,7 @@ void AddTransportAndIntegratePasses(
 		Params->hOut = GraphBuilder.CreateUAV(Outputs.hOut);
 		Params->qOut_x = GraphBuilder.CreateUAV(Outputs.qOut_x);
 		Params->qOut_y = GraphBuilder.CreateUAV(Outputs.qOut_y);
+		Params->hdot_out = GraphBuilder.CreateUAV(Outputs.hdot_out);
 
 		FComputeShaderUtils::AddPass(
 			GraphBuilder,
@@ -486,7 +488,7 @@ void AddTransportAndIntegratePasses(
 		);
 	}
 
-	// 4. Recompute H (Total free surface elevation for rendering)
+	// Recompute H (Total free surface elevation for next tick)
 	if (Outputs.H_Out)
 	{
 		TShaderMapRef<FRecomputeHCS> Shader(ShaderMap);
@@ -499,6 +501,27 @@ void AddTransportAndIntegratePasses(
 		FComputeShaderUtils::AddPass(
 			GraphBuilder,
 			RDG_EVENT_NAME("SWE_Final_ReH"),
+			ERDGPassFlags::Compute,
+			Shader,
+			Params,
+			GridGroups
+		);
+	}
+
+	// Recompute HAvg (Time-averaged free surface elevation for visual export & CPU readback)
+	if (Outputs.HAvg_Out)
+	{
+		TShaderMapRef<FRecomputeHAvgCS> Shader(ShaderMap);
+		FRecomputeHAvgCS::FParameters* Params = GraphBuilder.AllocParameters<FRecomputeHAvgCS::FParameters>();
+		Params->SimConstants = ConstantBuffer;
+		Params->hIn = GraphBuilder.CreateSRV(Outputs.hOut);
+		Params->hPast = GraphBuilder.CreateSRV(Inputs.hPast);
+		Params->terrain = GraphBuilder.CreateSRV(Inputs.terrain);
+		Params->H_Out = GraphBuilder.CreateUAV(Outputs.HAvg_Out);
+
+		FComputeShaderUtils::AddPass(
+			GraphBuilder,
+			RDG_EVENT_NAME("SWE_Final_ReHAvg"),
 			ERDGPassFlags::Compute,
 			Shader,
 			Params,

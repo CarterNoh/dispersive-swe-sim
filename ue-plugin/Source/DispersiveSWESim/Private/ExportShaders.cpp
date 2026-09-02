@@ -4,6 +4,8 @@
 IMPLEMENT_GLOBAL_SHADER_PARAMETER_STRUCT(FExportConstants, "ExportConstants");
 
 IMPLEMENT_GLOBAL_SHADER(FScaleCopyDisplacementCS,    "/Plugin/DispersiveSWESim/export.usf", "ScaleCopyDisplacement",    SF_Compute);
+IMPLEMENT_GLOBAL_SHADER(FScaleCopyVelocityCS,        "/Plugin/DispersiveSWESim/export.usf", "ScaleCopyVelocity",        SF_Compute);
+IMPLEMENT_GLOBAL_SHADER(FCalcAccelerationCS,        "/Plugin/DispersiveSWESim/export.usf", "CalcAcceleration",        SF_Compute);
 IMPLEMENT_GLOBAL_SHADER(FCalcSurfaceNormalAndFoamCS, "/Plugin/DispersiveSWESim/export.usf", "CalcSurfaceNormalAndFoam", SF_Compute);
 IMPLEMENT_GLOBAL_SHADER(FCalcRoughnessLUTCS,         "/Plugin/DispersiveSWESim/export.usf", "CalcRoughnessLUT",         SF_Compute);
 
@@ -20,7 +22,7 @@ void AddVisualExportPasses(
 		1
 	);
 
-	// 1. Export Displacement (Pack X, Y, Z/Height into single FloatRGBA target)
+	// Export Displacement (Pack X, Y, Z/Height into single FloatRGBA target)
 	if (Inputs.ExportDispDest && Inputs.inHeight)
 	{
 		TShaderMapRef<FScaleCopyDisplacementCS> ScaleCopyCS(ShaderMap);
@@ -42,7 +44,50 @@ void AddVisualExportPasses(
 		);
 	}
 
-	// 2. Export Surface Normal, Foam & Jacobian Determinant
+	// Export Fluid Velocity (Pack u_x, u_y, w into single FloatRGBA target in m/s)
+	if (Inputs.ExportVelocityDest && Inputs.inQx && Inputs.inQy && Inputs.inHPast && Inputs.inHNew && Inputs.inHdot)
+	{
+		TShaderMapRef<FScaleCopyVelocityCS> VelocityCS(ShaderMap);
+		FScaleCopyVelocityCS::FParameters* PassParams = GraphBuilder.AllocParameters<FScaleCopyVelocityCS::FParameters>();
+		PassParams->ExportConstants = ConstantBuffer;
+		PassParams->inQx = GraphBuilder.CreateSRV(Inputs.inQx);
+		PassParams->inQy = GraphBuilder.CreateSRV(Inputs.inQy);
+		PassParams->inHPast = GraphBuilder.CreateSRV(Inputs.inHPast);
+		PassParams->inHNew = GraphBuilder.CreateSRV(Inputs.inHNew);
+		PassParams->inHdot = GraphBuilder.CreateSRV(Inputs.inHdot);
+		PassParams->outVel4 = GraphBuilder.CreateUAV(Inputs.ExportVelocityDest);
+
+		FComputeShaderUtils::AddPass(
+			GraphBuilder,
+			RDG_EVENT_NAME("SWE_ExportVelocity"),
+			ERDGPassFlags::Compute,
+			VelocityCS,
+			PassParams,
+			GridGroups
+		);
+	}
+
+	// Export Fluid Acceleration (Forward Euler from current and past velocity in m/s^2)
+	if (Inputs.ExportAccelDest && Inputs.inVel && Inputs.inVelPast)
+	{
+		TShaderMapRef<FCalcAccelerationCS> AccelCS(ShaderMap);
+		FCalcAccelerationCS::FParameters* PassParams = GraphBuilder.AllocParameters<FCalcAccelerationCS::FParameters>();
+		PassParams->ExportConstants = ConstantBuffer;
+		PassParams->inVel = GraphBuilder.CreateSRV(Inputs.inVel);
+		PassParams->inVelPast = GraphBuilder.CreateSRV(Inputs.inVelPast);
+		PassParams->outAccel4 = GraphBuilder.CreateUAV(Inputs.ExportAccelDest);
+
+		FComputeShaderUtils::AddPass(
+			GraphBuilder,
+			RDG_EVENT_NAME("SWE_ExportAcceleration"),
+			ERDGPassFlags::Compute,
+			AccelCS,
+			PassParams,
+			GridGroups
+		);
+	}
+
+	// Export Surface Normal, Foam & Jacobian Determinant
 	if (Inputs.ExportNormalDest && Inputs.ExportFoamDest && Inputs.ExportJacobianDest && Outputs.outNewFoam)
 	{
 		TShaderMapRef<FCalcSurfaceNormalAndFoamCS> NormalAndFoamCS(ShaderMap);
@@ -69,7 +114,7 @@ void AddVisualExportPasses(
 		AddCopyTexturePass(GraphBuilder, Outputs.outNewFoam, Inputs.ExportFoamDest);
 	}
 
-	// 3. Calculate Roughness LUT
+	// Calculate Roughness LUT
 	if (Inputs.ExportRoughnessDest && Inputs.ExportNormalDest && Outputs.outNewRoughness && Inputs.inPreviousRoughness)
 	{
 		TShaderMapRef<FCalcRoughnessLUTCS> RoughnessCS(ShaderMap);

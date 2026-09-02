@@ -13,6 +13,7 @@
 #define foamMultiplier ExportConstants.foamMultiplier
 #define foamFade ExportConstants.foamFade
 #define foamBlur ExportConstants.foamBlur
+#define minWaterHeight ExportConstants.minWaterHeight
 
 #define PI 3.14159265358979323846f
 
@@ -23,8 +24,17 @@ Texture2D<float>   inHeight;
 Texture2D<float>   inPreviousFoam;
 Texture2D<float4>  inNormal;
 Texture2D<float>   inPreviousRoughness;
+Texture2D<float>   inQx;
+Texture2D<float>   inQy;
+Texture2D<float>   inHPast;
+Texture2D<float>   inHNew;
+Texture2D<float>   inHdot;
+Texture2D<float4>  inVel;
+Texture2D<float4>  inVelPast;
 SamplerState BilinearWrapSampler;
 RWTexture2D<float4> outDisp4;
+RWTexture2D<float4> outVel4;
+RWTexture2D<float4> outAccel4;
 RWTexture2D<float4> outNormal;
 RWTexture2D<float>  outFoam;
 RWTexture2D<float>  outJacobianDet;
@@ -38,6 +48,42 @@ float ScaleFactor;
 void ScaleCopyDisplacement(uint3 id : SV_DispatchThreadID) {
     if (id.x >= (uint)(gridSizeX) || id.y >= (uint)(gridSizeY)) return;
     outDisp4[id.xy] = float4(inDispX[id.xy] * ScaleFactor, inDispY[id.xy] * ScaleFactor, inHeight[id.xy] * ScaleFactor, 1.0f);
+}
+
+[numthreads(16, 16, 1)]
+void ScaleCopyVelocity(uint3 id : SV_DispatchThreadID) {
+    if (id.x >= (uint)(gridSizeX) || id.y >= (uint)(gridSizeY)) return;
+
+    int2 curr = int2(id.xy);
+    int2 left = clamp(curr + int2(-1, 0), int2(0, 0), int2(gridSizeX - 1, gridSizeY - 1));
+    int2 down = clamp(curr + int2(0, -1), int2(0, 0), int2(gridSizeX - 1, gridSizeY - 1));
+
+    // Time-averaged water depth at cell center
+    float h_avg = 0.5f * (inHPast[curr] + inHNew[curr]);
+
+    // Staggered flow rates averaged to cell centers
+    float q_x_center = 0.5f * (inQx[curr] + inQx[left]);
+    float q_y_center = 0.5f * (inQy[curr] + inQy[down]);
+
+    // Compute velocity components: u = q / h in meters/second
+    float u_x = (h_avg > minWaterHeight) ? (q_x_center / h_avg) : 0.0f;
+    float u_y = (h_avg > minWaterHeight) ? (q_y_center / h_avg) : 0.0f;
+    float u_z = (h_avg > minWaterHeight && inHdot[curr] < 0.0f) ? 0.0f: inHdot[curr]; // vertical velocity w = -div_q = hdot
+
+    // Output in meters/sec
+    outVel4[curr] = float4(u_x, u_y, u_z, 1.0f); // keeping in m/s
+}
+
+[numthreads(16, 16, 1)]
+void CalcAcceleration(uint3 id : SV_DispatchThreadID) {
+    if (id.x >= (uint)(gridSizeX) || id.y >= (uint)(gridSizeY)) return;
+
+    float4 v_curr = inVel[id.xy];
+    float4 v_past = inVelPast[id.xy];
+    float3 accel = (v_curr.xyz - v_past.xyz) / max(1e-5f, timeStep);
+
+    // Output acceleration in m/s^2
+    outAccel4[id.xy] = float4(accel, 1.0f);
 }
 
 [numthreads(16, 16, 1)]

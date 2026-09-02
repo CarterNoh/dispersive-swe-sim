@@ -213,6 +213,18 @@ public:
 	UTextureRenderTarget2D* DisplacementPastRT = nullptr;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "UE|Outputs")
+	UTextureRenderTarget2D* VelocityRT = nullptr;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "UE|Outputs")
+	UTextureRenderTarget2D* VelocityPastRT = nullptr;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "UE|Outputs")
+	UTextureRenderTarget2D* AccelerationRT = nullptr;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "UE|Outputs")
+	UTextureRenderTarget2D* AccelerationPastRT = nullptr;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "UE|Outputs")
 	UTextureRenderTarget2D* NormalRT = nullptr;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "UE|Outputs")
@@ -230,8 +242,14 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "UE|Configuration")
 	bool SaveParametersToJson(const FString& FilePath);
 
-	UFUNCTION(BlueprintCallable, Category = "UE|| Buoyancy")
+	UFUNCTION(BlueprintCallable, Category = "UE|Buoyancy")
 	float GetWaterHeightAtLocation(const FVector& WorldLocation) const;
+
+	UFUNCTION(BlueprintCallable, Category = "UE|Buoyancy")
+	FVector GetWaterVelocityAtLocation(const FVector& WorldLocation) const;
+
+	UFUNCTION(BlueprintCallable, Category = "UE|Buoyancy")
+	FVector GetWaterAccelerationAtLocation(const FVector& WorldLocation) const;
 
 private:
 	float SimulationTime = 0.0f;
@@ -241,14 +259,22 @@ private:
 
 	// Staging textures for double-buffered async readback
 	FTextureRHIRef StagingTextures[2];
+	FTextureRHIRef VelocityStagingTextures[2];
+	FTextureRHIRef AccelerationStagingTextures[2];
 	int32 StagingWriteIndex = 0;
 	int32 StagingReadIndex = 1;
 
 	// Thread-safe double-buffered CPU height cache (in meters)
 	TArray<float> CPUHeightData[2];
+	// Thread-safe double-buffered CPU velocity cache (in m/s)
+	TArray<FVector> CPUVelocityData[2];
+	// Thread-safe double-buffered CPU acceleration cache (in m/s^2)
+	TArray<FVector> CPUAccelerationData[2];
 	std::atomic<int32> ActiveCPUBufferIndex{0};
 
 	float GetCachedHeight(int32 X, int32 Y) const;
+	FVector GetCachedVelocity(int32 X, int32 Y) const;
+	FVector GetCachedAcceleration(int32 X, int32 Y) const;
 
 	// Persistent graphics buffers for simulation states
 	TRefCountPtr<IPooledRenderTarget> TexTerrain;
@@ -256,6 +282,7 @@ private:
 	TRefCountPtr<IPooledRenderTarget> TexQ_x;
 	TRefCountPtr<IPooledRenderTarget> TexQ_y;
 	TRefCountPtr<IPooledRenderTarget> Texh;
+	TRefCountPtr<IPooledRenderTarget> Texhdot;
 	TRefCountPtr<IPooledRenderTarget> Texq_x;
 	TRefCountPtr<IPooledRenderTarget> Texq_y;
 	TRefCountPtr<IPooledRenderTarget> TexHOrig;

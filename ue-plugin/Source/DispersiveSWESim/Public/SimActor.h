@@ -21,6 +21,12 @@ public:
     UFUNCTION(BlueprintCallable, Category = "SWE | Buoyancy")
     float GetWaterHeightAtLocation(const FVector& WorldLocation) const;
 
+    UFUNCTION(BlueprintCallable, Category = "SWE | Buoyancy")
+    FVector GetWaterVelocityAtLocation(const FVector& WorldLocation) const;
+
+    UFUNCTION(BlueprintCallable, Category = "SWE | Buoyancy")
+    FVector GetWaterAccelerationAtLocation(const FVector& WorldLocation) const;
+
 protected:
     virtual void BeginPlay() override;
 
@@ -98,6 +104,18 @@ private:
 
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="SWE | Debug", meta=(AllowPrivateAccess="true"))
     UTextureRenderTarget2D* DisplacementPastRT;
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="SWE | Debug", meta=(AllowPrivateAccess="true"))
+    UTextureRenderTarget2D* VelocityRT;
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="SWE | Debug", meta=(AllowPrivateAccess="true"))
+    UTextureRenderTarget2D* VelocityPastRT;
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="SWE | Debug", meta=(AllowPrivateAccess="true"))
+    UTextureRenderTarget2D* AccelerationRT;
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="SWE | Debug", meta=(AllowPrivateAccess="true"))
+    UTextureRenderTarget2D* AccelerationPastRT;
 
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="SWE | Debug", meta=(AllowPrivateAccess="true"))
     UTextureRenderTarget2D* NormalRT;

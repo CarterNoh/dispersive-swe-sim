@@ -149,6 +149,21 @@ public:
 	END_SHADER_PARAMETER_STRUCT()
 };
 
+class FRecomputeHAvgCS : public FGlobalShader
+{
+public:
+	DECLARE_GLOBAL_SHADER(FRecomputeHAvgCS);
+	SHADER_USE_PARAMETER_STRUCT(FRecomputeHAvgCS, FGlobalShader);
+
+	BEGIN_SHADER_PARAMETER_STRUCT(FParameters, )
+		SHADER_PARAMETER_STRUCT_REF(FSimConstants, SimConstants)
+		SHADER_PARAMETER_RDG_TEXTURE_SRV(Texture2D<float>, hIn)
+		SHADER_PARAMETER_RDG_TEXTURE_SRV(Texture2D<float>, hPast)
+		SHADER_PARAMETER_RDG_TEXTURE_SRV(Texture2D<float>, terrain)
+		SHADER_PARAMETER_RDG_TEXTURE_UAV(RWTexture2D<float>, H_Out)
+	END_SHADER_PARAMETER_STRUCT()
+};
+
 class FTransferToFFTCS : public FGlobalShader
 {
 public:
@@ -297,6 +312,7 @@ public:
 		SHADER_PARAMETER_RDG_TEXTURE_UAV(RWTexture2D<float>, qOut_x)
 		SHADER_PARAMETER_RDG_TEXTURE_UAV(RWTexture2D<float>, qOut_y)
 		SHADER_PARAMETER_RDG_TEXTURE_UAV(RWTexture2D<float>, hOut)
+		SHADER_PARAMETER_RDG_TEXTURE_UAV(RWTexture2D<float>, hdot_out)
 	END_SHADER_PARAMETER_STRUCT()
 };
 
@@ -305,7 +321,7 @@ public:
 // RDG Helper Structures & Functions
 // ============================================================================
 
-// --- 1. Water Initialization ---
+// --- Water Initialization ---
 struct FInitializeWaterInputs
 {
 	FRDGTextureRef TerrainInput = nullptr;
@@ -333,7 +349,7 @@ void AddInitializeWaterPass(
 	const FInitializeWaterInputs& Inputs,
 	const FInitializeWaterOutputs& Outputs);
 
-// --- 2. Field Decomposition & Jacobi Diffusion ---
+// --- Field Decomposition & Jacobi Diffusion ---
 struct FDecompositionInputs
 {
 	FRDGTextureRef hIn = nullptr;
@@ -373,7 +389,7 @@ void AddDecompositionPasses(
 	const FDecompositionInputs& Inputs,
 	FDecompositionOutputs& Outputs);
 
-// --- 3. eWave Dispersion Solver ---
+// --- eWave Dispersion Solver ---
 struct FEWaveInputs
 {
 	FRDGTextureRef htildeIn = nullptr;
@@ -408,7 +424,7 @@ void AddEWavePasses(
 	const FEWaveInputs& Inputs,
 	const FEWaveOutputs& Outputs);
 
-// --- 4. Bulk Flow (SWE Velocity & Momentum) ---
+// --- Bulk Flow (SWE Velocity & Momentum) ---
 struct FSWEBulkInputs
 {
 	FRDGTextureRef qbarIn_x = nullptr;
@@ -439,7 +455,7 @@ void AddSWEBulkPasses(
 	const FSWEBulkInputs& Inputs,
 	const FSWEBulkOutputs& Outputs);
 
-// --- 5. Advective Transport & Height Integration ---
+// --- Advective Transport & Height Integration ---
 struct FTransportAndIntegrateInputs
 {
 	FRDGTextureRef ubarNewIn_x = nullptr;
@@ -467,7 +483,9 @@ struct FTransportAndIntegrateOutputs
 	FRDGTextureRef hOut = nullptr;
 	FRDGTextureRef qOut_x = nullptr;
 	FRDGTextureRef qOut_y = nullptr;
+	FRDGTextureRef hdot_out = nullptr;
 	FRDGTextureRef H_Out = nullptr;
+	FRDGTextureRef HAvg_Out = nullptr;
 };
 
 void AddTransportAndIntegratePasses(

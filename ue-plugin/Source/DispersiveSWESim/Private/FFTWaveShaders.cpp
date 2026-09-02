@@ -57,7 +57,7 @@ void AddPropagateFFTWavesPasses(
 		1
 	);
 
-	// 1. Propagate spectral waves
+	// Propagate spectral waves
 	{
 		TShaderMapRef<FPropagateWavesCS> Shader(ShaderMap);
 		FPropagateWavesCS::FParameters* Params = GraphBuilder.AllocParameters<FPropagateWavesCS::FParameters>();
@@ -81,13 +81,13 @@ void AddPropagateFFTWavesPasses(
 		);
 	}
 
-	// 2. Inverse FFTs on Disp and DelH 2D Texture Arrays
+	// Inverse FFTs on Disp and DelH 2D Texture Arrays
 	Add2DFFTPasses(GraphBuilder, Inputs.Disp_x_Array, Inputs.PaddedSizeX, Inputs.PaddedSizeY, true, Inputs.DepthNum);
 	Add2DFFTPasses(GraphBuilder, Inputs.Disp_y_Array, Inputs.PaddedSizeX, Inputs.PaddedSizeY, true, Inputs.DepthNum);
 	Add2DFFTPasses(GraphBuilder, Inputs.DelH_x_Array, Inputs.PaddedSizeX, Inputs.PaddedSizeY, true, Inputs.DepthNum);
 	Add2DFFTPasses(GraphBuilder, Inputs.DelH_y_Array, Inputs.PaddedSizeX, Inputs.PaddedSizeY, true, Inputs.DepthNum);
 
-	// 3. Interpolate wind wave outputs between depths
+	// Interpolate wind wave outputs between depths
 	{
 		TShaderMapRef<FInterpCS> Shader(ShaderMap);
 		FInterpCS::FParameters* Params = GraphBuilder.AllocParameters<FInterpCS::FParameters>();
