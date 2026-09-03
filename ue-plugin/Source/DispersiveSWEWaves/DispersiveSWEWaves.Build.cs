@@ -22,9 +22,7 @@ public class DispersiveSWEWaves : ModuleRules
 				"CoreUObject",
 				"Engine",
 				"Json",
-				"JsonUtilities",
-				"Landscape",
-				"ProceduralMeshComponent"
+				"JsonUtilities"
 			}
 		);
 	}

@@ -1,6 +1,5 @@
 #include "DispersiveSWEActor.h"
 #include "Materials/MaterialInstanceDynamic.h"
-#include "ProceduralMeshComponent.h"
 #include "Components/SceneComponent.h"
 #include "Engine/StaticMesh.h"
 #include "UObject/ConstructorHelpers.h"
